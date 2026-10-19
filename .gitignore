@@ -1,0 +1,29 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Intermediate Batches and Temporary Dumps
+batches/
+extracted_images/
+coverage_audit_report.json
+ingested_lecture.json
+
+# Test Outputs in dist
+dist/*
+!dist/summary_pack.docx
+!dist/summary_pack.md
+!dist/summary_pack_anki.apkg
+!dist/summary_pack_anki.tsv
+
+# IDE and System Files
+.DS_Store
+Thumbs.db
+*.swp
+*.bak

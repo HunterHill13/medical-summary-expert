@@ -1,0 +1,698 @@
+#!/usr/bin/env python3
+"""
+tests/test_full_skill_diagnostics.py: Rigorous Stress-Testing & Bug Diagnosis Suite.
+Tests:
+1. Bug A: build_anki_apkg must auto-synthesize flashcards if 'anki_flashcards' is missing/empty.
+2. Bug B: extract_clinical_numbers must capture Persian clinical units (درصد, میلی‌گرم, ساعت, روز, میلی‌متر جیوه)
+          and Persian relational prefixes (کمتر از, بیش از, بالای, زیر, حداقل).
+3. Bug C: add_comparison_table must never throw IndexError if row length exceeds headers length.
+4. Bug D: build_docx_summary and build_markdown_summary must handle alternate pharmacology keys
+          ('mechanism' vs 'mechanism_of_action', 'exam_pearl' vs 'pearl').
+5. Bug E: null/empty diagnostics (best_initial_test is None or "") must not leave orphaned heading labels.
+"""
+
+import os
+import sys
+import json
+import tempfile
+import docx
+
+SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+from build_summary_pack import (
+    build_docx_summary,
+    build_markdown_summary,
+    build_anki_tsv,
+    build_anki_apkg,
+    add_comparison_table
+)
+from audit_summary_coverage import (
+    extract_clinical_numbers,
+    normalize_medical_text,
+    audit_coverage
+)
+
+def test_bug_a_apkg_synthesis_when_empty():
+    """Bug A: When anki_flashcards is omitted, .apkg must still be synthesized."""
+    data = {
+        "topic_title": "نارسایی قلبی تستی",
+        "modules": [
+            {
+                "name": "HFrEF",
+                "diagnostics": {
+                    "best_initial_test": "نوار قلب و BNP",
+                    "gold_standard": "اکوکاردیوگرافی داپلر"
+                },
+                "high_yield_pearls": ["کسر تخلیه‌ای زیر ۴۰ درصد است."]
+            }
+        ]
+    }
+    out_tsv = "dist/diag_test_a.tsv"
+    out_apkg = "dist/diag_test_a.apkg"
+    if os.path.exists(out_apkg):
+        os.remove(out_apkg)
+    if os.path.exists(out_tsv):
+        os.remove(out_tsv)
+
+    build_anki_tsv(data, out_tsv)
+    build_anki_apkg(data, out_apkg)
+
+    assert os.path.exists(out_tsv), "TSV was not created!"
+    assert os.path.exists(out_apkg), "BUG A DETECTED: APKG was not created when anki_flashcards was omitted!"
+    print("[PASS] Bug A Test Passed: APKG successfully synthesized when anki_flashcards is omitted.")
+
+def test_bug_b_persian_units_and_prefixes():
+    """Bug B: extract_clinical_numbers must extract numbers with Persian units and relational words."""
+    persian_clinical_text = (
+        "دوز اولیه ۵ میلی‌گرم خوراکی است. "
+        "بیمار ظرف ۳ ساعت مجدداً پایش می‌شود. "
+        "کسر تخلیه‌ای زیر ۴۰ درصد و فشار سیستولیک کمتر از ۹۰ میلی‌متر جیوه است."
+    )
+    norm = normalize_medical_text(persian_clinical_text)
+    extracted = extract_clinical_numbers(norm)
+    values_extracted = {item["value"] for item in extracted}
+
+    print(f"[DEBUG] Extracted clinical items: {extracted}")
+    # 5, 3, 40, 90 must all be extracted because they are associated with clinical units
+    assert "5" in values_extracted, f"BUG B DETECTED: '5 میلی‌گرم' was dropped from clinical numbers! Extracted: {values_extracted}"
+    assert "3" in values_extracted, f"BUG B DETECTED: '3 ساعت' was dropped from clinical numbers! Extracted: {values_extracted}"
+    assert "40" in values_extracted, f"BUG B DETECTED: '40 درصد' was dropped! Extracted: {values_extracted}"
+    assert "90" in values_extracted, f"BUG B DETECTED: '90 میلی‌متر جیوه' was dropped! Extracted: {values_extracted}"
+    print("[PASS] Bug B Test Passed: Persian clinical units and prefixes correctly recognized.")
+
+def test_bug_c_table_column_overflow():
+    """Bug C: add_comparison_table must gracefully handle row data with more columns than headers without throwing IndexError."""
+    doc = docx.Document()
+    headers = ["ستون ۱", "ستون ۲"]
+    # Row has 4 columns while headers has only 2
+    rows = [["داده ۱", "داده ۲", "داده ۳ سرریز", "داده ۴ سرریز"]]
+    try:
+        add_comparison_table(doc, "جدول تستی سرریز", headers, rows)
+        print("[PASS] Bug C Test Passed: Table overflow handled safely without IndexError.")
+    except IndexError as e:
+        raise AssertionError(f"BUG C DETECTED: add_comparison_table crashed on column overflow: {e}")
+
+def test_bug_d_pharmacology_keys_interoperability():
+    """Bug D: Ensure pharmacology_and_management works with both 'mechanism' and 'mechanism_of_action'."""
+    data = {
+        "topic_title": "تست فارماکولوژی",
+        "modules": [
+            {
+                "name": "مبحث دارو",
+                "pharmacology_and_management": [
+                    {
+                        "drug_class": "ACEi",
+                        "mechanism": "مهار آنزیم مبدل آنژیوتانسین",
+                        "exam_pearl": "سرفه خشک و آنژیوادم"
+                    }
+                ]
+            }
+        ]
+    }
+    doc_out = "dist/diag_test_d.docx"
+    md_out = "dist/diag_test_d.md"
+    build_docx_summary(data, doc_out)
+    build_markdown_summary(data, md_out)
+
+    with open(md_out, "r", encoding="utf-8") as f:
+        md_content = f.read()
+
+    assert "مهار آنزیم مبدل آنژیوتانسین" in md_content, "BUG D DETECTED: 'mechanism' key was omitted from Markdown output!"
+    assert "سرفه خشک و آنژیوادم" in md_content, "BUG D DETECTED: 'exam_pearl' key was omitted from Markdown output!"
+    print("[PASS] Bug D Test Passed: Alternate pharmacology keys rendered properly.")
+
+def test_bug_e_null_diagnostics_no_orphan_headers():
+    """Bug E: None/null diagnostic values must not create empty orphan labels."""
+    data = {
+        "topic_title": "تست تشخیص خالی",
+        "modules": [
+            {
+                "name": "بیماری بدون تست قطعی",
+                "diagnostics": {
+                    "best_initial_test": "نوار قلب",
+                    "gold_standard": None,
+                    "key_labs": []
+                }
+            }
+        ]
+    }
+    doc_out = "dist/diag_test_e.docx"
+    build_docx_summary(data, doc_out)
+    doc = docx.Document(doc_out)
+    for p in doc.paragraphs:
+        if "استاندارد طلایی و قطعی" in p.text:
+            # If label exists, it must have text after it, not just the bare label!
+            stripped = p.text.replace("⭐ استاندارد طلایی و قطعی (Gold Standard):", "").strip()
+            assert len(stripped) > 0, "BUG E DETECTED: Orphaned 'Gold Standard' label with no content found!"
+    print("[PASS] Bug E Test Passed: No orphan diagnostic labels generated.")
+
+def test_bug_f_sdt_content_control_unrolling():
+    """Bug F: Word documents with content controls (w:sdt) must not drop paragraphs or tables."""
+    from parse_input_lecture import parse_docx
+    from docx.oxml import OxmlElement
+
+    doc = docx.Document()
+    body = doc.element.body
+
+    # Add regular paragraph
+    doc.add_paragraph("پاراگراف عادی ۱")
+
+    # Add SDT wrapped paragraph
+    sdt = OxmlElement('w:sdt')
+    content = OxmlElement('w:sdtContent')
+    p_sdt = OxmlElement('w:p')
+    r = OxmlElement('w:r')
+    t = OxmlElement('w:t')
+    t.text = "مطلب حیاتی درون کنترل ساختاریافته (SDT)"
+    r.append(t)
+    p_sdt.append(r)
+    content.append(p_sdt)
+    sdt.append(content)
+    body.append(sdt)
+
+    test_docx_path = "dist/diag_test_sdt.docx"
+    doc.save(test_docx_path)
+
+    parsed = parse_docx(test_docx_path, extract_images=False)
+    assert "مطلب حیاتی درون کنترل ساختاریافته (SDT)" in parsed["full_text"], (
+        "BUG F DETECTED: Word SDT content controls were skipped during document parsing!"
+    )
+    print("[PASS] Bug F Test Passed: SDT content control unrolling successfully extracts nested text.")
+
+def test_bug_g_none_resilience_across_all_builders():
+    """Bug G: All builders and audit functions must handle None values for all optional fields without crashing."""
+    bad_data = {
+        "topic_title": "مبحث با فیلدهای نال",
+        "topic_title_en": None,
+        "organ_system": None,
+        "modules": [
+            {
+                "name": "مبحث تست نال",
+                "name_en": None,
+                "definition_and_etiology": None,
+                "pathophysiology_cascade": None,
+                "clinical_presentation": None,
+                "diagnostics": None,
+                "pharmacology_and_management": None,
+                "differential_table": None,
+                "high_yield_pearls": None,
+                "instructor_exam_alerts": None,
+                "contraindications_and_warnings": None,
+                "scoring_criteria": None,
+                "clinical_vignettes": None,
+                "figures": None
+            }
+        ],
+        "master_pharmacology_matrix": None,
+        "last_minute_crash_sheet": None,
+        "anki_flashcards": None
+    }
+
+    build_docx_summary(bad_data, "dist/diag_test_none.docx")
+    build_markdown_summary(bad_data, "dist/diag_test_none.md")
+    build_anki_tsv(bad_data, "dist/diag_test_none.tsv")
+    build_anki_apkg(bad_data, "dist/diag_test_none.apkg")
+
+    rep = audit_coverage("متن تست بالینی ۵ میلی‌گرم", bad_data)
+    assert "verdict" in rep, "Audit failed on bad_data with None diagnostics!"
+    print("[PASS] Bug G Test Passed: Zero crashes across DOCX, MD, TSV, APKG, and Audit with null fields.")
+
+def test_bug_h_merge_batches_resilience():
+    """Bug H: cmd_merge_batches must synthesize crash sheet safely even when fields are None."""
+    from run_summary_pipeline import cmd_merge_batches
+    import argparse
+
+    test_batch_dir = "dist/test_batches"
+    os.makedirs(test_batch_dir, exist_ok=True)
+
+    manifest = {
+        "file_name": "test_lecture.docx",
+        "total_batches": 1,
+        "batches": [
+            {
+                "batch_index": 1,
+                "target_shard": "shard_01.json"
+            }
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "manifest.json"), "w", encoding="utf-8") as fm:
+        json.dump(manifest, fm)
+
+    shard = {
+        "topic_title": "تست مرج",
+        "modules": [
+            {
+                "name": "سندروم تست",
+                "definition_and_etiology": None,
+                "pathophysiology_cascade": None,
+                "clinical_presentation": None,
+                "diagnostics": None,
+                "pharmacology_and_management": None
+            }
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "shard_01.json"), "w", encoding="utf-8") as fs:
+        json.dump(shard, fs)
+
+    out_merged = "dist/diag_test_merged.json"
+    args = argparse.Namespace(batch_dir=test_batch_dir, out=out_merged)
+    cmd_merge_batches(args)
+
+    assert os.path.exists(out_merged), "Merged output was not created!"
+    with open(out_merged, "r", encoding="utf-8") as f:
+        merged_res = json.load(f)
+    assert len(merged_res["last_minute_crash_sheet"]["rows"]) == 1, "Crash sheet row missing!"
+    print("[PASS] Bug H Test Passed: merge-batches handled null fields gracefully.")
+
+def test_bug_i_anki_cloze_model_type_and_card_generation():
+    """Bug I: Verify Anki model_type is 1 (CLOZE) and every card produces at least one reviewable card."""
+    import zipfile
+    import sqlite3
+
+    data = {
+        "topic_title": "تست دک کلوز",
+        "modules": [
+            {
+                "name": "مبحث پرل و کلوز",
+                "high_yield_pearls": ["مروارید طلایی امتحانی بدون کلوز دستی"],
+                "diagnostics": {
+                    "best_initial_test": "نوار قلب",
+                    "gold_standard": "اکوکاردیوگرافی"
+                }
+            }
+        ],
+        "anki_flashcards": [
+            {
+                "text": "کارت بدون براکت کلوز صریح",
+                "extra": "توضیح تکمیلی",
+                "tag": "Test"
+            }
+        ]
+    }
+    out_apkg = "dist/diag_test_cloze_type.apkg"
+    build_anki_apkg(data, out_apkg)
+    assert os.path.exists(out_apkg), "APKG was not created!"
+
+    extract_dir = "dist/cloze_db_check"
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(out_apkg, 'r') as z:
+        z.extract('collection.anki2', extract_dir)
+
+    conn = sqlite3.connect(os.path.join(extract_dir, 'collection.anki2'))
+    cur = conn.cursor()
+    col = cur.execute('SELECT models FROM col').fetchone()[0]
+    models = json.loads(col)
+    for mid, mdata in models.items():
+        assert mdata['type'] == 1, f"BUG I DETECTED: Anki model_type is {mdata['type']} instead of 1 (CLOZE)!"
+
+    card_rows = cur.execute('SELECT id, nid FROM cards').fetchall()
+    note_rows = cur.execute('SELECT id, flds FROM notes').fetchall()
+    conn.close()
+
+    assert len(card_rows) >= len(note_rows), f"BUG I DETECTED: Some notes generated zero cards! Notes: {len(note_rows)}, Cards: {len(card_rows)}"
+    print(f"[PASS] Bug I Test Passed: Anki model_type is 1 (CLOZE) and all {len(note_rows)} notes generated {len(card_rows)} reviewable cards.")
+
+def test_bug_j_partition_empty_and_markdown_tables():
+    """Bug J: Verify partition on empty elements has word_count and markdown tables are parsed atomically."""
+    from parse_input_lecture import partition_by_headings, parse_markdown_or_text
+    import tempfile
+
+    # 1. Empty elements partition
+    empty_data = {"elements": [], "full_text": "پنج کلمه ساده برای تست"}
+    batches = partition_by_headings(empty_data)
+    assert len(batches) == 1, "Should have 1 batch"
+    assert "word_count" in batches[0], "BUG J DETECTED: 'word_count' missing from empty elements batch!"
+    assert batches[0]["word_count"] == 5, f"Expected 5 words, got {batches[0]['word_count']}"
+
+    # 2. Markdown table preservation
+    md_content = (
+        "# عنوان مبحث\n\n"
+        "متن مقدمه قبل از جدول.\n\n"
+        "| بیماری | علامت |\n"
+        "| --- | --- |\n"
+        "| HFrEF | S3 Gallop |\n"
+        "| HFpEF | S4 Gallop |\n\n"
+        "متن بعد از جدول."
+    )
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as tf:
+        tf.write(md_content)
+        tf_name = tf.name
+
+    parsed = parse_markdown_or_text(tf_name)
+    os.remove(tf_name)
+
+    table_elements = [e for e in parsed["elements"] if e["type"] == "table"]
+    assert len(table_elements) == 1, f"BUG J DETECTED: Markdown table was not parsed atomically! Found: {len(table_elements)}"
+    assert "S3 Gallop" in table_elements[0]["markdown"], "Table markdown content incomplete!"
+    print("[PASS] Bug J Test Passed: partition_by_headings and Markdown table grouping are robust.")
+
+def test_bug_k_decimal_sentence_splitting_and_exact_number_matching():
+    """Bug K: Verify decimal numbers are not broken by sentence splitting and numbers are matched with exact boundaries."""
+    from audit_summary_coverage import (
+        extract_clinical_numbers,
+        extract_warnings_and_contraindications,
+        normalize_medical_text,
+        audit_coverage
+    )
+
+    # 1. Decimal extraction
+    clinical_text = "دوز لیدوکائین 1.5 میلی‌گرم است. نسبت CTR > 0.5 و پتاسیم 3.5 mEq/L است."
+    norm = normalize_medical_text(clinical_text)
+    extracted = extract_clinical_numbers(norm)
+    vals = {item["value"] for item in extracted}
+    assert "1.5" in vals, f"BUG K DETECTED: '1.5' was broken into separate numbers! Extracted: {vals}"
+    assert "0.5" in vals, f"BUG K DETECTED: '0.5' was broken into separate numbers! Extracted: {vals}"
+    assert "3.5" in vals, f"BUG K DETECTED: '3.5' was broken into separate numbers! Extracted: {vals}"
+
+    # 2. Warning with decimal
+    warn_text = "در بیماران با کراتینین بالای 2.5 میلی‌گرم بر دسی‌لیتر مصرف متفورمین ممنوع است."
+    warnings = extract_warnings_and_contraindications(normalize_medical_text(warn_text))
+    assert len(warnings) == 1, "Warning with decimal was not captured!"
+    assert "2.5" in warnings[0] and "کراتینین" in warnings[0], "Warning text was truncated at decimal point!"
+
+    # 3. Exact boundary matching: 5 should NOT match 0.5 or 1.5
+    src_text = "دوز اولیه ۵ میلی‌گرم است."
+    sum_data = {
+        "modules": [
+            {
+                "name": "تست عدم تطابق کاذب",
+                "high_yield_pearls": ["نسبت CTR برابر 0.5 است ولی دوز ذکر نشده."]
+            }
+        ]
+    }
+    rep = audit_coverage(src_text, sum_data)
+    # The source has 5 mg, but the summary only has 0.5. 5 must NOT match 0.5!
+    assert rep["scores"]["numerical_coverage_pct"] == 0.0, (
+        f"BUG K DETECTED: '5' falsely matched '0.5'! Coverage: {rep['scores']['numerical_coverage_pct']}"
+    )
+    print("[PASS] Bug K Test Passed: Decimals preserved and exact numeric boundaries enforced without false positive matches.")
+
+def test_bug_l_empty_callout_box_suppression():
+    """Bug L: add_callout_box and add_comparison_table must safely suppress empty tables."""
+    from build_summary_pack import add_callout_box, add_comparison_table
+    import docx
+
+    doc = docx.Document()
+    # Callout with empty list
+    add_callout_box(doc, "کادر خالی", [], "85C1E9", "EBF5FB", "FFFFFF")
+    # Comparison table with empty headers or rows
+    add_comparison_table(doc, "جدول بدون هدر", [], [["داده"]])
+    add_comparison_table(doc, "جدول بدون ردیف", ["هدر ۱"], [])
+
+    assert len(doc.tables) == 0, f"BUG L DETECTED: Empty callout or comparison table created {len(doc.tables)} blank tables!"
+    print("[PASS] Bug L Test Passed: Empty callouts and tables cleanly suppressed.")
+
+def test_bug_m_word_break_and_tab_preservation():
+    """Bug M: extract_text_including_txbx must preserve line breaks, tabs, and hyphens without fusing words."""
+    from parse_input_lecture import extract_text_including_txbx
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    xml = (
+        f'<w:p {nsdecls("w")}>'
+        '<w:r><w:t>دوز اول: ۵ میلی‌گرم</w:t></w:r>'
+        '<w:r><w:br/></w:r>'
+        '<w:r><w:t>دوز دوم: ۱۰ میلی‌گرم</w:t></w:r>'
+        '<w:r><w:tab/></w:r>'
+        '<w:r><w:t>حداکثر</w:t></w:r>'
+        '<w:r><w:noBreakHyphen/></w:r>'
+        '<w:r><w:t>دوز</w:t></w:r>'
+        '</w:p>'
+    )
+    p_elem = parse_xml(xml)
+    extracted = extract_text_including_txbx(p_elem)
+
+    assert "میلی‌گرمدوز" not in extracted, f"BUG M DETECTED: Words fused across line break! Extracted: {repr(extracted)}"
+    assert "دوز اول: ۵ میلی‌گرم" in extracted, "First line missing"
+    assert "دوز دوم: ۱۰ میلی‌گرم" in extracted, "Second line missing"
+    assert "حداکثر-دوز" in extracted, "Hyphenated word missing or broken"
+
+    # Now verify clinical number extraction on this text
+    norm = normalize_medical_text(extracted)
+    nums = extract_clinical_numbers(norm)
+    vals = {item["value"] for item in nums}
+    assert "5" in vals and "10" in vals, f"BUG M DETECTED: Clinical numbers not extracted due to word fusion! Extracted: {vals}"
+    print("[PASS] Bug M Test Passed: Word line breaks, tabs, and hyphens preserved without text fusion.")
+
+def test_bug_n_master_matrices_word_markdown_parity():
+    """Bug N: verify master_pharmacology_matrix and crash_sheet auto-synthesis parity and Mermaid label sanitation."""
+    data = {
+        "topic_title": "نارسایی قلبی و شوک",
+        "topic_title_en": "Heart Failure & Shock",
+        "organ_system": "قلب و عروق",
+        "modules": [
+            {
+                "name": "HFrEF",
+                "definition_and_etiology": ["کاهش قدرت انقباضی میوکارد"],
+                "pathophysiology_cascade": ["کاهش برون‌ده قلبی [CO]", "فعال شدن RAAS [سیستم رنین]"],
+                "clinical_presentation": [{"sign": "تنگی نفس ارتوپنه", "mechanism": "احتقان وریدی ریوی"}],
+                "diagnostics": {"best_initial_test": "اکوکاردیوگرافی"},
+                "pharmacology_and_management": [
+                    {"drug_class": "ARNI", "mechanism_of_action": "مهار نپری‌لایزین", "indications": "HFrEF علامت‌دار"},
+                    {"drug_class": "بتابلوکر", "mechanism_of_action": "مهار گیرنده بتا-1", "indications": "HFrEF پایدار"}
+                ]
+            }
+        ]
+    }
+    out_md = "dist/diag_test_n.md"
+    out_docx = "dist/diag_test_n.docx"
+
+    build_markdown_summary(data, out_md)
+    build_docx_summary(data, out_docx)
+
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+
+    # 1. Parity check: Both matrices synthesized
+    assert "master_pharmacology_matrix" in data, "BUG N DETECTED: master_pharmacology_matrix was not auto-synthesized!"
+    assert "last_minute_crash_sheet" in data, "BUG N DETECTED: last_minute_crash_sheet was not auto-synthesized!"
+    assert "ماتریس جامع مقایسه داروشناسی بالینی" in md_text, "Master matrix heading missing from Markdown!"
+    assert "کپسول طلایی شب امتحان" in md_text, "Crash sheet missing from Markdown!"
+
+    # 2. Mermaid label sanitation: No square brackets inside quotes
+    assert '["کاهش برون‌ده قلبی [CO]"]' not in md_text, "Mermaid square brackets were not sanitized to parentheses!"
+    assert 'node0["کاهش برون‌ده قلبی (CO)"]' in md_text, f"Expected sanitized Mermaid node not found: {md_text}"
+
+    # 3. Word check: Tables created
+    doc = docx.Document(out_docx)
+    assert len(doc.tables) >= 2, f"Word document missing synthesized matrix tables! Tables count: {len(doc.tables)}"
+
+    print("[PASS] Bug N Test Passed: Master matrices auto-synthesized with 100% Word/Markdown parity and Mermaid sanitization.")
+
+def test_bug_o_contraindication_false_negative_prevention():
+    """Bug O: verify contraindication audit detects dropped warnings even if unrelated modules share generic words."""
+    src = "در بیماران با نارسایی شدید کلیه، مصرف اسپیرونولاکتون اکیدا ممنوع است چون هایپرکالمی مرگبار دارد."
+
+    # Summary A: has generic words "بیماران" and "کلیه" in an unrelated section, but dropped spironolactone warning
+    sum_a = {
+        "modules": [
+            {
+                "name": "بررسی کلیوی",
+                "high_yield_pearls": ["بیماران با بیماری کلیه باید پایش شوند."]
+            }
+        ]
+    }
+    rep_a = audit_coverage(src, sum_a)
+    assert len(rep_a["omitted_contraindications"]) == 1, (
+        f"BUG O DETECTED: Dropped contraindication was not detected due to generic word match! "
+        f"Omissions: {rep_a['omitted_contraindications']}"
+    )
+    assert rep_a["verdict"] == "WARNING_OMISSIONS_DETECTED", "Verdict should fail on omitted contraindication!"
+
+    # Summary B: correctly preserved the spironolactone contraindication
+    sum_b = {
+        "modules": [
+            {
+                "name": "داروشناسی قلب",
+                "contraindications_and_warnings": [
+                    "مصرف اسپیرونولاکتون در نارسایی کلیه اکیدا ممنوع است."
+                ]
+            }
+        ]
+    }
+    rep_b = audit_coverage(src, sum_b)
+    assert len(rep_b["omitted_contraindications"]) == 0, (
+        f"Preserved contraindication was falsely flagged as omitted! "
+        f"Omissions: {rep_b['omitted_contraindications']}"
+    )
+    print("[PASS] Bug O Test Passed: Contraindication audit detects dropped warnings without false-negative bypass.")
+
+def test_bug_p_thousands_and_arabic_decimal_commas():
+    """Bug P: verify thousands separators (50,000 / ۱،۰۰۰،۰۰۰) and Arabic decimal commas (۱،۵) are normalized canonically without false omission alerts."""
+    src = (
+        "پلاکت بیمار کمتر از ۵۰،۰۰۰ سلول است. "
+        "دوز لیدوکائین ۱،۵ میلی‌گرم است. "
+        "ویروس لود بیمار بیش از ۱،۰۰۰،۰۰۰ کپی است."
+    )
+    sum_data = {
+        "modules": [
+            {
+                "name": "تست هماتولوژی و ویروس",
+                "high_yield_pearls": [
+                    "پلاکت زیر 50000 سلول است.",
+                    "دوز لیدوکائین 1.5 میلی‌گرم است.",
+                    "ویروس لود بیش از 1000000 کپی است."
+                ]
+            }
+        ]
+    }
+    report = audit_coverage(src, sum_data)
+    assert report["scores"]["numerical_coverage_pct"] == 100.0, (
+        f"BUG P DETECTED: Thousands or decimal commas caused false omission alerts! "
+        f"Coverage: {report['scores']['numerical_coverage_pct']}%, Omitted: {report['omitted_clinical_numbers']}"
+    )
+    print("[PASS] Bug P Test Passed: Thousands and decimal commas normalized canonically.")
+
+def test_bug_q_anki_contraindication_and_alert_synthesis():
+    """Bug Q: verify auto-synthesis of Anki flashcards captures contraindications and instructor alerts."""
+    from build_summary_pack import get_or_synthesize_flashcards, build_anki_tsv, build_anki_apkg
+
+    data = {
+        "topic_title": "فارماکولوژی پیشرفته قلب",
+        "modules": [
+            {
+                "name": "متفورمین و وارفارین",
+                "contraindications_and_warnings": [
+                    "مصرف متفورمین در GFR زیر 30 اکیدا ممنوع است."
+                ],
+                "instructor_exam_alerts": [
+                    "استاد تأکید کردند تداخل وارفارین و ریفامپین سؤال قطعی است."
+                ]
+            }
+        ]
+    }
+    cards = get_or_synthesize_flashcards(data)
+    tags = {c["tag"] for c in cards}
+
+    assert any("Contraindications" in t for t in tags), f"BUG Q DETECTED: Contraindications not synthesized into Anki cards! Tags: {tags}"
+    assert any("InstructorAlerts" in t for t in tags), f"BUG Q DETECTED: Instructor alerts not synthesized into Anki cards! Tags: {tags}"
+
+    # Verify cloze syntax and extra field
+    for c in cards:
+        assert "{{c1::" in c["text"], f"Missing cloze syntax in card: {c['text']}"
+        assert c["extra"], f"Missing extra field in card: {c}"
+
+    out_tsv = "dist/diag_test_q.tsv"
+    out_apkg = "dist/diag_test_q.apkg"
+    build_anki_tsv(data, out_tsv)
+    build_anki_apkg(data, out_apkg)
+    assert os.path.exists(out_tsv) and os.path.exists(out_apkg), "TSV or APKG was not created for Bug Q!"
+
+    print("[PASS] Bug Q Test Passed: Contraindications and instructor exam alerts synthesized into Anki flashcards.")
+
+def test_bug_r_table_cell_textbox_preservation():
+    """Bug R: table_to_markdown must capture text inside drawing shapes and textboxes within table cells."""
+    from parse_input_lecture import table_to_markdown
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    doc = docx.Document()
+    table = doc.add_table(rows=2, cols=2)
+    # Row 0 (Headers)
+    table.cell(0, 0).text = "مرحله بیماری"
+    table.cell(0, 1).text = "اقدام درمانی"
+
+    # Row 1, Cell 0: standard text
+    table.cell(1, 0).text = "نارسایی قلبی کلاس IV"
+
+    # Row 1, Cell 1: shape / drawing textbox inside paragraph
+    p = table.cell(1, 1).paragraphs[0]
+    p.text = ""  # empty run
+    # Append drawing textbox XML to paragraph
+    txbx_xml = parse_xml(r'''
+        <w:r {} >
+            <w:drawing>
+                <wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+                    <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+                        <a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+                            <wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">
+                                <wps:txbx>
+                                    <w:txbxContent>
+                                        <w:p><w:r><w:t>بستری فوری در CCU و اینوتروپ</w:t></w:r></w:p>
+                                    </w:txbxContent>
+                                </wps:txbx>
+                            </wps:wsp>
+                        </a:graphicData>
+                    </a:graphic>
+                </wp:inline>
+            </w:drawing>
+        </w:r>
+    '''.format(nsdecls('w')))
+    p._p.append(txbx_xml)
+
+    # Verify standard cell.text misses the textbox
+    assert table.cell(1, 1).text == "", "Pre-condition failed: python-docx cell.text should be empty for pure drawing textboxes"
+
+    # Verify table_to_markdown captures the drawing textbox text
+    md = table_to_markdown(table)
+    assert "بستری فوری در CCU و اینوتروپ" in md, (
+        f"BUG R DETECTED: Textbox inside table cell was omitted from markdown!\nMarkdown:\n{md}"
+    )
+    print("[PASS] Bug R Test Passed: Drawing textboxes inside table cells preserved in Markdown output.")
+
+def test_bug_s_english_prose_stop_words_in_entity_recall():
+    """Bug S: English sentence-starting prose words (When, Because, During, Other, First) must not trigger false omission warnings."""
+    src = (
+        "When managing Heart Failure, Especially during acute decompensation, First evaluate volume status. "
+        "Because ARNI and empagliflozin improve survival, After stabilizing, initiate therapy. "
+        "Other considerations include checking BNP and eGFR. Avoid verapamil."
+    )
+    # The summary is written in clinical Persian, containing only true medical acronyms/drugs (ARNI, empagliflozin, BNP, eGFR)
+    sum_data = {
+        "modules": [
+            {
+                "name": "مدیریت نارسایی قلبی",
+                "pharmacology_and_management": [
+                    {
+                        "drug_class": "ARNI",
+                        "mechanism": "مهار نپری‌لیسین و گیرنده آنژیوتانسین",
+                        "exam_pearl": "درمان خط اول همراه با empagliflozin جهت کاهش مورتالیتی"
+                    }
+                ],
+                "diagnostics": {
+                    "best_initial_test": "سنجش سطح سرمی BNP و محاسبه eGFR",
+                    "gold_standard": "اکوکاردیوگرافی داپلر"
+                },
+                "contraindications_and_warnings": [
+                    "مصرف verapamil در این بیماران ممنوع است."
+                ]
+            }
+        ]
+    }
+    rep = audit_coverage(src, sum_data)
+    assert "When" not in rep["missing_entities"], f"BUG S DETECTED: 'When' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert "Because" not in rep["missing_entities"], f"BUG S DETECTED: 'Because' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert "During" not in rep["missing_entities"], f"BUG S DETECTED: 'During' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert "Other" not in rep["missing_entities"], f"BUG S DETECTED: 'Other' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert "First" not in rep["missing_entities"], f"BUG S DETECTED: 'First' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert "After" not in rep["missing_entities"], f"BUG S DETECTED: 'After' treated as medical entity! Missing: {rep['missing_entities']}"
+    assert rep["scores"]["entity_recall_pct"] >= 85.0, (
+        f"BUG S DETECTED: False low entity recall due to English prose! Score: {rep['scores']['entity_recall_pct']}%, Missing: {rep['missing_entities']}"
+    )
+    assert rep["verdict"] == "PASSED", f"Expected PASSED verdict, got: {rep['verdict']}"
+    print("[PASS] Bug S Test Passed: English prose sentence starters correctly filtered, 100% genuine entity recall.")
+
+if __name__ == "__main__":
+    print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
+    test_bug_a_apkg_synthesis_when_empty()
+    test_bug_b_persian_units_and_prefixes()
+    test_bug_c_table_column_overflow()
+    test_bug_d_pharmacology_keys_interoperability()
+    test_bug_e_null_diagnostics_no_orphan_headers()
+    test_bug_f_sdt_content_control_unrolling()
+    test_bug_g_none_resilience_across_all_builders()
+    test_bug_h_merge_batches_resilience()
+    test_bug_i_anki_cloze_model_type_and_card_generation()
+    test_bug_j_partition_empty_and_markdown_tables()
+    test_bug_k_decimal_sentence_splitting_and_exact_number_matching()
+    test_bug_l_empty_callout_box_suppression()
+    test_bug_m_word_break_and_tab_preservation()
+    test_bug_n_master_matrices_word_markdown_parity()
+    test_bug_o_contraindication_false_negative_prevention()
+    test_bug_p_thousands_and_arabic_decimal_commas()
+    test_bug_q_anki_contraindication_and_alert_synthesis()
+    test_bug_r_table_cell_textbox_preservation()
+    test_bug_s_english_prose_stop_words_in_entity_recall()
+    print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

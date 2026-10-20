@@ -674,6 +674,263 @@ def test_bug_s_english_prose_stop_words_in_entity_recall():
     assert rep["verdict"] == "PASSED", f"Expected PASSED verdict, got: {rep['verdict']}"
     print("[PASS] Bug S Test Passed: English prose sentence starters correctly filtered, 100% genuine entity recall.")
 
+def test_bug_t_html_and_pdf_generation_with_bidi_stamping():
+    """Bug T: Direct HTML-to-PDF rendering with Playwright & Persian BiDi stamping."""
+    from build_summary_pack import build_html_summary, build_pdf_summary
+    
+    sample_data = {
+        "topic_title": "فیزیوپاتولوژی غدد درون‌ریز",
+        "topic_title_en": "Endocrine Physiopathology",
+        "organ_system": "فیزیوپاتولوژی غدد",
+        "modules": [
+            {
+                "name": "سندرم کوشینگ و هیپرکورتیزولیسم",
+                "definition_and_etiology": [
+                    "افزایش مزمن سطح گلوکوکورتیکوئیدهای در گردش خون محیطی"
+                ],
+                "pathophysiology_cascade": [
+                    "تومور هیپوفیز -> ترشح نابجای ACTH -> هایپرپلازی قشر آدرنال -> افزایش کورتیزول"
+                ],
+                "clinical_presentation": [
+                    {"sign": "چاقی مرکزی، صورت ماه شکل (Moon face) و بوفالو هامپ", "mechanism": "لیپولیز محیطی و تجمع چربی احشایی"}
+                ],
+                "diagnostics": {
+                    "best_initial_test": "تست مهار دگزامتازون 1 میلی‌گرم شبانه یا کورتیزول آزاد ادرار 24 ساعته",
+                    "gold_standard": "نمونه‌برداری از سینوس پتروزال تحتانی (IPSS) جهت افتراق علل وابسته به ACTH"
+                },
+                "high_yield_pearls": [
+                    "استریای بنفش عریض (> 1 cm) اختصاصی‌ترین علامت بالینی کوشینگ است."
+                ]
+            }
+        ]
+    }
+    
+    html_path = "dist/diag_test_t.html"
+    pdf_path = "dist/diag_test_t.pdf"
+    if os.path.exists(html_path):
+        os.remove(html_path)
+    if os.path.exists(pdf_path):
+        os.remove(pdf_path)
+        
+    build_html_summary(sample_data, html_path)
+    assert os.path.exists(html_path), "HTML summary was not generated!"
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    assert "@page" in html_content, "HTML missing @page CSS for PDF print!"
+    assert "direction: rtl" in html_content, "HTML missing RTL direction!"
+    assert "سندرم کوشینگ" in html_content, "Module title missing in HTML!"
+    
+    build_pdf_summary(html_path, pdf_path, course_name="فیزیوپاتولوژی غدد")
+    assert os.path.exists(pdf_path), "PDF was not generated via Playwright!"
+    assert os.path.getsize(pdf_path) > 1000, "Generated PDF is empty or corrupt!"
+    print("[PASS] Bug T Test Passed: HTML-to-PDF generated via Playwright with Persian BiDi stamping.")
+
+def test_bug_u_anti_pharmacology_skew_illness_script_integrity():
+    """Bug U: Anti-Pharmacology-Skew Law & Illness Script Integrity Gate."""
+    from audit_summary_coverage import audit_coverage
+    
+    # Source mentions subtle syndromes: شیهان and آپوپلکسی
+    src = (
+        "در هیپوپیتوئیتاریسم، سندرم شیهان ناشی از نکروز ایسکمیک پس از زایمان به دلیل خونریزی شدید است. "
+        "همچنین آپوپلکسی هیپوفیز یک اورژانس حاد ناشی از خونریزی داخل آدنوم است که با سردرد ناگهانی شدید و افت بینایی تظاهر می‌کند. "
+        "درمان دارویی جایگزینی لووتیروکسین 100 میکروگرم و هیدروکورتیزون است."
+    )
+    
+    # Skewed summary that drops Sheehan and Apoplexy and only summarizes drug
+    skewed_summary = {
+        "modules": [
+            {
+                "name": "فارماکولوژی هورمون‌ها",
+                "pharmacology_and_management": [
+                    {
+                        "drug_class": "لووتیروکسین",
+                        "mechanism": "جایگزینی هورمون تیروئید T4 با نیمه عمر 7 روز و دوز 100 میکروگرم",
+                        "exam_pearl": "مصرف صبح ناشتا با معده خالی"
+                    }
+                ]
+            }
+        ]
+    }
+    
+    rep_skewed = audit_coverage(src, skewed_summary)
+    assert not rep_skewed["scores"]["illness_script_compliant"], (
+        "BUG U DETECTED: Skewed summary passed illness script integrity despite dropping Sheehan/Apoplexy!"
+    )
+    assert "شیهان" in rep_skewed["illness_script_audit"]["omitted_subtle_syndromes"]
+    assert "آپوپلکسی" in rep_skewed["illness_script_audit"]["omitted_subtle_syndromes"]
+    assert rep_skewed["verdict"] == "WARNING_OMISSIONS_DETECTED"
+    
+    # Sound summary preserving Sheehan and Apoplexy with 4 pillars
+    sound_summary = {
+        "modules": [
+            {
+                "name": "سندرم شیهان و آپوپلکسی هیپوفیز",
+                "definition_and_etiology": [
+                    "نکروز ایسکمیک غده هیپوفیز پس از زایمان به دنبال هموراژی شدید و افت فشار"
+                ],
+                "pathophysiology_cascade": [
+                    "خونریزی حاد زایمان -> افت پرفیوژن هیپوفیز هیپرتروفیه -> انفارکتوس بافت سلار"
+                ],
+                "clinical_presentation": [
+                    {"sign": "عدم توانایی شیردهی (Agalactorrhea) و آمنوره پس از زایمان", "mechanism": "نارسایی پرولاکتین و گنادوتروپین‌ها"}
+                ],
+                "diagnostics": {
+                    "best_initial_test": "سنجش سطح سرمی هورمون‌های هیپوفیز (PRL, TSH, LH, FSH)",
+                    "gold_standard": "MRI ناحیه هیپوفیز و زین ترکی"
+                },
+                "high_yield_pearls": [
+                    "در آپوپلکسی هیپوفیز، تجویز فوری هیدروکورتیزون وریدی قبل از هر اقدام جراحی حیاتی است."
+                ],
+                "pharmacology_and_management": [
+                    {
+                        "drug_class": "لووتیروکسین و هیدروکورتیزون",
+                        "mechanism": "جایگزینی هورمونی با دوز 100 میکروگرم",
+                        "exam_pearl": "همیشه کورتون قبل از لووتیروکسین شروع شود تا بحران آدرنال رخ ندهد."
+                    }
+                ]
+            }
+        ]
+    }
+    
+    rep_sound = audit_coverage(src, sound_summary)
+    assert rep_sound["scores"]["illness_script_compliant"], (
+        f"Sound summary failed illness script audit! Audit: {rep_sound['illness_script_audit']}"
+    )
+    assert len(rep_sound["illness_script_audit"]["omitted_subtle_syndromes"]) == 0
+    print("[PASS] Bug U Test Passed: Anti-Pharmacology-Skew Law & Illness Script Integrity Gate enforces full disease script preservation.")
+
+def test_bug_v_clinical_semiology_track_and_anki_synthesis():
+    """Bug V: Track 4 Clinical Semiology & Physical Examination extraction and Anki card synthesis."""
+    from build_summary_pack import (
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        get_or_synthesize_flashcards
+    )
+    
+    data = {
+        "topic_title": "سمیولوژی غدد درون‌ریز",
+        "organ_system": "غدد درون‌ریز",
+        "clinical_semiology": [
+            {
+                "maneuver_or_sign": "مانور بلعیدن آب و لمس تیروئید",
+                "technique": "قرارگیری پشت سر بیمار، لمس همزمان با بلع آب",
+                "clinical_significance": "افتراق توده‌های تیروئید از سایر توده‌های قدام گردن",
+                "pathology_association": "گواتر و ندول‌های تیروئید"
+            },
+            {
+                "maneuver_or_sign": "علامت شوستک (Chvostek sign) و تروسو (Trousseau sign)",
+                "technique": "ضربه به عصب فاسیال قدام گوش / باد کردن کاف فشارسنج بالاتر از سیستول به مدت 3 دقیقه",
+                "clinical_significance": "اسپاسم کارپوپدال (Main d'accoucheur) ناشی از تحریک‌پذیری عصبی-عضلانی",
+                "pathology_association": "هیپوکلسمی حاد و تتانی"
+            }
+        ],
+        "modules": [
+            {
+                "name": "هیپوپاراتیروئیدیسم",
+                "clinical_presentation": [{"sign": "تتانی و پارستزی", "mechanism": "کاهش کلسیم یونیزه"}],
+                "diagnostics": {"best_initial_test": "سنجش کلسیم سرم", "gold_standard": "سنجش PTH"}
+            }
+        ]
+    }
+    
+    # 1. Test Word generation
+    out_docx = "dist/diag_test_v.docx"
+    build_docx_summary(data, out_docx)
+    assert os.path.exists(out_docx), "DOCX not generated!"
+    
+    # 2. Test Markdown generation
+    out_md = "dist/diag_test_v.md"
+    build_markdown_summary(data, out_md)
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "سمیولوژی و معاینه بالینی" in md_text, "Semiology heading missing in Markdown!"
+    assert "علامت شوستک" in md_text, "Chvostek sign missing in Markdown!"
+    
+    # 3. Test HTML generation
+    out_html = "dist/diag_test_v.html"
+    build_html_summary(data, out_html)
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "semiology-card" in html_text or "semiology" in html_text, "Semiology styling missing in HTML!"
+    assert "مانور بلعیدن آب" in html_text, "Maneuver missing in HTML!"
+    
+    # 4. Test Anki synthesis
+    cards = get_or_synthesize_flashcards(data)
+    semiology_cards = [c for c in cards if "Semiology" in c.get("tag", "")]
+    assert len(semiology_cards) >= 2, f"Expected at least 2 semiology Anki cards, got: {len(semiology_cards)}"
+    assert any("شوستک" in c["text"] for c in semiology_cards), "Chvostek sign missing from Anki cards!"
+    
+    print("[PASS] Bug V Test Passed: Clinical Semiology track rendered across DOCX, MD, HTML, and Anki decks.")
+
+def test_bug_w_morning_exam_checklist_and_comparative_matrices():
+    """Bug W: 30-Point Morning-of-Exam Golden Capsule and Comparative Matrices rendering."""
+    from build_summary_pack import (
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        ensure_master_matrices
+    )
+    
+    data = {
+        "topic_title": "اورژانس‌های غدد",
+        "organ_system": "غدد درون‌ریز",
+        "modules": [
+            {
+                "name": "طوفان تیروئیدی (Thyroid Storm)",
+                "high_yield_pearls": [
+                    "ترتیب احیا: ۱. پروپرانولول ۲. PTU یا متی‌مازول ۳. محلول ید لوگول (حداقل ۱ ساعت پس از PTU) ۴. هیدروکورتيزون"
+                ],
+                "contraindications_and_warnings": [
+                    "تجویز آسپرین در طوفان تیروئیدی ممنوع است چون T4 متصل را آزاد می‌کند."
+                ]
+            }
+        ],
+        "comparative_matrices": [
+            {
+                "title": "جدول تطبیقی تیروئیدیت‌ها",
+                "headers": ["نوع تیروئیدیت", "درد گردن", "ESR", "جذب ید (RAIU)", "درمان اصلی"],
+                "rows": [
+                    ["هاشیموتو (مزمن لنفوسیتی)", "ندارد (بدون درد)", "طبیعی", "متغیر / نرمال", "لووتیروکسین"],
+                    ["دکورون (تحت حاد گرانولوماتوز)", "شدید و تیرکشنده به فک", "بسیار بالا (> 50)", "بسیار پایین (< 1%)", "NSAIDs / کورتون"]
+                ]
+            }
+        ],
+        "morning_exam_checklist": [
+            "در طوفان تیروئیدی تجویز ید حتماً باید حداقل ۱ ساعت پس از PTU انجام شود.",
+            "استریای بنفش عریض بالای ۱ سانتی‌متر اختصاصی‌ترین نشانه کوشینگ است."
+        ]
+    }
+    
+    # Check auto-synthesis if checklist omitted
+    empty_checklist_data = {"topic_title": "تست", "modules": [{"name": "A", "high_yield_pearls": ["نکته ۱"]}]}
+    ensure_master_matrices(empty_checklist_data)
+    assert "morning_exam_checklist" in empty_checklist_data, "ensure_master_matrices failed to synthesize checklist!"
+    assert len(empty_checklist_data["morning_exam_checklist"]) >= 1
+    
+    # Test Word
+    out_docx = "dist/diag_test_w.docx"
+    build_docx_summary(data, out_docx)
+    assert os.path.exists(out_docx)
+    
+    # Test Markdown
+    out_md = "dist/diag_test_w.md"
+    build_markdown_summary(data, out_md)
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "چک‌لیست طلایی ۳۰ نکته‌ای" in md_text or "۳۰ نکته‌ای" in md_text
+    assert "جدول تطبیقی تیروئیدیت‌ها" in md_text
+    
+    # Test HTML
+    out_html = "dist/diag_test_w.html"
+    build_html_summary(data, out_html)
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "checklist-box" in html_text or "morning_exam_checklist" in html_text or "کپسول" in html_text
+    assert "جدول تطبیقی تیروئیدیت‌ها" in html_text
+    
+    print("[PASS] Bug W Test Passed: Morning exam checklist & comparative matrices rendered across all deliverables.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -695,4 +952,8 @@ if __name__ == "__main__":
     test_bug_q_anki_contraindication_and_alert_synthesis()
     test_bug_r_table_cell_textbox_preservation()
     test_bug_s_english_prose_stop_words_in_entity_recall()
+    test_bug_t_html_and_pdf_generation_with_bidi_stamping()
+    test_bug_u_anti_pharmacology_skew_illness_script_integrity()
+    test_bug_v_clinical_semiology_track_and_anki_synthesis()
+    test_bug_w_morning_exam_checklist_and_comparative_matrices()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

@@ -213,6 +213,115 @@ def extract_instructor_emphasis(text: str) -> List[str]:
             results.append(s_clean)
     return results
 
+def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Audits Illness Script Integrity according to the Anti-Pharmacology-Skew Law (Principle 3):
+    Ensures clinical conditions/diseases preserve the 4 essential pillars:
+      1. Etiology & Pathophysiologic Cascade (definition_and_etiology / pathophysiology_cascade / flowchart_steps)
+      2. Clinical Presentation & Triads (clinical_presentation / triads_and_pathognomonics / symptoms_and_signs)
+      3. Diagnostics Bifurcation (best_initial_test and/or gold_standard)
+      4. High-Yield Pearls & Contraindications (high_yield_pearls / exam_traps / contraindications_and_warnings / instructor_exam_alerts)
+    Also verifies rare/subtle syndromes taught in source are preserved in summary modules or comparative matrices,
+    strictly preventing pharmacology over-indexing from dropping clinical syndromes.
+    """
+    modules = summary_data.get("modules") or []
+    raw_summary_text = json.dumps(summary_data, ensure_ascii=False)
+    norm_summary_text = normalize_medical_text(raw_summary_text)
+
+    # 1. Inspect 4 pillars for each clinical module
+    module_audits = []
+    sound_modules_count = 0
+    total_clinical_modules = 0
+
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        m_name = mod.get("name", "Unnamed Module")
+
+        has_etio = bool(mod.get("definition_and_etiology") or mod.get("pathophysiology_cascade") or mod.get("flowchart_steps") or mod.get("etiology"))
+        has_pres = bool(mod.get("clinical_presentation") or mod.get("triads_and_pathognomonics") or mod.get("symptoms_and_signs"))
+        diag = mod.get("diagnostics")
+        has_diag = bool(isinstance(diag, dict) and (diag.get("best_initial_test") or diag.get("gold_standard")))
+        has_pearls = bool(mod.get("high_yield_pearls") or mod.get("exam_traps") or mod.get("contraindications_and_warnings") or mod.get("instructor_exam_alerts"))
+        has_pharm = bool(mod.get("pharmacology_and_management"))
+
+        is_clinical = has_etio or has_pres or has_diag or (not has_pharm)
+        if is_clinical:
+            total_clinical_modules += 1
+            pillars_met = sum([has_etio, has_pres, has_diag, has_pearls])
+            # A module is sound if it preserves at least 2 pillars (or all applicable non-null pillars from source)
+            is_sound = (pillars_met >= 2)
+            if is_sound:
+                sound_modules_count += 1
+
+            module_audits.append({
+                "module": m_name,
+                "pillars_met_count": pillars_met,
+                "has_etiology_cascade": has_etio,
+                "has_clinical_presentation": has_pres,
+                "has_diagnostics": has_diag,
+                "has_pearls_or_warnings": has_pearls,
+                "is_sound": is_sound
+            })
+
+    compliance_pct = round((sound_modules_count / total_clinical_modules * 100), 1) if total_clinical_modules > 0 else 100.0
+
+    # 2. Check for subtle/rare syndromes taught in source text that might get lost in pharmacology skew
+    SUBTLE_SYNDROMES_WATCHLIST = [
+        ("آپوپلکسی", "apoplexy"),
+        ("شیهان", "sheehan"),
+        ("نلسون", "nelson"),
+        ("کارنی", "carney"),
+        ("fhh", "familial hypocalciuric"),
+        ("خطوط لوزر", "looser"),
+        ("آشرمن", "asherman"),
+        ("cais", "androgen insensitivity"),
+        ("۵-آلفا ردوکتاز", "5-alpha reductase"),
+        ("کوشینگ", "cushing"),
+        ("آدیسون", "addison"),
+        ("فئوکروموسیتوما", "pheochromocytoma"),
+        ("طوفان تیروئیدی", "thyroid storm"),
+        ("میکزدم", "myxedema"),
+    ]
+    detected_source_syndromes = []
+    omitted_subtle_syndromes = []
+
+    norm_src_lower = source_text.lower()
+    for fa_term, en_term in SUBTLE_SYNDROMES_WATCHLIST:
+        if fa_term in norm_src_lower or en_term in norm_src_lower:
+            detected_source_syndromes.append(fa_term)
+            if fa_term not in norm_summary_text.lower() and en_term not in norm_summary_text.lower():
+                omitted_subtle_syndromes.append(fa_term)
+
+    # 3. Check for pharmacology skew (drugs over-indexing over clinical scripts)
+    total_pharm_words = 0
+    total_clinical_words = 0
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        pharm_str = json.dumps(mod.get("pharmacology_and_management") or [], ensure_ascii=False)
+        clin_str = json.dumps({k: v for k, v in mod.items() if k != "pharmacology_and_management"}, ensure_ascii=False)
+        total_pharm_words += len(pharm_str.split())
+        total_clinical_words += len(clin_str.split())
+
+    total_words = total_pharm_words + total_clinical_words
+    pharm_word_ratio = (total_pharm_words / total_words) if total_words > 0 else 0.0
+    skew_detected = (pharm_word_ratio > 0.85) and (compliance_pct < 60.0)
+
+    is_compliant = (compliance_pct >= 80.0) and (len(omitted_subtle_syndromes) == 0) and (not skew_detected)
+
+    return {
+        "illness_script_compliant": is_compliant,
+        "illness_script_compliance_pct": compliance_pct,
+        "sound_clinical_modules_count": sound_modules_count,
+        "total_clinical_modules": total_clinical_modules,
+        "pharmacology_skew_detected": skew_detected,
+        "pharmacology_word_ratio": round(pharm_word_ratio, 2),
+        "detected_source_syndromes": detected_source_syndromes,
+        "omitted_subtle_syndromes": omitted_subtle_syndromes,
+        "module_breakdown": module_audits
+    }
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -302,11 +411,15 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         if not preserved:
             omitted_emphasis.append(emp)
 
+    # 6. Anti-Pharmacology-Skew & Illness Script Integrity Audit
+    illness_script_report = audit_illness_script_integrity(norm_source, summary_data)
+
     passed = (
         num_coverage_pct >= 80.0
         and entity_recall_pct >= 85.0
         and all_bifurcations_valid
         and len(omitted_warnings) == 0
+        and illness_script_report["illness_script_compliant"]
     )
 
     report = {
@@ -316,7 +429,10 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "entity_recall_pct": entity_recall_pct,
             "diagnostic_bifurcation_compliant": all_bifurcations_valid,
             "contraindications_omitted_count": len(omitted_warnings),
-            "instructor_emphasis_omitted_count": len(omitted_emphasis)
+            "instructor_emphasis_omitted_count": len(omitted_emphasis),
+            "illness_script_compliance_pct": illness_script_report["illness_script_compliance_pct"],
+            "illness_script_compliant": illness_script_report["illness_script_compliant"],
+            "pharmacology_skew_detected": illness_script_report["pharmacology_skew_detected"]
         },
         "total_source_clinical_numbers": len(source_nums),
         "total_omitted_numbers_count": len(unique_omissions),
@@ -324,7 +440,8 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "omitted_contraindications": omitted_warnings,
         "omitted_instructor_emphasis": omitted_emphasis,
         "missing_entities": missing_entities,
-        "bifurcation_details": bifurcation_status
+        "bifurcation_details": bifurcation_status,
+        "illness_script_audit": illness_script_report
     }
     return report
 
@@ -363,6 +480,11 @@ def main():
     print(f"  • Numerical Cutoff Coverage: {report['scores']['numerical_coverage_pct']}%")
     print(f"  • Medical Entity Recall:    {report['scores']['entity_recall_pct']}%")
     print(f"  • Diagnostic Bifurcation:   {'Passed' if report['scores']['diagnostic_bifurcation_compliant'] else 'Failed'}")
+    print(f"  • Illness Script Integrity: {report['scores']['illness_script_compliance_pct']}% ({'Passed' if report['scores']['illness_script_compliant'] else 'Failed'})")
+    if report["scores"].get("pharmacology_skew_detected"):
+        print(f"  ⚠️ Warning: Severe pharmacology skew detected! Clinical illness scripts are being eclipsed by drug tables.")
+    if report.get("illness_script_audit", {}).get("omitted_subtle_syndromes"):
+        print(f"  ⛔ Alert: Subtle clinical syndromes in source omitted: {report['illness_script_audit']['omitted_subtle_syndromes']}")
     if report["omitted_clinical_numbers"]:
         print(f"  ⚠️ Warning: {len(report['omitted_clinical_numbers'])} clinical numbers were omitted from the summary!")
         for om in report["omitted_clinical_numbers"][:3]:

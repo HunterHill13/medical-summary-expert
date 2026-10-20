@@ -15,7 +15,8 @@ import json
 import re
 import argparse
 import hashlib
-from typing import List, Dict, Any, Optional
+import io
+from typing import List, Dict, Any, Optional, Union
 
 # Force UTF-8 encoding in stdout/stderr
 if sys.stdout.encoding != 'utf-8':
@@ -44,6 +45,10 @@ COLOR_TABLE_HEADER_BG  = "78281F"            # Burgundy Table Header
 COLOR_TABLE_HEADER_TXT = "FFFFFF"            # White Table Header Text
 COLOR_TABLE_ALT_ROW    = "FDFEFE"            # Alternating Row Light Fill
 COLOR_MUTED_GRAY       = (0x7F, 0x8C, 0x8D)  # Gray for timestamps/meta
+COLOR_SEMIOLOGY_TEAL   = "16A085"            # Teal for Track 4: Clinical Semiology
+COLOR_SEMIOLOGY_BG     = "E8F8F5"            # Light Teal Fill
+COLOR_CHECKLIST_NAVY   = "1A5276"            # Navy for Morning-of-Exam Capsule
+COLOR_CHECKLIST_BG     = "FEFDE8"            # Warm Amber Tint for Morning Checklist
 
 FONT_DUBAI = "Dubai"
 
@@ -406,6 +411,86 @@ def add_clinical_vignettes(doc, vignettes: List[Dict[str, Any]]):
         p_after = doc.add_paragraph()
         set_p_rtl(p_after, space_before_pt=0, space_after_pt=6)
 
+
+def add_semiology_box(doc, semiology_items: List[Dict[str, Any]]):
+    """Renders Track 4: Clinical Semiology & Physical Examination maneuvers in Word."""
+    if not semiology_items:
+        return
+    formatted_items = []
+    for s in semiology_items:
+        if not isinstance(s, dict):
+            continue
+        man = s.get("maneuver_or_sign", "")
+        tech = s.get("technique", "")
+        sig = s.get("clinical_significance", "")
+        pearl = s.get("exam_pearl", "")
+        line = f"🩺 {man}"
+        if tech:
+            line += f" — روش انجام: {tech}"
+        if sig:
+            line += f" ← اهمیت بالینی: {sig}"
+        if pearl:
+            line += f" (نکته امتحانی: {pearl})"
+        formatted_items.append(line)
+    if formatted_items:
+        add_callout_box(
+            doc,
+            title="🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Physical Exam)",
+            content_items=formatted_items,
+            border_color=COLOR_SEMIOLOGY_TEAL,
+            header_bg=COLOR_SEMIOLOGY_BG,
+            body_bg="FFFFFF",
+            icon="🩺"
+        )
+
+
+def add_morning_exam_checklist(doc, checklist_items: List[str]):
+    """Renders the 30-Point Morning-of-Exam Capsule with check-boxes in Word."""
+    if not checklist_items:
+        return
+    valid_items = [str(x).strip() for x in checklist_items if x and str(x).strip()]
+    if not valid_items:
+        return
+    p_head = doc.add_paragraph()
+    set_p_rtl(p_head, space_before_pt=18, space_after_pt=6)
+    add_r(p_head, "📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)",
+          font_name=FONT_DUBAI, size_pt=14.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+
+    table = doc.add_table(rows=len(valid_items), cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    tblPr = table._tbl.tblPr
+    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+
+    for idx, item in enumerate(valid_items):
+        cell = table.cell(idx, 0)
+        set_cell_margins(cell, top=100, bottom=100, left=160, right=160)
+        fill_bg = COLOR_CHECKLIST_BG if idx % 2 == 0 else "FFFFFF"
+        set_cell_shading(cell, fill_bg)
+        set_cell_borders(cell, bottom="single", color="E0E0E0", sz="4")
+        p = cell.paragraphs[0]
+        set_p_rtl(p, space_before_pt=1, space_after_pt=2)
+        add_r(p, "☐ ", font_name="Arial", size_pt=12.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=False)
+        add_r(p, f"نکته {idx+1}: ", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+        add_bidi_text(p, item, font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_CHARCOAL)
+
+    p_after = doc.add_paragraph()
+    set_p_rtl(p_after, space_before_pt=0, space_after_pt=8)
+
+
+def add_comparative_matrices(doc, matrices: List[Dict[str, Any]]):
+    """Renders specialized comparative matrices (e.g. Thyroiditis, Amenorrhea, Emergency Resuscitation) in Word."""
+    if not matrices or not isinstance(matrices, list):
+        return
+    for mat in matrices:
+        if not isinstance(mat, dict):
+            continue
+        title = mat.get("title", "ماتریس مقایسه‌ای تخصصی")
+        headers = mat.get("headers", [])
+        rows = mat.get("rows", [])
+        if headers and rows:
+            add_comparison_table(doc, title=title, headers=headers, rows=rows)
+
 # ---------------------------------------------------------------------------
 # Core Summary Document Compilation Engine
 # ---------------------------------------------------------------------------
@@ -463,6 +548,45 @@ def ensure_master_matrices(data: Dict[str, Any]):
                 "headers": ["بیماری / مبحث", "اتیولوژی اصلی", "مکانیسم پاتوفیزیولوژی کلیدی", "علامت شاخص / تریاد", "اقدام تشخیصی نخستین", "درمان انتخابی"],
                 "rows": crash_rows
             }
+
+    # 3. Morning-of-Exam 30-Point High-Yield Capsule (Auto-synthesized if missing)
+    if not data.get("morning_exam_checklist") and len(modules) >= 1:
+        bullets = []
+        # Priority 1: Instructor Exam Alerts
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            for a in (mod.get("instructor_exam_alerts") or []):
+                if a and str(a).strip():
+                    bullets.append(f"تأکید مستقیم استاد ({m_name}): {str(a).strip()}")
+        # Priority 2: Absolute Contraindications & Lethal Withholds
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            for c in (mod.get("contraindications_and_warnings") or []):
+                if c and str(c).strip():
+                    bullets.append(f"ممنوعیت مرگبار ({m_name}): {str(c).strip()}")
+        # Priority 3: Diagnostic Gold Standards
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            diag = mod.get("diagnostics") or {}
+            gs = diag.get("gold_standard") if isinstance(diag, dict) else None
+            if gs and str(gs).strip() and str(gs).lower() not in {"null", "none", "ذکر نشده"}:
+                bullets.append(f"استاندارد طلایی تشخیص {m_name}: {str(gs).strip()}")
+        # Priority 4: High-Yield Pearls
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            for p in (mod.get("high_yield_pearls") or []):
+                if p and str(p).strip():
+                    bullets.append(f"نکته های‌یلد ({m_name}): {str(p).strip()}")
+        if bullets:
+            data["morning_exam_checklist"] = bullets[:30]
 
 
 def build_docx_summary(data: Dict[str, Any], output_path: str):
@@ -565,6 +689,10 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                       color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
                 add_bidi_text(p_item, f"علت فیزیوپاتولوژیک ← {mech}", font_name=FONT_DUBAI,
                               size_pt=10.5, bold=False, color_rgb=COLOR_TEXT_CHARCOAL)
+
+        # Track 4: Clinical Semiology & Physical Examination (سیر سمیولوژی و مانورهای بالینی)
+        if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            add_semiology_box(doc, mod["clinical_semiology"])
 
         # 4. Paraclinical & Diagnostic Findings
         if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
@@ -681,6 +809,12 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
             add_clinical_vignettes(doc, mod["clinical_vignettes"])
 
     # -----------------------------------------------------------------------
+    # Track 4: Clinical Semiology & Physical Examination (سمیولوژی و معاینات بالینی)
+    # -----------------------------------------------------------------------
+    if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
+        add_semiology_box(doc, data["clinical_semiology"])
+
+    # -----------------------------------------------------------------------
     # Master Pharmacology Matrix (ماتریس جامع داروشناسی بالینی)
     # -----------------------------------------------------------------------
     if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
@@ -712,6 +846,18 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
         headers = crash.get("headers", ["بیماری", "اتیولوژی اصلی", "مکانیسم پاتوفیزیولوژی کلیدی", "علامت شاخص / تریاد", "اقدام تشخیصی نخستین", "درمان انتخابی"])
         rows = crash.get("rows", [])
         add_comparison_table(doc, title="جدول مقایسه‌ای جامع مباحث برای مرور سریع", headers=headers, rows=rows)
+
+    # -----------------------------------------------------------------------
+    # Comparative Matrices (ماتریس‌های تطبیقی جامع تخصصی)
+    # -----------------------------------------------------------------------
+    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+        add_comparative_matrices(doc, data["comparative_matrices"])
+
+    # -----------------------------------------------------------------------
+    # 30-Point Morning-of-Exam Capsule (چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون)
+    # -----------------------------------------------------------------------
+    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+        add_morning_exam_checklist(doc, data["morning_exam_checklist"])
 
     # Save Word Document
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -804,6 +950,26 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                     lines.append(f"- • {lab}")
             lines.append("")
 
+        # Clinical Semiology & Physical Examination (سیر سمیولوژی و مانورهای بالینی)
+        if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            lines.append("### 🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)")
+            for sem in mod["clinical_semiology"]:
+                if not isinstance(sem, dict):
+                    continue
+                man = sem.get("maneuver_or_sign", "")
+                tech = sem.get("technique", "")
+                sig = sem.get("clinical_significance", "")
+                pearl = sem.get("exam_pearl", "")
+                desc = f"- 🩺 **{man}:** "
+                if tech:
+                    desc += f"روش انجام ← {tech}"
+                if sig:
+                    desc += f" | اهمیت بالینی ← {sig}"
+                if pearl:
+                    desc += f" *(نکته آزمون: {pearl})*"
+                lines.append(desc)
+            lines.append("")
+
         # Pharmacology
         if mod.get("pharmacology_and_management") and isinstance(mod["pharmacology_and_management"], list):
             lines.append("### ۵. اصول فارماکولوژی مبتنی بر مکانیسم (Pharmacology & Rx)")
@@ -888,6 +1054,21 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                     lines.append(f"*تحلیل فیزیوپاتولوژی:* {v['rationale']}\n")
                 lines.append("</details>\n")
 
+    # Track 4: Clinical Semiology & Physical Examination (سمیولوژی و معاینات بالینی)
+    if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
+        lines.append("## 🩺 سمیولوژی و معاینه بالینی (Track 4: Clinical Semiology & Physical Examination)\n")
+        lines.append("| نشانه یا مانور بالینی | نحوه اجرا / تکنیک | اهمیت تشخیصی | بیماری و پاتولوژی مرتبط |")
+        lines.append("| --- | --- | --- | --- |")
+        for sem in data["clinical_semiology"]:
+            if not isinstance(sem, dict):
+                continue
+            m_sign = sem.get("maneuver_or_sign", "-")
+            m_tech = sem.get("technique", "-")
+            m_sig = sem.get("clinical_significance", "-")
+            m_path = sem.get("pathology_association", "-")
+            lines.append(f"| **{m_sign}** | {m_tech} | {m_sig} | *{m_path}* |")
+        lines.append("")
+
     # Master Pharmacology Matrix
     if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
         matrix = data["master_pharmacology_matrix"]
@@ -908,6 +1089,30 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
         for row in crash.get("rows", []):
             lines.append(format_md_table_row(row))
+        lines.append("")
+
+    # Comparative Matrices (ماتریس‌های تطبیقی جامع تخصصی)
+    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+        for mat in data["comparative_matrices"]:
+            if not isinstance(mat, dict):
+                continue
+            title = mat.get("title", "ماتریس مقایسه‌ای تخصصی")
+            headers = mat.get("headers", [])
+            rows = mat.get("rows", [])
+            if headers and rows:
+                lines.append(f"## 📊 {title}\n")
+                lines.append(format_md_table_row(headers))
+                lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+                for row in rows:
+                    lines.append(format_md_table_row(row))
+                lines.append("")
+
+    # 30-Point Morning-of-Exam Capsule (چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون)
+    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+        lines.append("## 📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)\n")
+        lines.append("> نکات کلیدی جهت مرور سریع ۱۰ دقیقه‌ای قبل از ورود به جلسه امتحان:\n")
+        for idx, item in enumerate(data["morning_exam_checklist"], 1):
+            lines.append(f"- [ ] **{idx}.** {item}")
         lines.append("")
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -976,6 +1181,31 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "extra": f"نکته اولویت اول و سؤال قطعی امتحانی تدریس‌شده توسط استاد در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::InstructorAlerts"
                 })
+
+        # Synthesize from Clinical Semiology (Track 4)
+        for sem in (mod.get("clinical_semiology") or []):
+            if isinstance(sem, dict) and sem.get("maneuver_or_sign"):
+                man = str(sem.get("maneuver_or_sign", "")).strip()
+                tech = str(sem.get("technique", "")).strip()
+                sig = str(sem.get("clinical_significance", "")).strip()
+                cards.append({
+                    "text": f"در معاینه فیزیکی و ارزیابی بالینی {mod_name}، مانور یا نشانه {{{{c1::{man}}}}} بررسی می‌شود.",
+                    "extra": f"روش و اهمیت بالینی سمیولوژی: {tech} ← {sig}",
+                    "tag": f"PhysioPath::{mod_name}::Semiology"
+                })
+
+    # Synthesize from Top-Level Clinical Semiology (Track 4)
+    topic_name = data.get("topic_title", "General")
+    for sem in (data.get("clinical_semiology") or []):
+        if isinstance(sem, dict) and sem.get("maneuver_or_sign"):
+            man = str(sem.get("maneuver_or_sign", "")).strip()
+            tech = str(sem.get("technique", "")).strip()
+            sig = str(sem.get("clinical_significance", "")).strip()
+            cards.append({
+                "text": f"در معاینه فیزیکی و ارزیابی بالینی ({topic_name})، مانور یا نشانه {{{{c1::{man}}}}} ارزیابی می‌شود.",
+                "extra": f"روش و اهمیت بالینی سمیولوژی: {tech} ← {sig}",
+                "tag": f"PhysioPath::{topic_name}::Semiology"
+            })
     return cards
 
 
@@ -1075,6 +1305,615 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
 
 
 # ---------------------------------------------------------------------------
+# HTML & PDF Generation Engine (Playwright + Persian BiDi Stamping)
+# ---------------------------------------------------------------------------
+
+def build_html_summary(data: Dict[str, Any], output_path: str) -> str:
+    """
+    Renders an interactive, standalone publication-grade HTML study guide
+    optimized for both screen reading and exact A4 PDF printing.
+    """
+    ensure_master_matrices(data)
+    topic_title = data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
+    topic_title_en = data.get("topic_title_en", "")
+    organ_system = data.get("organ_system", "فیزیوپاتولوژی بالینی")
+
+    html_parts = []
+    html_parts.append("""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>""" + topic_title + """</title>
+<style>
+@page {
+    size: A4;
+    margin: 20mm 13mm 17mm 13mm;
+}
+@media print {
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    .page-break {
+        page-break-after: always;
+        break-after: page;
+    }
+    .no-break {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+}
+body {
+    font-family: 'Dubai', 'Vazirmatn', Tahoma, 'Segoe UI', Arial, sans-serif;
+    direction: rtl;
+    text-align: right;
+    color: #262626;
+    background-color: #FFFFFF;
+    line-height: 1.6;
+    font-size: 10.5pt;
+    margin: 0;
+    padding: 0;
+}
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+.banner {
+    border-bottom: 2px solid #78281F;
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+}
+.title-main {
+    color: #78281F;
+    font-size: 18pt;
+    font-weight: bold;
+    margin: 0 0 4px 0;
+}
+.title-en {
+    color: #0E6251;
+    font-size: 13pt;
+    font-weight: bold;
+}
+.meta-tag {
+    color: #7F8C8D;
+    font-size: 9.5pt;
+    margin-top: 4px;
+}
+.module-header {
+    color: #78281F;
+    font-size: 14pt;
+    font-weight: bold;
+    border-right: 4px solid #78281F;
+    padding-right: 10px;
+    margin: 24px 0 12px 0;
+}
+.section-title {
+    color: #0E6251;
+    font-size: 11pt;
+    font-weight: bold;
+    margin: 14px 0 6px 0;
+}
+.callout {
+    border-radius: 6px;
+    margin: 12px 0;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.callout-header {
+    font-weight: bold;
+    padding: 6px 12px;
+    font-size: 11pt;
+}
+.callout-body {
+    padding: 10px 14px;
+    font-size: 10pt;
+    line-height: 1.6;
+}
+.callout-patho { border: 1.5px solid #85C1E9; }
+.callout-patho .callout-header { background: #EBF5FB; color: #1B4F72; border-bottom: 1px solid #85C1E9; }
+.callout-patho .callout-body { background: #FAFDFF; }
+
+.callout-semiology { border: 1.5px solid #16A085; }
+.callout-semiology .callout-header { background: #E8F8F5; color: #0E6251; border-bottom: 1px solid #16A085; }
+.callout-semiology .callout-body { background: #FDFEFE; }
+
+.callout-pearl { border: 1.5px solid #D35400; }
+.callout-pearl .callout-header { background: #FEF9E7; color: #7E5109; border-bottom: 1px solid #D35400; }
+.callout-pearl .callout-body { background: #FFFFFD; }
+
+.callout-alert { border: 1.5px solid #F39C12; }
+.callout-alert .callout-header { background: #FEFDE8; color: #7D6608; border-bottom: 1px solid #F39C12; }
+.callout-alert .callout-body { background: #FFFFFB; }
+
+.callout-contra { border: 1.5px solid #C0392B; }
+.callout-contra .callout-header { background: #FDEDEC; color: #78281F; border-bottom: 1px solid #C0392B; }
+.callout-contra .callout-body { background: #FFFDFD; }
+
+.callout-vignette { border: 1.5px solid #6C3483; }
+.callout-vignette .callout-header { background: #F5EEF8; color: #512E5F; border-bottom: 1px solid #6C3483; }
+.callout-vignette .callout-body { background: #FFFFFF; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+th {
+    background-color: #78281F;
+    color: #FFFFFF;
+    padding: 8px 10px;
+    font-weight: bold;
+    border: 1px solid #78281F;
+    text-align: right;
+}
+td {
+    padding: 7px 10px;
+    border: 1px solid #E0E0E0;
+    text-align: right;
+}
+tr:nth-child(even) { background-color: #FDFEFE; }
+.checklist-item {
+    padding: 5px 8px;
+    margin: 3px 0;
+    background: #FEFDE8;
+    border-bottom: 1px solid #E0E0E0;
+    display: flex;
+    align-items: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.box {
+    margin-left: 8px;
+    font-size: 12pt;
+    color: #78281F;
+    font-weight: bold;
+}
+.cascade-step {
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+}
+.badge-init {
+    display: inline-block;
+    background: #EBF5FB;
+    color: #1B4F72;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 6px;
+}
+.badge-gold {
+    display: inline-block;
+    background: #FEFDE8;
+    color: #7D6608;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 6px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="banner">
+    <div class="title-main">🩺 """ + topic_title + """</div>""")
+    if topic_title_en:
+        html_parts.append(f'    <div class="title-en">({topic_title_en})</div>')
+    html_parts.append(f"""    <div class="meta-tag">📌 کورس: {organ_system} | 🎯 سطح: فیزیوپاتولوژی بالینی | ⚡ نوع سند: کتابچه مرور های‌یلد</div>
+</div>""")
+
+    for mod_idx, mod in enumerate((data.get("modules") or []), 1):
+        if not isinstance(mod, dict):
+            continue
+        m_name = mod.get("name", f"مبحث {mod_idx}")
+        m_name_en = mod.get("name_en", "")
+        en_tag = f" ({m_name_en})" if m_name_en else ""
+        html_parts.append(f'<div class="module-header">■ {m_name}{en_tag}</div>')
+
+        # Definition & Etiology
+        if mod.get("definition_and_etiology") and isinstance(mod["definition_and_etiology"], list):
+            html_parts.append('<div class="section-title">۱. تعریف و اتیولوژی (Definition & Etiology)</div><ul>')
+            for item in mod["definition_and_etiology"]:
+                html_parts.append(f'<li>{item}</li>')
+            html_parts.append('</ul>')
+
+        # Pathophysiology Cascade
+        if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
+            cascade = [str(c).strip() for c in mod["pathophysiology_cascade"] if c and str(c).strip()]
+            if cascade:
+                html_parts.append('<div class="callout callout-patho"><div class="callout-header">🔄 ۲. زنجیره پاتوفیزیولوژی (Pathophysiological Cascade)</div><div class="callout-body">')
+                for c_idx, step in enumerate(cascade, 1):
+                    arrow = " ← " if c_idx < len(cascade) else ""
+                    html_parts.append(f'<div class="cascade-step"><b>گام {c_idx}:</b> {step}{arrow}</div>')
+                html_parts.append('</div></div>')
+
+        # Clinical Presentation
+        if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
+            html_parts.append('<div class="section-title">۳. تظاهرات بالینی و توجیه مکانیسمی (Clinical Presentation)</div><ul>')
+            for cp in mod["clinical_presentation"]:
+                if isinstance(cp, dict):
+                    sign = cp.get("sign", "")
+                    mech = cp.get("mechanism", "")
+                    html_parts.append(f'<li><b>{sign}:</b> توجیه مکانیسمی ← {mech}</li>')
+            html_parts.append('</ul>')
+
+        # Diagnostics
+        if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
+            diag = mod["diagnostics"]
+            html_parts.append('<div class="section-title">۴. بررسی‌های تشخیصی (Diagnostic Workup)</div><ul>')
+            b_init = diag.get("best_initial_test")
+            if b_init and str(b_init).strip() and str(b_init).lower() not in {"null", "none", "ذکر نشده"}:
+                html_parts.append(f'<li><span class="badge-init">اقدام تشخیصی اولیه</span> {b_init}</li>')
+            gold = diag.get("gold_standard")
+            if gold and str(gold).strip() and str(gold).lower() not in {"null", "none", "ذکر نشده"}:
+                html_parts.append(f'<li><span class="badge-gold">استاندارد طلایی</span> {gold}</li>')
+            for lab in (diag.get("key_labs") or []):
+                if lab and str(lab).strip():
+                    html_parts.append(f'<li>• {lab}</li>')
+            html_parts.append('</ul>')
+
+        # Track 4: Clinical Semiology
+        if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
+            for sem in mod["clinical_semiology"]:
+                if isinstance(sem, dict):
+                    man = sem.get("maneuver_or_sign", "")
+                    tech = sem.get("technique", "")
+                    sig = sem.get("clinical_significance", "")
+                    pearl = sem.get("exam_pearl", "")
+                    line = f"<b>🩺 {man}:</b> "
+                    if tech:
+                        line += f"روش انجام ← {tech}"
+                    if sig:
+                        line += f" | اهمیت بالینی ← {sig}"
+                    if pearl:
+                        line += f" <i>(نکته: {pearl})</i>"
+                    html_parts.append(f'<div>{line}</div>')
+            html_parts.append('</div></div>')
+
+        # Pharmacology
+        if mod.get("pharmacology_and_management") and isinstance(mod["pharmacology_and_management"], list):
+            html_parts.append('<div class="section-title">۵. اصول فارماکولوژی مبتنی بر مکانیسم (Mechanism-Based Rx)</div><ul>')
+            for rx in mod["pharmacology_and_management"]:
+                if isinstance(rx, dict):
+                    d_class = rx.get("drug_class", "")
+                    mech = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
+                    pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
+                    p_txt = f" | نکته: {pearl}" if pearl else ""
+                    html_parts.append(f'<li>💊 <b>{d_class}:</b> مکانیسم اثر: {mech}{p_txt}</li>')
+            html_parts.append('</ul>')
+
+        # Differential Diagnosis Table
+        if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
+            dt = mod["differential_table"]
+            headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
+            rows = dt.get("rows", [])
+            if headers and rows:
+                html_parts.append(f'<div class="section-title">۶. تشخیص افتراقی ({m_name})</div><table><thead><tr>')
+                for h in headers:
+                    html_parts.append(f'<th>{h}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for row in rows:
+                    html_parts.append('<tr>')
+                    for cell in row:
+                        html_parts.append(f'<td>{cell}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+
+        # High Yield Pearls
+        if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
+            html_parts.append('<div class="callout callout-pearl"><div class="callout-header">⚡ نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls)</div><div class="callout-body">')
+            for p in mod["high_yield_pearls"]:
+                html_parts.append(f'<div>⚡ {p}</div>')
+            html_parts.append('</div></div>')
+
+        # Instructor Alerts
+        if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
+            html_parts.append('<div class="callout callout-alert"><div class="callout-header">⭐ تأکیدات مستقیم استاد در کلاس</div><div class="callout-body">')
+            for a in mod["instructor_exam_alerts"]:
+                html_parts.append(f'<div>⭐ {a}</div>')
+            html_parts.append('</div></div>')
+
+        # Contraindications & Warnings
+        if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
+            html_parts.append('<div class="callout callout-contra"><div class="callout-header">⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications)</div><div class="callout-body">')
+            for c in mod["contraindications_and_warnings"]:
+                html_parts.append(f'<div>⛔ {c}</div>')
+            html_parts.append('</div></div>')
+
+        # Scoring Criteria
+        if mod.get("scoring_criteria") and isinstance(mod["scoring_criteria"], dict):
+            sc = mod["scoring_criteria"]
+            sc_title = sc.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
+            headers = sc.get("headers", ["معیار", "آستانه", "تفسیر"])
+            rows = sc.get("rows", [])
+            if headers and rows:
+                html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table><thead><tr>')
+                for h in headers:
+                    html_parts.append(f'<th>{h}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for row in rows:
+                    html_parts.append('<tr>')
+                    for cell in row:
+                        html_parts.append(f'<td>{cell}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+
+        # Clinical Vignettes
+        if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
+            for v_idx, v in enumerate(mod["clinical_vignettes"], 1):
+                if isinstance(v, dict):
+                    v_title = v.get("scenario_title", f"سناریوی بالینی {v_idx}")
+                    html_parts.append(f'<div class="callout callout-vignette"><div class="callout-header">📝 خودآزمایی فعال: {v_title}</div><div class="callout-body">')
+                    html_parts.append(f'<p>{v.get("scenario", "")}</p><ul>')
+                    for opt in v.get("options", []):
+                        html_parts.append(f'<li>{opt}</li>')
+                    html_parts.append('</ul>')
+                    corr = v.get("correct_answer", "")
+                    rat = v.get("rationale", "")
+                    html_parts.append(f'<details style="margin-top: 8px; cursor: pointer;"><summary style="font-weight: bold; color: #0E6251;">مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</summary><div style="padding: 8px 12px; background: #FAF9F6; margin-top: 4px; border-right: 3px solid #0E6251;"><b>✓ {corr}</b><br><i>تحلیل مکانیسمی: {rat}</i></div></details>')
+                    html_parts.append('</div></div>')
+
+    # Top-Level Track 4: Clinical Semiology
+    if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
+        html_parts.append('<h2 style="color: #0E6251; border-bottom: 2px solid #16A085; padding-bottom: 6px; margin-top: 30px;">🩺 سمیولوژی و معاینه بالینی (Track 4: Clinical Semiology & Physical Examination)</h2>')
+        html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 مانورهای بالینی و نشانه‌های فیزیکی</div><div class="callout-body">')
+        for sem in data["clinical_semiology"]:
+            if isinstance(sem, dict):
+                man = sem.get("maneuver_or_sign", "")
+                tech = sem.get("technique", "")
+                sig = sem.get("clinical_significance", "")
+                path = sem.get("pathology_association", "")
+                pearl = sem.get("exam_pearl", "")
+                line = f"<b>🩺 {man}:</b> "
+                if tech:
+                    line += f"روش انجام ← {tech}"
+                if sig:
+                    line += f" | اهمیت بالینی ← {sig}"
+                if path:
+                    line += f" | پاتولوژی مرتبط ← <i>{path}</i>"
+                if pearl:
+                    line += f" <i>(نکته: {pearl})</i>"
+                html_parts.append(f'<div style="margin-bottom: 6px;">{line}</div>')
+        html_parts.append('</div></div>')
+
+    # Master Pharmacology Matrix
+    if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
+        matrix = data["master_pharmacology_matrix"]
+        m_title = matrix.get("title", "ماتریس جامع مقایسه داروشناسی بالینی")
+        headers = matrix.get("headers", [])
+        rows = matrix.get("rows", [])
+        if headers and rows:
+            html_parts.append(f'<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">💊 {m_title}</h2>')
+            html_parts.append('<table><thead><tr>')
+            for h in headers:
+                html_parts.append(f'<th>{h}</th>')
+            html_parts.append('</tr></thead><tbody>')
+            for row in rows:
+                html_parts.append('<tr>')
+                for cell in row:
+                    html_parts.append(f'<td>{cell}</td>')
+                html_parts.append('</tr>')
+            html_parts.append('</tbody></table>')
+
+    # Comparative Matrices
+    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+        for mat in data["comparative_matrices"]:
+            if isinstance(mat, dict):
+                c_title = mat.get("title", "ماتریس مقایسه‌ای تخصصی")
+                headers = mat.get("headers", [])
+                rows = mat.get("rows", [])
+                if headers and rows:
+                    html_parts.append(f'<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📊 {c_title}</h2>')
+                    html_parts.append('<table><thead><tr>')
+                    for h in headers:
+                        html_parts.append(f'<th>{h}</th>')
+                    html_parts.append('</tr></thead><tbody>')
+                    for row in rows:
+                        html_parts.append('<tr>')
+                        for cell in row:
+                            html_parts.append(f'<td>{cell}</td>')
+                        html_parts.append('</tr>')
+                    html_parts.append('</tbody></table>')
+
+    # Crash Sheet
+    if data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
+        crash = data["last_minute_crash_sheet"]
+        headers = crash.get("headers", [])
+        rows = crash.get("rows", [])
+        if headers and rows:
+            html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">🚀 کپسول طلایی شب امتحان (Last-Minute High-Yield Cheat Sheet)</h2>')
+            html_parts.append('<table><thead><tr>')
+            for h in headers:
+                html_parts.append(f'<th>{h}</th>')
+            html_parts.append('</tr></thead><tbody>')
+            for row in rows:
+                html_parts.append('<tr>')
+                for cell in row:
+                    html_parts.append(f'<td>{cell}</td>')
+                html_parts.append('</tr>')
+            html_parts.append('</tbody></table>')
+
+    # Morning Exam Checklist
+    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+        html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
+        for idx, item in enumerate(data["morning_exam_checklist"], 1):
+            html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {item}</span></div>')
+
+    html_parts.append('</div></body></html>')
+    full_html = "\n".join(html_parts)
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(full_html)
+    print(f"[OK] HTML Summary generated successfully: {output_path}")
+    return output_path
+
+
+def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: str = "", chapter_title: str = "") -> bool:
+    """
+    Stamps Persian BiDi page numbers ('صفحه X از Y') onto each page of the PDF
+    using reportlab, pypdf, arabic_reshaper, and python-bidi.
+    """
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        from pypdf import PdfReader, PdfWriter
+
+        def shape_persian(text: str) -> str:
+            return get_display(arabic_reshaper.reshape(text))
+
+        font_name = "Helvetica"
+        for candidate in ["C:/Windows/Fonts/tahoma.ttf", "C:/Windows/Fonts/arial.ttf"]:
+            if os.path.exists(candidate):
+                try:
+                    pdfmetrics.registerFont(TTFont("CustomPersianFont", candidate))
+                    font_name = "CustomPersianFont"
+                    break
+                except Exception:
+                    pass
+
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        total_pages = len(reader.pages)
+
+        for idx, base_page in enumerate(reader.pages, 1):
+            packet = io.BytesIO()
+            can = canvas.Canvas(packet, pagesize=A4)
+            can.setFont(font_name, 8.5)
+            can.setFillColorRGB(0.35, 0.35, 0.35)
+            can.setStrokeColorRGB(0.85, 0.85, 0.85)
+            can.setLineWidth(0.5)
+            # Dividing footer line
+            can.line(13 * 2.83465, 28, (210 - 13) * 2.83465, 28)
+            # Centered page number
+            stamp_text = shape_persian(f"صفحه {idx} از {total_pages}")
+            can.drawCentredString(A4[0] / 2.0, 16, stamp_text)
+            can.save()
+            packet.seek(0)
+
+            stamp_pdf = PdfReader(packet)
+            base_page.merge_page(stamp_pdf.pages[0])
+            writer.add_page(base_page)
+
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "wb") as f_out:
+            writer.write(f_out)
+        return True
+    except Exception as e:
+        print(f"[WARN] Persian BiDi page stamping skipped ({e}); writing PDF directly.")
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "wb") as f_out:
+            f_out.write(pdf_bytes)
+        return False
+
+
+def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path: str,
+                      html_path: Optional[str] = None,
+                      chapter_title: Optional[str] = None,
+                      course_name: Optional[str] = None) -> str:
+    """
+    Renders publication-grade PDF from HTML via Playwright using system Edge/Chrome,
+    with custom header templates and Persian BiDi page number stamping.
+    Accepts either data dict or html file path as first argument.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("[INFO] Playwright not installed; skipping PDF generation.")
+        return ""
+
+    cleanup_temp_html = False
+    if isinstance(data_or_html, str):
+        if os.path.exists(data_or_html):
+            html_path = data_or_html
+            data = {}
+        else:
+            temp_html_path = output_pdf_path.replace(".pdf", "_temp.html")
+            with open(temp_html_path, "w", encoding="utf-8") as f_tmp:
+                f_tmp.write(data_or_html)
+            html_path = temp_html_path
+            cleanup_temp_html = True
+            data = {}
+    elif isinstance(data_or_html, dict):
+        data = data_or_html
+        if not html_path or not os.path.exists(html_path):
+            temp_html_path = output_pdf_path.replace(".pdf", "_temp.html")
+            build_html_summary(data, temp_html_path)
+            html_path = temp_html_path
+            cleanup_temp_html = True
+    else:
+        data = {}
+
+    topic_title = chapter_title or data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
+    c_name = course_name or data.get("organ_system", "فیزیوپاتولوژی بالینی")
+
+    header_html = f"""
+    <div style="font-size: 8pt; font-family: 'Dubai', 'Vazirmatn', Tahoma, sans-serif; width: 100%;
+                border-bottom: 1.5px solid #78281F; padding-bottom: 4px; margin: 0 13mm;
+                display: flex; justify-content: space-between; direction: rtl;">
+        <span style="font-weight: bold; color: #78281F;">{topic_title}</span>
+        <span style="color: #1A5276;">{c_name}</span>
+    </div>
+    """
+
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    raw_pdf_bytes = None
+    with sync_playwright() as p:
+        browser = None
+        # Try system Edge first, then Chrome, then default Chromium
+        for channel in ["msedge", "chrome", None]:
+            try:
+                if channel:
+                    browser = p.chromium.launch(channel=channel)
+                else:
+                    browser = p.chromium.launch()
+                break
+            except Exception:
+                continue
+
+        if not browser:
+            print("[WARN] Could not launch system Edge or Chrome for PDF generation.")
+            return ""
+
+        page = browser.new_page()
+        page.set_content(html_content, wait_until="networkidle")
+        raw_pdf_bytes = page.pdf(
+            format="A4",
+            print_background=True,
+            display_header_footer=True,
+            header_template=header_html,
+            footer_template='<div style="height: 10px;"></div>',
+            margin={"top": "20mm", "bottom": "17mm", "left": "13mm", "right": "13mm"}
+        )
+        browser.close()
+
+    if raw_pdf_bytes:
+        stamp_persian_page_numbers(raw_pdf_bytes, output_pdf_path, course_name=c_name, chapter_title=topic_title)
+        print(f"[OK] PDF Study Guide generated successfully: {output_pdf_path}")
+
+    if cleanup_temp_html and os.path.exists(html_path):
+        try:
+            os.remove(html_path)
+        except Exception:
+            pass
+
+    return output_pdf_path
+
+
+# ---------------------------------------------------------------------------
 # CLI Pipeline Orchestration
 # ---------------------------------------------------------------------------
 
@@ -1083,6 +1922,7 @@ def main():
     parser.add_argument("--json", required=True, help="Path to structured input JSON containing summary data")
     parser.add_argument("--out-dir", default="dist", help="Output directory for generated files")
     parser.add_argument("--prefix", default="summary_pack", help="File prefix for outputs")
+    parser.add_argument("--no-pdf", action="store_true", help="Skip PDF generation")
     args = parser.parse_args()
 
     if not os.path.exists(args.json):
@@ -1094,12 +1934,17 @@ def main():
 
     os.makedirs(args.out_dir, exist_ok=True)
     docx_file = os.path.join(args.out_dir, f"{args.prefix}.docx")
+    html_file = os.path.join(args.out_dir, f"{args.prefix}.html")
+    pdf_file = os.path.join(args.out_dir, f"{args.prefix}.pdf")
     md_file = os.path.join(args.out_dir, f"{args.prefix}.md")
     tsv_file = os.path.join(args.out_dir, f"{args.prefix}_anki.tsv")
     apkg_file = os.path.join(args.out_dir, f"{args.prefix}_anki.apkg")
 
     print(f"--- Starting Medical Summary Build: {data.get('topic_title', 'Summary')} ---")
     build_docx_summary(data, docx_file)
+    build_html_summary(data, html_file)
+    if not args.no_pdf:
+        build_pdf_summary(data, pdf_file, html_path=html_file)
     build_markdown_summary(data, md_file)
     build_anki_tsv(data, tsv_file)
     build_anki_apkg(data, apkg_file)

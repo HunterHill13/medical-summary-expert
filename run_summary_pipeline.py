@@ -31,7 +31,14 @@ if SCRIPTS_DIR not in sys.path:
 
 from parse_input_lecture import ingest_file, partition_by_headings
 from audit_summary_coverage import audit_coverage
-from build_summary_pack import build_docx_summary, build_markdown_summary, build_anki_tsv, build_anki_apkg
+from build_summary_pack import (
+    build_docx_summary,
+    build_markdown_summary,
+    build_anki_tsv,
+    build_anki_apkg,
+    build_html_summary,
+    build_pdf_summary
+)
 
 def cmd_ingest(args):
     print(f"--- [INGEST] Ingesting source file: {args.input} ---")
@@ -42,17 +49,25 @@ def cmd_ingest(args):
     print(f"[OK] Ingestion complete -> {args.out}")
     print(f"     Elements: {len(data['elements'])}, Images: {len(data['images'])}, Words: {len(data['full_text'].split())}")
 
-BATCH_PROMPT_TEMPLATE = """# دستور کار سنتز خلاصه پزشکی (بچ شماره {batch_idx:02d})
+BATCH_PROMPT_TEMPLATE = """# دستور کار سنتز خلاصه پزشکی فیزیوپاتولوژی (بچ شماره {batch_idx:02d})
 
-شما یک متخصص سنتز خلاصه جزوات پزشکی برای دانشجویان فیزیوپاتولوژی (Physiopathology) هستید.
+شما یک متخصص ارشد سنتز خلاصه جزوات پزشکی برای دانشجویان فیزیوپاتولوژی (Physiopathology) و آزمون‌های بالینی هستید.
 وظیفه شما تبدیل متن خام این بخش به یک فایل JSON معتبر ساختاریافته به نام `summary_shard_{batch_idx:02d}.json` است.
 
-## قوانین حیاتی و خطوط قرمز (STRICT SOURCE GROUNDING & ZERO EXTRAPOLATION)
-1. **عدم اضافه کردن مطالب بیرونی:** تنها و تنها طبق مطالبی که در این بخش از جزوه آمده است خلاصه تولید کنید. به هیچ وجه بیماری‌ها، داروها یا استیجینگ‌های ذکرنشده را از کتب رفرنس اضافه نکنید.
-2. **فیلدهای ذکرنشده:** اگر برای یک مبحث، تست طلایی یا سیستم نمره‌دهی در متن ذکر نشده، مقدار آن را null بگذارید و به هیچ وجه آن را اختراع نکنید.
-3. **حفظ دقیق مقادیر عددی و کات‌آف‌ها (Zero Cutoff Omission):** تمام اعداد بالینی، درصدها (مانند EF <= 40%)، کات‌آف‌های آزمایشگاهی (مانند BNP < 100 pg/mL) و دوره‌های زمانی باید دقیقاً حفظ شوند.
-4. **حفظ نکات امتحانی و موارد ممنوع:** هرگونه تأکید استاد (⭐) و موارد منع مصرف/کنترااندیکاسیون‌های قطعی (⛔) باید در بخش‌های اختصاصی درج شوند.
-5. **فلش‌کارت‌های اتمی آنکی:** برای هر نکته کلیدی یک کارت Cloze Deletion بسازید ({{{{c1::...}}}}). تحلیل مکانیسمی را در فیلد extra قرار دهید.
+## قوانین بنیادین و خطوط قرمز مطلق (STRICT SOURCE GROUNDING & ZERO EXTRAPOLATION)
+1. **استناد ۱۰۰٪ به محتوای ورودی (Strict Grounding):** تمام محتوای خلاصه باید **فقط و فقط** طبق فایل‌ها و متونی باشد که کاربر ارائه داده است. هرگز و به هیچ عنوان از حافظه پارامتریک، کتب رفرنس خارجی یا متون دیگر مطلبی اضافه نکنید.
+2. **فیلدهای ذکرنشده (Null Fields):** اگر تستی، درمانی یا کات‌آفی در متن وجود ندارد، فیلد مربوطه را `null` یا خالی بگذارید؛ تحت هیچ شرایطی فیلدی را حدس نزنید یا تکمیل نکنید.
+3. **قانون موازنه جامعیت بالینی و فارماکولوژی (Anti-Pharmacology-Skew Law):**
+   قبل از ورود به مباحث دارویی، تمام بیماری‌ها، سندرم‌ها، و طبقه‌بندی‌های اتیولوژیک ذکرشده در متن (نظیر آپوپلکسی هیپوفیز، شیهان، نلسون، کارنی، FHH، خطوط لوزر، آشرمن، CAIS و ۵-آلفا ردوکتاز و...) را استخراج کنید. حجم محتوای تشخیصی و پاتوفیزیولوژی نباید فدای جداول دارویی شود. برای هر بیماری در متن، ارکان چهارگانه الزامی است:
+   - رکن اول: اتیولوژی و فلوچارت مکانیسمی وقوع
+   - رکن دوم: تظاهرات بالینی اختصاصی، تریادها و نشانه‌های پاتوگنومونیک
+   - رکن سوم: تست غربالگری نخستین (Best Initial Test) در برابر استاندارد طلایی قطعی (Gold Standard)
+   - رکن چهارم: تله‌های آزمونی، اشتباهات رایج و موارد ممنوع (Contraindications)
+4. **ترک تخصصی سمیولوژی و معاینات فیزیکی (Track 4: Clinical Semiology):**
+   اگر در متن به مانورهای بالینی و معاینات فیزیکی اشاره شده است (مانور بلعیدن آب، تکنیک کرایل، رباط Berry، نشانه‌های چشمی دالریمپل و فن‌گرافه، علائم شوستک و تروسو، معاینه با دیاپازون ۱۲۸ هرتز، مونوفیلامان، پای شارکو و...)، آنها را در کلید `clinical_semiology` استخراج نمایید.
+5. **حفظ دقیق مقادیر عددی و کات‌آف‌ها (Zero Cutoff Omission):** تمام اعداد بالینی، درصدها (مانند EF <= 40%)، کات‌آف‌های آزمایشگاهی (مانند BNP < 100 pg/mL) و دوره‌های زمانی باید دقیقاً حفظ شوند.
+6. **فلش‌کارت‌های اتمی آنکی:** برای هر نکته کلیدی یک کارت Cloze Deletion بسازید ({{{{c1::...}}}}). تحلیل مکانیسمی را در فیلد extra قرار دهید.
+7. **کپسول طلایی شب امتحان و جداول تطبیقی:** نکات متمایزکننده تشخیصی را در قالب جدول تطبیقی (`comparative_matrices`) و نکات فوق‌سریع را در `morning_exam_checklist` درج کنید.
 
 ---
 
@@ -128,6 +143,9 @@ def cmd_merge_batches(args):
 
     merged_modules = []
     merged_flashcards = []
+    merged_semiology = []
+    merged_matrices = []
+    merged_checklist = []
     topic_title = ""
     topic_title_en = ""
     organ_system = ""
@@ -151,6 +169,15 @@ def cmd_merge_batches(args):
 
         for card in shard_data.get("anki_flashcards", []):
             merged_flashcards.append(card)
+
+        for sem in shard_data.get("clinical_semiology", []):
+            merged_semiology.append(sem)
+
+        for mat in shard_data.get("comparative_matrices", []):
+            merged_matrices.append(mat)
+
+        for chk in shard_data.get("morning_exam_checklist", []):
+            merged_checklist.append(chk)
 
     # Master Pharmacology Matrix synthesis across all modules
     master_pharm_rows = []
@@ -198,6 +225,15 @@ def cmd_merge_batches(args):
         "anki_flashcards": merged_flashcards
     }
 
+    if merged_semiology:
+        final_data["clinical_semiology"] = merged_semiology
+
+    if merged_matrices:
+        final_data["comparative_matrices"] = merged_matrices
+
+    if merged_checklist:
+        final_data["morning_exam_checklist"] = merged_checklist
+
     if len(master_pharm_rows) >= 2:
         final_data["master_pharmacology_matrix"] = {
             "title": "ماتریس جامع مقایسه داروشناسی بالینی (Master Pharmacology Matrix)",
@@ -208,7 +244,7 @@ def cmd_merge_batches(args):
     with open(args.out, "w", encoding="utf-8") as f_out:
         json.dump(final_data, f_out, ensure_ascii=False, indent=2)
 
-    print(f"[OK] Successfully merged {len(merged_modules)} modules and {len(merged_flashcards)} flashcards -> {args.out}")
+    print(f"[OK] Successfully merged {len(merged_modules)} modules, {len(merged_semiology)} semiology sections, and {len(merged_flashcards)} flashcards -> {args.out}")
 
 def cmd_audit(args):
     print(f"--- [AUDIT] Running deterministic zero-omission and cutoff coverage verification ---")
@@ -235,6 +271,11 @@ def cmd_audit(args):
     print(f"  • Numerical Cutoffs Retained: {report['scores']['numerical_coverage_pct']}%")
     print(f"  • Clinical Entities Retained: {report['scores']['entity_recall_pct']}%")
     print(f"  • Diagnostic Bifurcation:     {'Passed' if report['scores']['diagnostic_bifurcation_compliant'] else 'Failed'}")
+    print(f"  • Illness Script Integrity:   {report['scores']['illness_script_compliance_pct']}% ({'Passed' if report['scores']['illness_script_compliant'] else 'Failed'})")
+    if report["scores"].get("pharmacology_skew_detected"):
+        print(f"  ⚠️ Warning: Severe pharmacology skew detected! Clinical scripts eclipsed by drug tables.")
+    if report.get("illness_script_audit", {}).get("omitted_subtle_syndromes"):
+        print(f"  ⛔ Alert: Subtle clinical syndromes omitted: {report['illness_script_audit']['omitted_subtle_syndromes']}")
     if report["omitted_clinical_numbers"]:
         print(f"  ⚠️ Warning: {len(report['omitted_clinical_numbers'])} cutoffs were omitted!")
     if report.get("omitted_contraindications"):
@@ -242,7 +283,7 @@ def cmd_audit(args):
     print(f"[OK] Audit report written to: {args.report}")
 
 def cmd_build(args):
-    print(f"--- [BUILD] Compiling Triple-Pack Deliverables ---")
+    print(f"--- [BUILD] Compiling Publication-Grade Deliverables Suite ---")
     if not os.path.exists(args.summary):
         print(f"[ERROR] Summary JSON file not found: {args.summary}")
         sys.exit(1)
@@ -252,15 +293,19 @@ def cmd_build(args):
 
     os.makedirs(args.out_dir, exist_ok=True)
     docx_path = os.path.join(args.out_dir, f"{args.prefix}.docx")
+    html_path = os.path.join(args.out_dir, f"{args.prefix}.html")
+    pdf_path = os.path.join(args.out_dir, f"{args.prefix}.pdf")
     md_path = os.path.join(args.out_dir, f"{args.prefix}.md")
     tsv_path = os.path.join(args.out_dir, f"{args.prefix}_anki.tsv")
     apkg_path = os.path.join(args.out_dir, f"{args.prefix}_anki.apkg")
 
     build_docx_summary(data, docx_path)
+    build_html_summary(data, html_path)
+    build_pdf_summary(data, pdf_path, html_path=html_path, course_name=data.get("organ_system", "فیزیوپاتولوژی بالینی"))
     build_markdown_summary(data, md_path)
     build_anki_tsv(data, tsv_path)
     build_anki_apkg(data, apkg_path)
-    print(f"[OK] Build complete! Triple-pack deliverables ready in '{args.out_dir}/'.")
+    print(f"[OK] Build complete! Deliverables (DOCX, HTML, PDF, MD, TSV, APKG) ready in '{args.out_dir}/'.")
 
 def cmd_auto(args):
     print(f"=== [AUTO] Running End-to-End Medical Summary Pipeline ===")

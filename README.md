@@ -3,7 +3,7 @@
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-23%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Tests](https://img.shields.io/badge/Tests-24%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
 [![Version](https://img.shields.io/badge/Version-3.5.0-orange?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
@@ -25,6 +25,18 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 > **همه محتوای خلاصه باید فقط و فقط طبق محتوای فایل‌ها و جزواتی باشد که کاربر ارائه می‌دهد و نه از دانش پیش‌فرض یا حافظه پارامتریک ایجنت.**
 > هیچ ایجنتی تحت هیچ شرایطی حق ندارد از حافظه پارامتریک خود یا کتب مرجع خارجی (هاریسون، سیسیل، آپ‌تودیت) بیماری‌ها، سندرم‌ها، داروها یا استیجینگ‌هایی را که استاد در جزوه تدریس نکرده، وارد خلاصه کند!
 > خلاصه نهایی دقیقاً و منحصراً بر پایه فایل‌های داده‌شده (جزوه یا اسلاید استاد) تدوین می‌گردد. در صورت عدم ذکر یک تست تشخیصی، کات‌آف یا رژیم درمانی در جزوه، آن فیلد صریحاً `null` مانده و مدل حق ابداع یا تعمیم دادن آن را ندارد.
+
+---
+
+## 📋 اصول هفت‌گانه تلخیص، انسجام و پرهیز از حشو (High-Yield Editorial Directives)
+
+1. **پرهیز مطلق از مقدمه‌چینی، توضیح درباره روند کار، نتیجه‌گیری، نظر شخصی، تکرار مطالب و حشو:** از تعارفات کلامی و توضیحات فرامتنی خودداری شود.
+2. **استخراج انحصاری عصاره علمی و نکات آزمونی:** فقط نکات تست‌خیز و قابل آزمون استخراج گردند.
+3. **وفاداری ۱۰۰٪ به منبع و منع مطلق افزودن اطلاعات:** اگر مطلبی در فایل نیست، به هیچ وجه به خلاصه اضافه نشود و فیلد مربوطه `null` بماند.
+4. **حفظ منظم و فوق‌فشرده ساختارهای بالینی:** علل، عوامل خطر، پاتوفیزیولوژی، علائم، آزمایش‌ها، تشخیص، درمان، عوارض و افتراق‌ها در فشرده‌ترین قالب حفظ شوند.
+5. **حفظ روابط علت و معلولی و زنجیره پاتوفیزیولوژی:** توجیه مکانیسمی و منطق رخداد علائم حفظ شود تا خلاصه فقط فهرستی خشک از کلمات نباشد.
+6. **پرهیز از بولت‌سازی افراطی و تجمیع مطالب مرتبط:** مطالبی که به یکدیگر مرتبط هستند در یک بولت یا پاراگراف منسجم تجمیع شوند.
+7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا:** خروجی نهایی متناسب با مرور سریع برای امتحان پزشکی کالیبره شود.
 
 ---
 
@@ -87,6 +99,7 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 ├── run_summary_pipeline.py     # Main CLI orchestrator (ingest, partition, merge, audit, build, auto)
 ├── parse_input_lecture.py      # DOCX & PDF ingestion engine (tables, shapes, SDT, images, OCR)
 ├── build_summary_pack.py       # Quad-pack compiler (DOCX, Playwright PDF, HTML, MD, Anki TSV/APKG)
+├── pdf_designer_engine.py      # Standalone dual-pass PDF engine with vector borders and A4 geometry
 ├── audit_summary_coverage.py   # Clinical NLP audit gate (numbers, cutoffs, warnings, illness scripts)
 ├── SKILL.md                    # Antigravity skill specification and guidelines
 ├── sample_summary.json         # Standard structured JSON data (Heart Failure HFrEF vs HFpEF)
@@ -161,6 +174,7 @@ Our hardened test suite verifies zero data loss, null resilience, and clinical a
 | **Bug U** | Anti-Pharmacology-Skew Law & Illness Script Integrity Gate enforcing subtle syndrome coverage | **PASS** ✅ |
 | **Bug V** | Track 4 Clinical Semiology & Physical Examination extraction and Anki card synthesis | **PASS** ✅ |
 | **Bug W** | 30-Point Morning-of-Exam Golden Capsule and Comparative Matrices across all deliverables | **PASS** ✅ |
+| **Bug X** | Standalone `MedicalPDFDesigner` dual-pass hybrid rendering and A4 print geometry | **PASS** ✅ |
 
 To run the full diagnostic suite:
 ```bash

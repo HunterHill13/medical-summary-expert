@@ -931,6 +931,46 @@ def test_bug_w_morning_exam_checklist_and_comparative_matrices():
     
     print("[PASS] Bug W Test Passed: Morning exam checklist & comparative matrices rendered across all deliverables.")
 
+def test_bug_x_pdf_designer_engine_dual_pass_and_geometry():
+    """Bug X: Standalone MedicalPDFDesigner dual-pass rendering and print geometry."""
+    from pdf_designer_engine import MedicalPDFDesigner
+    import pypdf
+
+    out_pdf = "dist/diag_test_x_designer.pdf"
+    if os.path.exists(out_pdf):
+        os.remove(out_pdf)
+
+    designer = MedicalPDFDesigner(out_pdf, course_title="فیزیوپاتولوژی غدد • دانشکده پزشکی")
+    sample_html = """<!DOCTYPE html>
+    <html lang="fa" dir="rtl">
+    <head><meta charset="utf-8">
+    <style>
+        @page { size: A4 portrait; margin-top: 24mm; margin-bottom: 20mm; margin-left: 17mm; margin-right: 17mm; }
+        body { font-family: Tahoma, sans-serif; direction: rtl; text-align: right; }
+    </style>
+    </head>
+    <body>
+        <h1 style="color: #78281F;">بیماری‌های هیپوفیز و غدد درون‌ریز</h1>
+        <p>آزمون تشخیصی و زنجیره پاتوفیزیولوژی آدنوم هیپوفیز و آپوپلکسی.</p>
+    </body>
+    </html>
+    """
+    designer.add_section("sec_hypo", sample_html, topic_title="آدنوم هیپوفیز و سندرم شیهان")
+    res_path = designer.build(tmp_dir="dist/tmp_x_designer")
+
+    assert os.path.exists(res_path), "PDF Designer failed to output file!"
+    assert os.path.getsize(res_path) > 1000, "Output PDF is too small or corrupt!"
+
+    reader = pypdf.PdfReader(res_path)
+    assert len(reader.pages) == 1, "Expected exactly 1 page!"
+    p0 = reader.pages[0]
+    w = float(p0.mediabox.width)
+    h = float(p0.mediabox.height)
+    assert abs(w - 595.28) < 1.0, f"Page width mismatch: {w} != 595.28 pt"
+    assert abs(h - 841.89) < 1.0, f"Page height mismatch: {h} != 841.89 pt"
+
+    print("[PASS] Bug X Test Passed: MedicalPDFDesigner dual-pass hybrid rendering and A4 geometry verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -956,4 +996,5 @@ if __name__ == "__main__":
     test_bug_u_anti_pharmacology_skew_illness_script_integrity()
     test_bug_v_clinical_semiology_track_and_anki_synthesis()
     test_bug_w_morning_exam_checklist_and_comparative_matrices()
+    test_bug_x_pdf_designer_engine_dual_pass_and_geometry()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

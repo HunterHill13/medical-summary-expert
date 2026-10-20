@@ -1327,8 +1327,11 @@ def build_html_summary(data: Dict[str, Any], output_path: str) -> str:
 <title>""" + topic_title + """</title>
 <style>
 @page {
-    size: A4;
-    margin: 20mm 13mm 17mm 13mm;
+    size: A4 portrait;
+    margin-top: 24mm;
+    margin-bottom: 20mm;
+    margin-left: 17mm;
+    margin-right: 17mm;
 }
 @media print {
     body {
@@ -1348,80 +1351,80 @@ body {
     font-family: 'Dubai', 'Vazirmatn', Tahoma, 'Segoe UI', Arial, sans-serif;
     direction: rtl;
     text-align: right;
-    color: #262626;
+    color: #2E4053;
     background-color: #FFFFFF;
     line-height: 1.6;
-    font-size: 10.5pt;
+    font-size: 9.8pt;
     margin: 0;
     padding: 0;
 }
 .container {
     max-width: 900px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 0;
 }
 .banner {
     border-bottom: 2px solid #78281F;
     padding-bottom: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
 .title-main {
     color: #78281F;
-    font-size: 18pt;
+    font-size: 17pt;
     font-weight: bold;
     margin: 0 0 4px 0;
 }
 .title-en {
-    color: #0E6251;
-    font-size: 13pt;
+    color: #1A5276;
+    font-size: 12.5pt;
     font-weight: bold;
 }
 .meta-tag {
-    color: #7F8C8D;
-    font-size: 9.5pt;
+    color: #707B7C;
+    font-size: 9pt;
     margin-top: 4px;
 }
 .module-header {
     color: #78281F;
-    font-size: 14pt;
+    font-size: 13.5pt;
     font-weight: bold;
     border-right: 4px solid #78281F;
     padding-right: 10px;
-    margin: 24px 0 12px 0;
+    margin: 22px 0 10px 0;
 }
 .section-title {
-    color: #0E6251;
-    font-size: 11pt;
+    color: #1A5276;
+    font-size: 10.5pt;
     font-weight: bold;
-    margin: 14px 0 6px 0;
+    margin: 12px 0 5px 0;
 }
 .callout {
-    border-radius: 6px;
-    margin: 12px 0;
+    border-radius: 5px;
+    margin: 10px 0;
     overflow: hidden;
     page-break-inside: avoid;
     break-inside: avoid;
 }
 .callout-header {
     font-weight: bold;
-    padding: 6px 12px;
-    font-size: 11pt;
+    padding: 5px 12px;
+    font-size: 10.5pt;
 }
 .callout-body {
-    padding: 10px 14px;
-    font-size: 10pt;
+    padding: 8px 12px;
+    font-size: 9.5pt;
     line-height: 1.6;
 }
-.callout-patho { border: 1.5px solid #85C1E9; }
-.callout-patho .callout-header { background: #EBF5FB; color: #1B4F72; border-bottom: 1px solid #85C1E9; }
+.callout-patho { border: 1.5px solid #2980B9; }
+.callout-patho .callout-header { background: #EBF5FB; color: #1B4F72; border-bottom: 1px solid #2980B9; }
 .callout-patho .callout-body { background: #FAFDFF; }
 
-.callout-semiology { border: 1.5px solid #16A085; }
-.callout-semiology .callout-header { background: #E8F8F5; color: #0E6251; border-bottom: 1px solid #16A085; }
+.callout-semiology { border: 1.5px solid #1ABC9C; }
+.callout-semiology .callout-header { background: #E8F8F5; color: #0E6251; border-bottom: 1px solid #1ABC9C; }
 .callout-semiology .callout-body { background: #FDFEFE; }
 
-.callout-pearl { border: 1.5px solid #D35400; }
-.callout-pearl .callout-header { background: #FEF9E7; color: #7E5109; border-bottom: 1px solid #D35400; }
+.callout-pearl { border: 1.5px solid #F1C40F; }
+.callout-pearl .callout-header { background: #FEF9E7; color: #7D6608; border-bottom: 1px solid #F1C40F; }
 .callout-pearl .callout-body { background: #FFFFFD; }
 
 .callout-alert { border: 1.5px solid #F39C12; }
@@ -1439,9 +1442,30 @@ body {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin: 14px 0;
-    font-size: 9.5pt;
+    margin: 12px 0;
+    font-size: 9.2pt;
     page-break-inside: avoid;
+    break-inside: avoid;
+}
+th {
+    background-color: #78281F;
+    color: #FFFFFF;
+    font-weight: bold;
+    padding: 7px 10px;
+    border: 1px solid #78281F;
+    text-align: right;
+}
+td {
+    padding: 6px 10px;
+    border: 1px solid #D5D8DC;
+    vertical-align: top;
+}
+tr:nth-child(even) {
+    background-color: #F8F9F9;
+}
+tr:nth-child(odd) {
+    background-color: #FFFFFF;
+}
     break-inside: avoid;
 }
 th {
@@ -1787,18 +1811,47 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
         writer = PdfWriter()
         total_pages = len(reader.pages)
 
+        bx, by, bw, bh = 34, 26, A4[0] - 68, A4[1] - 52
+        hy = A4[1] - 52
+        fy = 44.0
+
         for idx, base_page in enumerate(reader.pages, 1):
             packet = io.BytesIO()
             can = canvas.Canvas(packet, pagesize=A4)
+
+            # ۱. کادر بیرونی دور تا دور صفحه با گوشه‌های ملایم
+            can.setStrokeColorRGB(0.7, 0.73, 0.76)  # #B2BABB
+            can.setLineWidth(0.85)
+            can.roundRect(bx, by, bw, bh, radius=4, stroke=1, fill=0)
+
+            # ۲. خط حائل و محتوای هدر عنابی رسمی
+            can.setStrokeColorRGB(0.47, 0.16, 0.12)  # #78281F
+            can.setLineWidth(1.2)
+            can.line(bx, hy, bx + bw, hy)
+
             can.setFont(font_name, 8.5)
-            can.setFillColorRGB(0.35, 0.35, 0.35)
-            can.setStrokeColorRGB(0.85, 0.85, 0.85)
-            can.setLineWidth(0.5)
-            # Dividing footer line
-            can.line(13 * 2.83465, 28, (210 - 13) * 2.83465, 28)
-            # Centered page number
-            stamp_text = shape_persian(f"صفحه {idx} از {total_pages}")
-            can.drawCentredString(A4[0] / 2.0, 16, stamp_text)
+            can.setFillColorRGB(0.47, 0.16, 0.12)
+            if chapter_title:
+                can.drawRightString(bx + bw - 12, hy + 7, shape_persian(chapter_title))
+
+            can.setFont(font_name, 7.5)
+            can.setFillColorRGB(0.1, 0.32, 0.46)  # #1A5276
+            can.drawString(bx + 12, hy + 7, shape_persian(course_name or "فیزیوپاتولوژی • دانشکده پزشکی"))
+
+            # ۳. خط حائل و محتوای فوتر طوسی ملایم
+            can.setStrokeColorRGB(0.8, 0.83, 0.86)  # #D5D8DC
+            can.setLineWidth(0.75)
+            can.line(bx, fy, bx + bw, fy)
+
+            can.setFont(font_name, 8.5)
+            can.setFillColorRGB(0.25, 0.3, 0.35)  # #2E4053
+            can.drawCentredString(A4[0] / 2.0, 31, shape_persian(f"صفحه {idx} از {total_pages}"))
+
+            can.setFont(font_name, 7.5)
+            can.setFillColorRGB(0.5, 0.55, 0.6)
+            can.drawRightString(bx + bw - 12, 31, shape_persian("مرور سریع آزمون"))
+            can.drawString(bx + 12, 31, shape_persian("دانشکده پزشکی"))
+
             can.save()
             packet.seek(0)
 
@@ -1893,10 +1946,8 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
         raw_pdf_bytes = page.pdf(
             format="A4",
             print_background=True,
-            display_header_footer=True,
-            header_template=header_html,
-            footer_template='<div style="height: 10px;"></div>',
-            margin={"top": "20mm", "bottom": "17mm", "left": "13mm", "right": "13mm"}
+            display_header_footer=False,
+            margin={"top": "24mm", "bottom": "20mm", "left": "17mm", "right": "17mm"}
         )
         browser.close()
 

@@ -106,8 +106,12 @@ uv run python run_summary_pipeline.py merge-batches --batch-dir "batches" --out 
 uv run python run_summary_pipeline.py audit --source "ingested_lecture.json" --summary "summary_data.json" --report "coverage_audit_report.json"
 
 # ۵. کامپایل نهایی بسته کامل (DOCX + Playwright PDF با BiDi Stamping + HTML + MD + Anki TSV/APKG)
-uv run python run_summary_pipeline.py build --summary "summary_data.json" --out-dir "dist" --prefix "summary_pack"
+uv run python run_summary_pipeline.py build --summary "summary_data.json" --institution "دانشگاه بق" --out-dir "dist" --prefix "summary_pack"
+
+# ۶. تجمیع و صحافی جامع تمام جلسات ترم در یک کتابچه درسنامه واحد (Master Course Booklet)
+# شامل جلد تمام‌صفحه نشریاتی، فهرست مطالب، هدر زرشکی پویای هر فصل، درج «دانشگاه بق» در هدر سمت چپ و شماره صفحه پیوسته
+uv run python run_summary_pipeline.py bundle --inputs "sessions/*.json" --course-title "فیزیوپاتولوژی جامع غدد درون‌ریز" --institution "دانشگاه بق" --out-dir "dist/master_bundle" --prefix "comprehensive_master_course"
 
 # اجرای خودکار کل پایپ‌لاین (برای جزوات تک‌فایلی)
-uv run python run_summary_pipeline.py auto --input "<مسیر_جزوه.docx>" --summary-json "summary_data.json"
+uv run python run_summary_pipeline.py auto --input "<مسیر_جزوه.docx>" --summary-json "summary_data.json" --institution "دانشگاه بق"
 ```

@@ -302,11 +302,117 @@ def cmd_build(args):
 
     build_docx_summary(data, docx_path)
     build_html_summary(data, html_path)
-    build_pdf_summary(data, pdf_path, html_path=html_path, course_name=data.get("organ_system", "فیزیوپاتولوژی بالینی"))
+    inst = getattr(args, "institution", "دانشگاه بق")
+    build_pdf_summary(data, pdf_path, html_path=html_path, course_name=data.get("organ_system", "فیزیوپاتولوژی بالینی"), institution=inst)
     build_markdown_summary(data, md_path)
     build_anki_tsv(data, tsv_path)
     build_anki_apkg(data, apkg_path)
     print(f"[OK] Build complete! Deliverables (DOCX, HTML, PDF, MD, TSV, APKG) ready in '{args.out_dir}/'.")
+
+def cmd_bundle(args):
+    """
+    Bundles multiple session summary JSONs into a comprehensive master study guide booklet:
+    1. Master PDF via MedicalPDFDesigner:
+       - Full-page publication Cover page
+       - Table of Contents
+       - All chapters with chapter-specific dynamic headers and continuous 1-to-N page numbering
+    2. Master Word DOCX
+    3. Master Markdown (.md)
+    4. Master Anki (.apkg and .tsv)
+    """
+    import glob
+    from pdf_designer_engine import MedicalPDFDesigner
+
+    input_files = []
+    for item in args.inputs:
+        matched = glob.glob(item)
+        if matched:
+            input_files.extend(matched)
+        elif os.path.exists(item):
+            input_files.append(item)
+
+    input_files = sorted(list(set(input_files)))
+    if not input_files:
+        print(f"[ERROR] No valid JSON input files found from: {args.inputs}")
+        sys.exit(1)
+
+    print(f"=== Bundling {len(input_files)} Lecture Sessions into Comprehensive Master Course Booklet ===")
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    chapters_data = []
+    for fpath in input_files:
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                c_data = json.load(f)
+                chapters_data.append(c_data)
+        except Exception as e:
+            print(f"[WARN] Failed to load {fpath}: {e}")
+
+    if not chapters_data:
+        print("[ERROR] No valid chapter data loaded!")
+        sys.exit(1)
+
+    course_title = args.course_title or "فیزیوپاتولوژی جامع"
+    institution = args.institution or "دانشگاه بق"
+    prefix = args.prefix or "comprehensive_master_booklet"
+
+    # 1. Master PDF via MedicalPDFDesigner
+    pdf_path = os.path.join(args.out_dir, f"{prefix}.pdf")
+    designer = MedicalPDFDesigner(pdf_path, course_title=course_title, institution=institution)
+    designer.add_cover_page(title=course_title, subtitle="مجموعه کامل و جامع درسنامه‌ها و مرور سریع آزمون", faculty="دانشکده پزشکی")
+    designer.add_table_of_contents(chapters_data, title="فهرست فصول و مباحث درسنامه")
+
+    for ch in chapters_data:
+        designer.add_chapter_summary(ch)
+
+    tmp_designer_dir = os.path.join(args.out_dir, "tmp_bundle_pdf")
+    designer.build(tmp_dir=tmp_designer_dir)
+    print(f"[OK] Master PDF Booklet generated: {pdf_path}")
+
+    # 2. Master DOCX
+    docx_path = os.path.join(args.out_dir, f"{prefix}.docx")
+    master_docx_data = {
+        "topic_title": course_title,
+        "topic_title_en": "Comprehensive Medical Study Guide",
+        "organ_system": institution,
+        "modules": [],
+        "differential_tables": [],
+        "high_yield_pharmacology": [],
+        "morning_exam_checklist": []
+    }
+    for ch in chapters_data:
+        master_docx_data["modules"].extend(ch.get("modules", []))
+        master_docx_data["differential_tables"].extend(ch.get("differential_tables", []))
+        master_docx_data["high_yield_pharmacology"].extend(ch.get("high_yield_pharmacology", []))
+        master_docx_data["morning_exam_checklist"].extend(ch.get("morning_exam_checklist", []))
+
+    build_docx_summary(master_docx_data, docx_path)
+    print(f"[OK] Master DOCX generated: {docx_path}")
+
+    # 3. Master Markdown (.md)
+    md_path = os.path.join(args.out_dir, f"{prefix}.md")
+    build_markdown_summary(master_docx_data, md_path)
+    print(f"[OK] Master Markdown generated: {md_path}")
+
+    # 4. Master Anki Deck (.tsv & .apkg)
+    tsv_path = os.path.join(args.out_dir, f"{prefix}_anki.tsv")
+    apkg_path = os.path.join(args.out_dir, f"{prefix}_anki.apkg")
+    master_anki_cards = []
+    for ch in chapters_data:
+        master_anki_cards.extend(ch.get("anki_flashcards", []))
+    master_docx_data["anki_flashcards"] = master_anki_cards
+
+    build_anki_tsv(master_docx_data, tsv_path)
+    build_anki_apkg(master_docx_data, apkg_path)
+    print(f"[OK] Master Anki Decks generated: {apkg_path} and {tsv_path}")
+
+    print(f"\n=======================================================")
+    print(f"🎉 COMPREHENSIVE COURSE MASTER BOOKLET READY in '{args.out_dir}/'!")
+    print(f"PDF: {pdf_path}")
+    print(f"DOCX: {docx_path}")
+    print(f"Markdown: {md_path}")
+    print(f"Anki: {apkg_path}")
+    print(f"=======================================================\n")
 
 def cmd_auto(args):
     print(f"=== [AUTO] Running End-to-End Medical Summary Pipeline ===")
@@ -366,6 +472,15 @@ def main():
     p_build.add_argument("--summary", required=True, help="Summary JSON path")
     p_build.add_argument("--out-dir", default="dist", help="Output directory")
     p_build.add_argument("--prefix", default="summary_pack", help="File prefix")
+    p_build.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
+
+    # Bundle
+    p_bundle = subparsers.add_parser("bundle", help="Bundle multiple session JSONs into a comprehensive master course booklet")
+    p_bundle.add_argument("--inputs", nargs="+", required=True, help="List of session JSON file paths or wildcards (e.g. sessions/*.json)")
+    p_bundle.add_argument("--course-title", default="فیزیوپاتولوژی جامع", help="Course title for the master booklet")
+    p_bundle.add_argument("--institution", default="دانشگاه بق", help="Institution name for the booklet and header")
+    p_bundle.add_argument("--out-dir", default="dist/master_bundle", help="Output directory")
+    p_bundle.add_argument("--prefix", default="comprehensive_master_course", help="File prefix")
 
     # Auto
     p_auto = subparsers.add_parser("auto", help="Run end-to-end pipeline")
@@ -373,6 +488,7 @@ def main():
     p_auto.add_argument("--summary-json", default=None, help="Pre-synthesized summary JSON")
     p_auto.add_argument("--out-dir", default="dist", help="Output directory")
     p_auto.add_argument("--prefix", default="summary_pack", help="File prefix")
+    p_auto.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
 
     args = parser.parse_args()
 
@@ -386,6 +502,8 @@ def main():
         cmd_audit(args)
     elif args.subcommand == "build":
         cmd_build(args)
+    elif args.subcommand == "bundle":
+        cmd_bundle(args)
     elif args.subcommand == "auto":
         cmd_auto(args)
 

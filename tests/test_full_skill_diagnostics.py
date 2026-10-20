@@ -971,6 +971,106 @@ def test_bug_x_pdf_designer_engine_dual_pass_and_geometry():
 
     print("[PASS] Bug X Test Passed: MedicalPDFDesigner dual-pass hybrid rendering and A4 geometry verified.")
 
+def test_bug_y_comprehensive_course_bundling():
+    """Bug Y: Comprehensive Master Course Bundling (Cover + TOC + Chapters + 'دانشگاه بق' header)."""
+    from pdf_designer_engine import MedicalPDFDesigner
+    from run_summary_pipeline import cmd_bundle
+    import argparse
+
+    os.makedirs("dist/test_bundle_y", exist_ok=True)
+    ch1_path = "dist/test_bundle_y/session_1.json"
+    ch2_path = "dist/test_bundle_y/session_2.json"
+
+    mock_ch1 = {
+        "topic_title": "جلسه ۱: اختلالات محور هیپوتالاموس-هیپوفیز",
+        "topic_title_en": "Hypothalamic-Pituitary Disorders",
+        "organ_system": "غدد درون‌ریز",
+        "institution": "دانشگاه بق",
+        "modules": [
+            {
+                "name": "آدنوم هیپوفیز و پرولاکتینوما",
+                "pathophysiology_chain": "افزایش ترشح هورمون رشد یا پرولاکتین -> تومور ماکروآدنوم -> فشار بر کیاسمای بینایی -> همی‌آنوپسی بای‌تمپورال.",
+                "diagnostics": {
+                    "best_initial_test": "سنجش سطح سرمی پرولاکتین ناشتا",
+                    "gold_standard": "MRI هیپوفیز با تزریق گادولینیوم"
+                },
+                "treatment_protocol": {
+                    "first_line": "آگونیست‌های دوپامین (کابرگولین یا بروموکریپتین)",
+                    "definitive": "جراحی ترانس‌اسفنوئیدال در صورت شکست درمان دارویی"
+                },
+                "high_yield_pearls": ["خط اول درمان ماکروپرولاکتینوما برخلاف سایر آدنوم‌ها جراحی نیست، بلکه کابرگولین است."]
+            }
+        ],
+        "anki_flashcards": [
+            {
+                "question": "خط اول درمان {{c1::ماکروپرولاکتینوما}} داروی {{c2::کابرگولین}} است.",
+                "answer": "کابرگولین آگونیست دوپامین است."
+            }
+        ]
+    }
+
+    mock_ch2 = {
+        "topic_title": "جلسه ۲: بیماری‌های غده تیروئید و گواتر",
+        "topic_title_en": "Thyroid Disorders & Goiter",
+        "organ_system": "غدد درون‌ریز",
+        "institution": "دانشگاه بق",
+        "modules": [
+            {
+                "name": "بیماری گریوز (Graves Disease)",
+                "pathophysiology_chain": "آنتی‌بادی محرک گیرنده TSH (TSI/TRAb) -> تحریک مداوم سنتز هورمون‌های T3 و T4 -> هیپرتیروئیدی همراه گواتر منتشر.",
+                "diagnostics": {
+                    "best_initial_test": "سنجش سطح سرمی TSH و Free T4",
+                    "gold_standard": "اسکن تیروئید با ید رادیواکتیو (RAIU) و تیتر TSI"
+                },
+                "treatment_protocol": {
+                    "first_line": "متی‌مازول (در سه ماهه اول بارداری PTU)",
+                    "definitive": "ید رادیواکتیو ۱۳۱ یا تیروئیدکتومی ساب‌توتال"
+                },
+                "high_yield_pearls": ["در تیروئیدوتوکسیکوز شدید، پروپرانولول علائم آدرنرژیک و تبدیل محیطی T4 به T3 را مهار می‌کند."]
+            }
+        ],
+        "anki_flashcards": [
+            {
+                "question": "در سه ماهه اول بارداری برای درمان گریوز داروی {{c1::PTU}} و در ادامه {{c2::متی‌مازول}} ترجیح دارد.",
+                "answer": "به علت خطر تراتوژنیسیتی متی‌مازول در ارگانوژنز."
+            }
+        ]
+    }
+
+    with open(ch1_path, "w", encoding="utf-8") as f:
+        json.dump(mock_ch1, f, ensure_ascii=False, indent=2)
+
+    with open(ch2_path, "w", encoding="utf-8") as f:
+        json.dump(mock_ch2, f, ensure_ascii=False, indent=2)
+
+    # Test cmd_bundle
+    bundle_args = argparse.Namespace(
+        inputs=[ch1_path, ch2_path],
+        course_title="درسنامه جامع فیزیوپاتولوژی غدد",
+        institution="دانشگاه بق",
+        out_dir="dist/test_bundle_y/output",
+        prefix="master_endocrine_booklet"
+    )
+    cmd_bundle(bundle_args)
+
+    pdf_out = os.path.join(bundle_args.out_dir, "master_endocrine_booklet.pdf")
+    docx_out = os.path.join(bundle_args.out_dir, "master_endocrine_booklet.docx")
+    md_out = os.path.join(bundle_args.out_dir, "master_endocrine_booklet.md")
+    apkg_out = os.path.join(bundle_args.out_dir, "master_endocrine_booklet_anki.apkg")
+    tsv_out = os.path.join(bundle_args.out_dir, "master_endocrine_booklet_anki.tsv")
+
+    assert os.path.exists(pdf_out), "Master PDF bundle not generated!"
+    assert os.path.exists(docx_out), "Master DOCX bundle not generated!"
+    assert os.path.exists(md_out), "Master Markdown bundle not generated!"
+    assert os.path.exists(apkg_out), "Master APKG bundle not generated!"
+    assert os.path.exists(tsv_out), "Master TSV bundle not generated!"
+
+    import pypdf
+    r = pypdf.PdfReader(pdf_out)
+    assert len(r.pages) >= 3, f"Expected at least 3 pages (Cover + TOC + Chapters), got {len(r.pages)}"
+
+    print("[PASS] Bug Y Test Passed: Comprehensive course bundling (Cover, TOC, multi-chapter PDF/DOCX/MD/Anki) verified with institution 'دانشگاه بق'.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -997,4 +1097,5 @@ if __name__ == "__main__":
     test_bug_v_clinical_semiology_track_and_anki_synthesis()
     test_bug_w_morning_exam_checklist_and_comparative_matrices()
     test_bug_x_pdf_designer_engine_dual_pass_and_geometry()
+    test_bug_y_comprehensive_course_bundling()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

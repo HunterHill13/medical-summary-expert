@@ -1308,10 +1308,11 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
 # HTML & PDF Generation Engine (Playwright + Persian BiDi Stamping)
 # ---------------------------------------------------------------------------
 
-def build_html_summary(data: Dict[str, Any], output_path: str) -> str:
+def build_html_summary(data: Dict[str, Any], output_path: Optional[str] = None) -> str:
     """
     Renders an interactive, standalone publication-grade HTML study guide
     optimized for both screen reading and exact A4 PDF printing.
+    If output_path is provided, writes to file and returns path; otherwise returns HTML string.
     """
     ensure_master_matrices(data)
     topic_title = data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
@@ -1773,17 +1774,20 @@ tr:nth-child(even) { background-color: #FDFEFE; }
     html_parts.append('</div></body></html>')
     full_html = "\n".join(html_parts)
 
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(full_html)
-    print(f"[OK] HTML Summary generated successfully: {output_path}")
-    return output_path
+    if output_path:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(full_html)
+        print(f"[OK] HTML Summary generated successfully: {output_path}")
+        return output_path
+    return full_html
 
 
-def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: str = "", chapter_title: str = "") -> bool:
+def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: str = "فیزیوپاتولوژی بالینی", chapter_title: str = "", institution: str = "دانشگاه بق") -> bool:
     """
     Stamps Persian BiDi page numbers ('صفحه X از Y') onto each page of the PDF
     using reportlab, pypdf, arabic_reshaper, and python-bidi.
+    Header Left explicitly displays institution ('دانشگاه بق').
     """
     try:
         import arabic_reshaper
@@ -1836,7 +1840,7 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
 
             can.setFont(font_name, 7.5)
             can.setFillColorRGB(0.1, 0.32, 0.46)  # #1A5276
-            can.drawString(bx + 12, hy + 7, shape_persian(course_name or "فیزیوپاتولوژی • دانشکده پزشکی"))
+            can.drawString(bx + 12, hy + 7, shape_persian(institution or "دانشگاه بق"))
 
             # ۳. خط حائل و محتوای فوتر طوسی ملایم
             can.setStrokeColorRGB(0.8, 0.83, 0.86)  # #D5D8DC
@@ -1850,7 +1854,7 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
             can.setFont(font_name, 7.5)
             can.setFillColorRGB(0.5, 0.55, 0.6)
             can.drawRightString(bx + bw - 12, 31, shape_persian("مرور سریع آزمون"))
-            can.drawString(bx + 12, 31, shape_persian("دانشکده پزشکی"))
+            can.drawString(bx + 12, 31, shape_persian(course_name or "فیزیوپاتولوژی بالینی"))
 
             can.save()
             packet.seek(0)
@@ -1874,10 +1878,12 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
 def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path: str,
                       html_path: Optional[str] = None,
                       chapter_title: Optional[str] = None,
-                      course_name: Optional[str] = None) -> str:
+                      course_name: Optional[str] = None,
+                      institution: str = "دانشگاه بق") -> str:
     """
     Renders publication-grade PDF from HTML via Playwright using system Edge/Chrome,
     with custom header templates and Persian BiDi page number stamping.
+    Header Left explicitly displays institution ('دانشگاه بق').
     Accepts either data dict or html file path as first argument.
     """
     try:
@@ -1909,14 +1915,15 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
         data = {}
 
     topic_title = chapter_title or data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
-    c_name = course_name or data.get("organ_system", "فیزیوپاتولوژی بالینی")
+    inst_name = institution or data.get("institution") or "دانشگاه بق"
+    c_name = course_name or data.get("organ_system") or "فیزیوپاتولوژی بالینی"
 
     header_html = f"""
     <div style="font-size: 8pt; font-family: 'Dubai', 'Vazirmatn', Tahoma, sans-serif; width: 100%;
                 border-bottom: 1.5px solid #78281F; padding-bottom: 4px; margin: 0 13mm;
                 display: flex; justify-content: space-between; direction: rtl;">
         <span style="font-weight: bold; color: #78281F;">{topic_title}</span>
-        <span style="color: #1A5276;">{c_name}</span>
+        <span style="color: #1A5276;">{inst_name}</span>
     </div>
     """
 
@@ -1952,7 +1959,7 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
         browser.close()
 
     if raw_pdf_bytes:
-        stamp_persian_page_numbers(raw_pdf_bytes, output_pdf_path, course_name=c_name, chapter_title=topic_title)
+        stamp_persian_page_numbers(raw_pdf_bytes, output_pdf_path, course_name=c_name, chapter_title=topic_title, institution=inst_name)
         print(f"[OK] PDF Study Guide generated successfully: {output_pdf_path}")
 
     if cleanup_temp_html and os.path.exists(html_path):
@@ -1973,6 +1980,7 @@ def main():
     parser.add_argument("--json", required=True, help="Path to structured input JSON containing summary data")
     parser.add_argument("--out-dir", default="dist", help="Output directory for generated files")
     parser.add_argument("--prefix", default="summary_pack", help="File prefix for outputs")
+    parser.add_argument("--institution", default="دانشگاه بق", help="Institution name for header stamping")
     parser.add_argument("--no-pdf", action="store_true", help="Skip PDF generation")
     args = parser.parse_args()
 
@@ -1995,7 +2003,7 @@ def main():
     build_docx_summary(data, docx_file)
     build_html_summary(data, html_file)
     if not args.no_pdf:
-        build_pdf_summary(data, pdf_file, html_path=html_file)
+        build_pdf_summary(data, pdf_file, html_path=html_file, institution=args.institution)
     build_markdown_summary(data, md_file)
     build_anki_tsv(data, tsv_file)
     build_anki_apkg(data, apkg_file)

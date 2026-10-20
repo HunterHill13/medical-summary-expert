@@ -1,10 +1,10 @@
-# 🩺 Medical Summary Expert (v3.5)
+# 🩺 Medical Summary Expert (v3.5.2)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-24%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.5.0-orange?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-25%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.5.2-orange?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
@@ -137,15 +137,18 @@ uv run python run_summary_pipeline.py merge-batches --batch-dir "batches" --out 
 uv run python run_summary_pipeline.py audit --source "ingested_lecture.json" --summary "summary_data.json" --report "coverage_audit_report.json"
 
 # 5. Build Deliverables (Word + Playwright PDF + HTML + Markdown + Anki TSV/APKG)
-uv run python run_summary_pipeline.py build --summary "summary_data.json" --out-dir "dist" --prefix "summary_pack"
+uv run python run_summary_pipeline.py build --summary "summary_data.json" --institution "دانشگاه بق" --out-dir "dist" --prefix "summary_pack"
+
+# 6. Bundle Semester Course into Single Master Booklet (Cover + TOC + Chapters + Continuous BiDi Stamping)
+uv run python run_summary_pipeline.py bundle --inputs "sessions/*.json" --course-title "فیزیوپاتولوژی جامع غدد" --institution "دانشگاه بق" --out-dir "dist/master_bundle" --prefix "comprehensive_master_booklet"
 
 # Auto-Pipeline (All-in-one for single handouts)
-uv run python run_summary_pipeline.py auto --input "lecture.docx" --summary-json "summary_data.json"
+uv run python run_summary_pipeline.py auto --input "lecture.docx" --summary-json "summary_data.json" --institution "دانشگاه بق"
 ```
 
 ---
 
-## 🧪 Automated Test Suite (23/23 Passing)
+## 🧪 Automated Test Suite (25/25 Passing)
 
 Our hardened test suite verifies zero data loss, null resilience, and clinical accuracy:
 
@@ -175,6 +178,7 @@ Our hardened test suite verifies zero data loss, null resilience, and clinical a
 | **Bug V** | Track 4 Clinical Semiology & Physical Examination extraction and Anki card synthesis | **PASS** ✅ |
 | **Bug W** | 30-Point Morning-of-Exam Golden Capsule and Comparative Matrices across all deliverables | **PASS** ✅ |
 | **Bug X** | Standalone `MedicalPDFDesigner` dual-pass hybrid rendering and A4 print geometry | **PASS** ✅ |
+| **Bug Y** | Multi-session Comprehensive Course Master Booklet (Cover + TOC + Chapters + 'دانشگاه بق') | **PASS** ✅ |
 
 To run the full diagnostic suite:
 ```bash
@@ -189,16 +193,11 @@ uv run python tests/test_full_skill_diagnostics.py
 این اسکیل تخصصی برای تبدیل جزوات اسلایدی و متنی اساتید، ترنسکریپت‌های کلاسی و هندآوت‌های درسی دانشگاه‌های علوم پزشکی به **بسته چندگانه مرور های‌یلد (Quad-Pack)** طراحی شده است:
 
 1. **جزوه رسمی Word (`.docx`):** با استایل‌بندی مدرن، فونت خوانای دبی، دایرکشن راست‌به‌چپ (RTL)، کادرهای رنگی اختصاصی (زنجیره پاتوفیزیولوژی، سمیولوژی، تأکیدات مستقیم استاد، موارد مصرف ممنوع، سناریوهای خودآزمایی بالینی، نکات دامی آزمون)، ماتریس‌های تطبیقی، ماتریس مقایسه جامع داروها و جدول فشرده شب امتحان.
-2. **سند پرینت مستقیم PDF (`.pdf` با Playwright):** تولید فایل PDF با کیفیت چاپی عالی از طریق Playwright با مرورگرهای بومی ویندوز، هدر عنابی رنگ اختصاصی (`#78281F`)، بدون آرتفکت‌های مرورگر و مجهز به شماره‌گذاری فارسی `صفحه X از Y`.
-3. **داشبورد تعاملی HTML (`.html`):** نمایش تمیز تحت وب با استایل‌های اختصاصی `@page`، آکاردئون‌های تاشوی سناریوهای بالینی و پشتیبانی کامل BiDi.
-4. **سند مارک‌داون (`.md`):** شامل فلوچارت‌های کدنویسی‌شده استاندارد Mermaid، بخش سمیولوژی، خودآزمایی بالینی تاشو با پاسخ تشریحی مکانیسمی (`<details>`)، و پاک‌سازی کامل جدول‌ها با اسکپ کاراکترهای پایپ.
-5. **فلش‌کارت‌های استاندارد آنکی (`.tsv` و `.apkg`):** کارت‌های جای‌خالی اتمیک بر پایه ۲۰ قانون Wozniak، بدون ریسک تکراری شدن یا ریست زمان‌بندی مرور دانشجو به دلیل بهره‌گیری از شناسه‌های پایدار قطعی (Deterministic GUIDs)، به همراه سنتز خودکار کارت‌های سمیولوژی و معاینه بالینی.
-
----
-
-## 📄 لایسنس (License)
-
-این پروژه تحت مجوز [MIT License](LICENSE) منتشر شده است. استفاده و توسعه آن برای دانشجویان و اساتید علوم پزشکی آزاد است.
+2. **سند پرینت مستقیم PDF (`.pdf` با Playwright):** تولید فایل PDF با کیفیت چاپی عالی از طریق Playwright با مرورگرهای بومی ویندوز، هدر عنابی رنگ اختصاصی (`#78281F`)، بدون آرتفکت‌های مرورگر، درج «دانشگاه بق» در هدر و مجهز به شماره‌گذاری فارسی `صفحه X از Y`.
+3. **کتابچه جامع ترم (`comprehensive_master_booklet.pdf`):** صحافی و تجمیع تمام فصول و جلسات یک درس در قالب یک پی‌دی‌اف مرجع واحد با جلد نفیس رنگی، فهرست مطالب خودکار و شماره‌گذاری پیوسته.
+4. **داشبورد تعاملی HTML (`.html`):** نمایش تمیز تحت وب با استایل‌های اختصاصی `@page`، آکاردئون‌های تاشوی سناریوهای بالینی و پشتیبانی کامل BiDi.
+5. **سند مارک‌داون (`.md`):** شامل فلوچارت‌های کدنویسی‌شده استاندارد Mermaid، بخش سمیولوژی، خودآزمایی بالینی تاشو با پاسخ تشریحی مکانیسمی (`<details>`)، و پاک‌سازی کامل جدول‌ها با اسکپ کاراکترهای پایپ.
+6. **فلش‌کارت‌های استاندارد آنکی (`.tsv` و `.apkg`):** کارت‌های جای‌خالی اتمیک بر پایه ۲۰ قانون Wozniak، بدون ریسک تکراری شدن یا ریست زمان‌بندی مرور دانشجو به دلیل بهره‌گیری از شناسه‌های پایدار قطعی (Deterministic GUIDs)، به همراه سنتز خودکار کارت‌های سمیولوژی و معاینه بالینی.
 
 ---
 

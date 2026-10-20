@@ -61,12 +61,67 @@ BATCH_PROMPT_TEMPLATE = """# دستور کار سنتز خلاصه پزشکی ف
 4. **حفظ فشرده و منظم ساختارهای بالینی:** اگر در متن دسته‌بندی، علل، عوامل خطر، پاتوفیزیولوژی، علائم و نشانه‌ها، یافته‌های آزمایشگاهی، تشخیص، درمان، عوارض، پیش‌آگهی یا افتراق‌ها وجود دارد، آنها را در فشرده‌ترین، منظم‌ترین و جدول‌بندی‌شده‌ترین شکل ممکن حفظ کنید.
 5. **حفظ روابط علت و معلولی و زنجیره پاتوفیزیولوژی:** روابط علت و معلولی و ارتباط منطقی بین مطالب را حفظ کنید؛ به‌گونه‌ای که خلاصه فقط فهرستی خشک از کلمات نباشد و برای فهم عمیق بالینی، یادگیری و مرور سریع کاملاً قابل استفاده باشد.
 6. **پرهیز از بولت‌سازی افراطی و تجمیع مطالب مرتبط:** مطالبی که به یکدیگر مرتبط هستند را تا حد امکان در یک بولت یا عبارت ترکیبی منسجم تجمیع کنید و از بولت‌سازی افراطی و تقطیع بیهوده جملات خودداری کنید.
-7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا:** خروجی باید کاملاً یکدست، منسجم، کم‌حجم، پُرمحتوا و متناسب با مرور سریع برای امتحان پزشکی باشد.
+7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا (قانون تلخیص فوق‌متراکم - ضد رونویسی):** از رونویسی یا کپی کردن جملات طولانی جزوه اکیداً خودداری کنید. متن باید با حداکثر تراکم اطلاعاتی، جملات کوتاه تلگرافی و واژگان کلیدی پررنگ خلاصه شود.
+
+## 🌟 معماری سه‌گانه ماژول‌ها و موازنه همه‌جانبه (Polymorphic Module Architecture)
+هر مبحث را بر اساس ماهیت آن در یکی از سه تیپ زیر در آرایه `modules` قرار دهید تا هیچ بخش پایه‌ای یا تشخیصی جا نیفتد:
+
+### تیپ ۱: مفاهیم و فیزیولوژی پایه (`foundational_concept`)
+اگر متن درباره فیزیولوژی پایه، محورهای هورمونی، مسیرهای تنظیمی، آناتومی کاربردی یا پدیده‌های نرمال است:
+```json
+{{
+  "type": "foundational_concept",
+  "name": "عنوان مفهوم فیزیولوژیک",
+  "physiological_role": ["توضیح نقش و هموستاز در ۱-۲ خط تلگرافی"],
+  "feedback_cascade": ["مرحله ۱ -> مرحله ۲ -> مهار بازخوردی"],
+  "baseline_tests": ["نام تست پایه و رنج نرمال"],
+  "clinical_relevance": ["اهمیت در ایجاد بیماری و تله‌های امتحانی"]
+}}
+```
+
+### تیپ ۲: الگوریتم رویکرد بالینی (`clinical_approach`)
+اگر متن درباره الگوریتم تشخیصی، تصمیم‌گیری بالینی گام‌به‌گام یا برخورد با یک نشانه (مانند Approach to Thyroid Nodule) است:
+```json
+{{
+  "type": "clinical_approach",
+  "name": "رویکرد به [علامت یا یافته بالینی]",
+  "initial_presentation": "شکایت اصلی یا یافته آزمایشگاهی اولیه",
+  "step_by_step_algorithm": ["گام ۱: اقدام تشخیصی نخستین", "گام ۲: انشعاب بر اساس پاسخ", "گام ۳: اقدام قطعی"],
+  "pivot_points": ["معیار تصمیم‌گیری و تفکیک دو حالت"],
+  "definitive_action": "اقدام نهایی و قطعی"
+}}
+```
+
+### تیپ ۳: اسکریپت بیماری (`illness_script`)
+برای بیماری‌ها و سندرم‌های بالینی با پوشش همه‌جانبه ابعاد غیردارویی و عوارض:
+```json
+{{
+  "type": "illness_script",
+  "name": "نام بیماری",
+  "name_en": "English Name",
+  "definition_and_etiology": ["اتیولوژی و علل اصلی"],
+  "risk_factors_and_epidemiology": ["سن/جنسیت شایع و ریسک‌فاکتورها"],
+  "pathophysiology_cascade": ["زنجیره پاتوفیزیولوژی گام‌به‌گام"],
+  "clinical_presentation": [{{"sign": "علامت", "mechanism": "توجیه مکانیسمی"}}],
+  "clinical_semiology": [{{"maneuver_or_sign": "مانور", "technique": "روش", "clinical_significance": "اهمیت"}}],
+  "diagnostics": {{
+    "best_initial_test": "اقدام اولیه",
+    "gold_standard": "استاندارد طلایی قطعی",
+    "key_labs": ["آزمایش‌های تکمیلی و کات‌آف‌ها"]
+  }},
+  "pharmacology_and_management": [{{"drug_class": "دسته دارویی", "mechanism_of_action": "مکانیسم", "pearl": "نکته کلیدی"}}],
+  "surgical_and_interventional": ["اندیکاسیون جراحی / مداخله تهاجمی"],
+  "lifestyle_and_conservative": ["تغییر سبک زندگی / درمان غیردارویی"],
+  "contraindications_and_warnings": ["موارد منع مصرف قطعی و خطاهای کشنده"],
+  "complications_and_prognosis": ["عوارض وخیم و فاکتورهای پیش‌آگهی نامناسب"],
+  "high_yield_pearls": ["نکات دامی آزمون"],
+  "instructor_exam_alerts": ["تأکیدات مستقیم استاد"]
+}}
+```
 
 ## قوانین ساختاری و گیت‌های تکمیلی
-- **قانون موازنه جامعیت بالینی و فارماکولوژی (Anti-Pharmacology-Skew Law):** قبل از ورود به مباحث دارویی، تمام بیماری‌ها و سندرم‌های ذکرشده در متن (مانند شیهان، نلسون، کارنی، FHH، خطوط لوزر، آشرمن، CAIS، ۵-آلفا ردوکتاز و آپوپلکسی) با حفظ ۴ رکن (اتیولوژی، تظاهرات، تست اولیه در برابر طلایی، و تله‌های آزمونی) استخراج شوند.
-- **ترک تخصصی سمیولوژی و معاینات فیزیکی (Track 4: Clinical Semiology):** مانورهای بالینی و معاینات فیزیکی (مانور بلع، رباط Berry، نشانه‌های دالریمپل و فن‌گرافه، شوستک و تروسو، دیاپازون ۱۲۸ هرتز و...) در کلید `clinical_semiology` استخراج شوند.
-- **حفظ دقیق مقادیر عددی و کات‌آف‌ها (Zero Cutoff Omission):** تمام اعداد بالینی، درصدها (مانند EF <= 40%)، کات‌آف‌های آزمایشگاهی (مانند BNP < 100 pg/mL) و دوره‌های زمانی باید دقیقاً حفظ شوند.
+- **قانون موازنه جامعیت بالینی و فارماکولوژی (Anti-Pharmacology-Skew Law):** قبل از ورود به مباحث دارویی، تمام بیماری‌ها و سندرم‌های ذکرشده در متن (مانند شیهان، نلسون، کارنی، FHH، خطوط لوزر، آشرمن، CAIS، ۵-آلفا ردوکتاز و آپوپلکسی) استخراج شوند.
+- **حفظ دقیق مقادیر عددی و کات‌آف‌ها (Zero Cutoff Omission):** تمام اعداد بالینی، درصدها (مانند EF <= 40%)، کات‌آف‌های آزمایشگاهی و دوره‌های زمانی دقیقاً حفظ شوند.
 - **فلش‌کارت‌های اتمی آنکی:** برای هر نکته کلیدی یک کارت Cloze Deletion بسازید ({{{{c1::...}}}}). تحلیل مکانیسمی را در فیلد extra قرار دهید.
 - **کپسول طلایی شب امتحان و جداول تطبیقی:** نکات متمایزکننده تشخیصی را در قالب جدول تطبیقی (`comparative_matrices`) و نکات فوق‌سریع را در `morning_exam_checklist` درج کنید.
 
@@ -202,16 +257,36 @@ def cmd_merge_batches(args):
         if not isinstance(mod, dict):
             continue
         m_name = str(mod.get("name") or "")
-        etio_items = mod.get("definition_and_etiology") or ["-"]
-        m_etio = " ".join(str(x) for x in etio_items if x)[:60] or "-"
-        mech_items = mod.get("pathophysiology_cascade") or ["-"]
-        m_mech = str(mech_items[0] if mech_items else "-")[:60]
-        pres_items = mod.get("clinical_presentation") or []
-        m_sign = str(pres_items[0].get("sign", "-") if pres_items and isinstance(pres_items[0], dict) else "-")[:50]
-        diag_dict = mod.get("diagnostics") or {}
-        m_dx = str(diag_dict.get("best_initial_test") or "-")[:50]
-        rx_items = mod.get("pharmacology_and_management") or []
-        m_rx = str(rx_items[0].get("drug_class", "-") if rx_items and isinstance(rx_items[0], dict) else "-")[:50]
+        mod_type = mod.get("type", "illness_script")
+        if mod_type == "clinical_approach" or mod.get("step_by_step_algorithm"):
+            m_etio = "رویکرد تشخیصی"
+            alg_list = mod.get("step_by_step_algorithm") or ["-"]
+            m_mech = str(alg_list[0] if alg_list else "-")[:60]
+            m_sign = str(mod.get("initial_presentation") or "-")[:50]
+            pv_list = mod.get("pivot_points") or ["-"]
+            m_dx = str(pv_list[0] if pv_list else "-")[:50]
+            m_rx = str(mod.get("definitive_action") or "-")[:50]
+        elif mod_type == "foundational_concept" or mod.get("feedback_cascade"):
+            m_etio = "هموستاز فیزیولوژیک"
+            f_list = mod.get("feedback_cascade") or ["-"]
+            m_mech = str(f_list[0] if f_list else "-")[:60]
+            roles = mod.get("physiological_role") or ["-"]
+            m_sign = str(roles[0] if isinstance(roles, list) else roles)[:50]
+            tests = mod.get("baseline_tests") or ["-"]
+            m_dx = str(tests[0] if isinstance(tests, list) else tests)[:50]
+            rels = mod.get("clinical_relevance") or ["-"]
+            m_rx = str(rels[0] if isinstance(rels, list) else rels)[:50]
+        else:
+            etio_items = mod.get("definition_and_etiology") or ["-"]
+            m_etio = " ".join(str(x) for x in etio_items if x)[:60] or "-"
+            mech_items = mod.get("pathophysiology_cascade") or ["-"]
+            m_mech = str(mech_items[0] if mech_items else "-")[:60]
+            pres_items = mod.get("clinical_presentation") or []
+            m_sign = str(pres_items[0].get("sign", "-") if pres_items and isinstance(pres_items[0], dict) else "-")[:50]
+            diag_dict = mod.get("diagnostics") or {}
+            m_dx = str(diag_dict.get("best_initial_test") or "-")[:50]
+            rx_items = mod.get("pharmacology_and_management") or []
+            m_rx = str(rx_items[0].get("drug_class", "-") if rx_items and isinstance(rx_items[0], dict) else "-")[:50]
         crash_rows.append([m_name, m_etio, m_mech, m_sign, m_dx, m_rx])
 
     final_data = {

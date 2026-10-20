@@ -1071,6 +1071,198 @@ def test_bug_y_comprehensive_course_bundling():
 
     print("[PASS] Bug Y Test Passed: Comprehensive course bundling (Cover, TOC, multi-chapter PDF/DOCX/MD/Anki) verified with institution 'دانشگاه بق'.")
 
+def test_bug_z_polymorphic_modules_and_balanced_coverage():
+    """Bug Z: Polymorphic Module Architecture (Foundational Concept, Clinical Approach, Illness Script) and Anki Parity."""
+    from build_summary_pack import build_docx_summary, build_markdown_summary, build_html_summary, get_or_synthesize_flashcards
+    from audit_summary_coverage import audit_coverage, audit_illness_script_integrity
+
+    data = {
+        "topic_title": "فیزیوپاتولوژی جامع هیپوفیز و غدد",
+        "topic_title_en": "Endocrine & Pituitary Comprehensive Review",
+        "organ_system": "غدد درون‌ریز",
+        "institution": "دانشگاه بق",
+        "modules": [
+            {
+                "module_type": "foundational_concept",
+                "name": "محور هیپوتالاموس-هیپوفیز-آدرنال (HPA Axis)",
+                "anatomical_physiological_basis": [
+                    "ترشح CRH از هسته پاراونتریکولار هیپوتالاموس و تحریک گیرنده‌های هیپوفیز قدامی"
+                ],
+                "regulatory_mechanisms_and_feedback": [
+                    "مهار فیدبک منفی گلوکوکورتیکوئیدها (کورتیزول) بر ترشح CRH و ACTH در سطح مغز"
+                ],
+                "clinical_relevance": [
+                    "قطع ناگهانی درمان طولانی‌مدت گلوکوکورتیکوئید منجر به نارسایی حاد ثانویه آدرنال می‌شود."
+                ]
+            },
+            {
+                "module_type": "clinical_approach",
+                "name": "رویکرد تشخیصی گام‌به‌گام به سندرم کوشینگ",
+                "chief_complaint_or_scenario": "چاقی مرکزی، استریای ارغوانی و هایپرتنشن مقاوم به درمان",
+                "step_by_step_algorithm": [
+                    {"step": "گام ۱: رد مصرف گلوکوکورتیکوئید اگزوژن", "action": "شرح حال دارویی دقیق و مکمل‌ها"},
+                    {"step": "گام ۲: غربالگری افزایش کورتیزول", "action": "تست دگزامتازون ۱ میلی‌گرم شبانه یا کورتیزول آزاد ادرار ۲۴ ساعته"},
+                    {"step": "گام ۳: سنجش ACTH پلاسما", "action": "افتراق وابستگی به ACTH از علل آدرنال خودمختار"}
+                ],
+                "high_yield_decision_points": [
+                    "در صورت ACTH کمتر از 5 pg/mL علت آدرنال اولیه مطرح است و باید CT آدرنال انجام شود."
+                ]
+            },
+            {
+                "module_type": "illness_script",
+                "name": "فئوکروموسیتوم (Pheochromocytoma)",
+                "risk_factors_and_predisposing": ["سندرم MEN2، بیماری فون هیپل-لیندو (VHL) و NF-1"],
+                "definition_and_etiology": ["تومور نورواندوکرین مترشحه کاتکول‌آمین‌ها از سلول‌های کرومافین مدولای آدرنال"],
+                "pathophysiology_cascade": ["ترشح اپی‌نفرین و نوراپی‌نفرین -> تحریک گیرنده‌های آلفا و بتا -> وازوکانستریکشن شدید"],
+                "clinical_presentation": [{"sign": "تریاد کلاسیک: سردرد، تعریق شدید و تپش قلب", "mechanism": "طوفان آدرنرژیک"}],
+                "diagnostics": {
+                    "best_initial_test": "سنجش متانفرین‌های آزاد پلاسما یا متانفرین‌های ادرار ۲۴ ساعته",
+                    "gold_standard": "تصویربرداری تومور با MRI شکم یا اسکن MIBG"
+                },
+                "surgical_and_interventional_indications": [
+                    "جراحی آدرنالکتومی با پیش‌درمان حداقل ۱۰ تا ۱۴ روزه با آلفا بلوکر (فنوکسی‌بنزامین)"
+                ],
+                "complications_and_prognosis": [
+                    "بحران فشار خون و آریتمی‌های کشنده در صورت جراحی بدون بلوک آلفا و بتا"
+                ],
+                "contraindications_and_warnings": [
+                    "بتابلوکر هرگز نباید قبل از بلوک کامل آلفا تجویز شود زیرا باعث بحران هایپرتنسیو مرگبار می‌شود."
+                ],
+                "pharmacology_and_management": [
+                    {"drug_class": "فنوکسی‌بنزامین", "mechanism": "آلفا بلوکر غیرانتخابی غیرقابل برگشت", "exam_pearl": "شروع قبل از بتابلوکر"}
+                ]
+            }
+        ]
+    }
+
+    out_docx = "dist/diag_test_z.docx"
+    out_md = "dist/diag_test_z.md"
+    out_html = "dist/diag_test_z.html"
+
+    build_docx_summary(data, out_docx)
+    build_markdown_summary(data, out_md)
+    build_html_summary(data, out_html)
+
+    # 1. Verify Markdown has polymorphic sections
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+
+    assert "مفاهیم و فیزیولوژی پایه" in md_text
+    assert "رویکرد و الگوریتم تشخیصی" in md_text
+    assert "زنجیره پاتوفیزیولوژی" in md_text
+    assert "اندیکاسیون جراحی / مداخله‌ای" in md_text
+    assert "عوارض وخیم و پیش‌آگهی" in md_text
+
+    # 2. Verify Anki card auto-synthesis for all polymorphic branches
+    cards = get_or_synthesize_flashcards(data)
+    clozes = [c.get("text", "") or c.get("cloze_text", "") for c in cards]
+    joined_clozes = " ".join(clozes)
+
+    assert any("HPA" in c or "مهار فیدبک" in c or "CRH" in c for c in clozes), f"Foundational feedback Anki card missing! Cards: {clozes}"
+    assert any("کوشینگ" in c or "ACTH" in c or "الگوریتم" in c for c in clozes), f"Clinical approach decision point Anki card missing! Cards: {clozes}"
+    assert any("جراحی" in c or "فنوکسی‌بنزامین" in c or "آدرنالکتومی" in c for c in clozes), f"Surgical indication Anki card missing! Cards: {clozes}"
+    assert any("عوارض" in c or "بحران" in c for c in clozes), f"Complication Anki card missing! Cards: {clozes}"
+
+    # 3. Verify audit_illness_script_integrity evaluates all three types as sound modules
+    audit_rep = audit_illness_script_integrity("", data)
+    assert audit_rep["illness_script_compliant"], "Polymorphic modules failed illness script compliance!"
+    assert audit_rep["sound_clinical_modules_count"] == 3
+    assert not audit_rep["pharmacology_skew_detected"]
+
+    print("[PASS] Bug Z Test Passed: Polymorphic module architecture (Foundational, Algorithm, Illness Script) and Anki parity verified.")
+
+def test_bug_aa_high_compression_ratio_and_anti_bloat_audit():
+    """Bug AA: High-Yield Compression Gate & Verbatim Bloat Prevention Audit."""
+    from audit_summary_coverage import audit_coverage
+
+    # Substantial clinical lecture text (>500 words)
+    long_lecture_source = (
+        "سندرم کوشینگ مجموعه‌ای از علائم بالینی ناشی از افزایش مزمن گلوکوکورتیکوئیدها در خون است. "
+        "اتیولوژی این سندرم به دو گروه وابسته به ACTH و مستقل از ACTH تقسیم می‌شود. شایع‌ترین علت اگزوژن مصرف کورتون است. "
+        "شایع‌ترین علت اندوژن، بیماری کوشینگ ناشی از میکروآدنوم هیپوفیز مترشحه ACTH است که حدود ۷۰ درصد موارد اندوژن را تشکیل می‌دهد. "
+        "تومورهای آدرنال (آدنوم و کارسینوما) و ترشح نابجای ACTH توسط تومورهای نورواندوکرین نظیر کارسینوئید ریه از دیگر علل هستند. "
+        "تظاهرات بالینی سندرم شامل چاقی مرکزی با تجمع چربی در صورت (چهره ماه)، بوفالو هامپ در پشت گردن، آتروفی عضلات پروگزیمال، "
+        "پوست نازک و شکننده، استریای ارغوانی پهن با عرض بیش از ۱ سانتی‌متر بر روی شکم، اکیموز خودبه‌خودی، هایپرتنشن، "
+        "اختلال تحمل گلوکز، استئوپروز شدید و افسردگی است. "
+        "برای غربالگری و تشخیص افزایش کورتیزول سه تست اولیه وجود دارد: ۱) تست سرکوب شبانه دگزامتازون با دوز ۱ میلی‌گرم در ساعت ۲۳ "
+        "و سنجش کورتیزول ساعت ۸ صبح که اگر کمتر از ۱.۸ میکروگرم در دسی‌لیتر باشد نرمال است؛ ۲) سنجش کورتیزول آزاد ادرار ۲۴ ساعته "
+        "که اگر ۳ برابر حد نرمال باشد مثبت است؛ ۳) سنجش کورتیزول بزاق در نیمه‌شب که افزایش آن نشانه اختلال ریتم شبانه‌روزی است. "
+        "پس از اثبات هایپرکورتیزولیسم، سطح ACTH پلاسما اندازه‌گیری می‌شود. اگر ACTH زیر ۵ پیکوگرم در میلی‌لیتر باشد مستقل از ACTH است "
+        "و نیازمند سی‌تی‌اسکن غده آدرنال می‌باشد. اگر ACTH بالای ۲۰ پیکوگرم در میلی‌لیتر باشد وابسته به ACTH بوده و گام بعدی تست سرکوب "
+        "با دوز بالای دگزامتازون (۸ میلی‌گرم) یا تست تحریک با CRH است. در بیماری کوشینگ هیپوفیزی، سطح کورتیزول بیش از ۵۰ درصد سرکوب می‌شود "
+        "در حالی که در ترشح نابجای ACTH سرکوب دیده نمی‌شود. گلد استاندارد برای تایید آدنوم هیپوفیز، کاتتریزاسیون سینوس پتروزال تحتانی (BIPSS) "
+        "با گرادیان مرکزی به محیطی بیش از ۲ قبل از CRH و بیش از ۳ بعد از تحریک CRH است. "
+        "درمان خط اول در بیماری کوشینگ، جراحی ترانس اسفنوئیدال (TSS) آدنوم هیپوفیز است. در تومورهای آدرنال، آدرنالکتومی لاپاروسکوپیک انجام می‌شود. "
+        "درمان‌های دارویی مهارکننده سنتز کورتیکواستروئید شامل کتوکونازول با دوز ۲۰۰ تا ۴۰۰ میلی‌گرم، متیراپون و متوتان در موارد عود یا غیرقابل جراحی "
+        "کاربرد دارند. هشدار بسیار مهم: قطع ناگهانی درمان کورتیزول یا جراحی بدون جایگزینی استروئید منجر به نارسایی حاد آدرنال و شوک کشنده می‌شود. "
+        "پایش بعد از عمل جراحی شامل اندازه‌گیری کورتیزول صبحگاهی است؛ افت سطح کورتیزول به زیر ۲ میکروگرم نشانه بهبودی موفق و پاکسازی آدنوم است."
+    )
+
+    # 1. High-Yield Compressed Summary (~100-150 words): preserves cutoffs, pillars, warnings
+    compressed_summary = {
+        "modules": [
+            {
+                "module_type": "illness_script",
+                "name": "سندرم کوشینگ (Cushing Syndrome)",
+                "definition_and_etiology": ["افزایش مزمن گلوکوکورتیکوئیدها؛ شایع‌ترین اگزوژن کورتون و اندوژن بیماری کوشینگ (۷۰٪)"],
+                "pathophysiology_cascade": ["افزایش کورتیزول -> کاتابولیسم پروتئین، گلوکونئوژنز و مهار استئوبلاست‌ها"],
+                "clinical_presentation": [{"sign": "چاقی مرکزی، چهره ماه، بوفالو هامپ، استریای ارغوانی > ۱ سانتی‌متر", "mechanism": "کاتابولیسم بافتی"}],
+                "diagnostics": {
+                    "best_initial_test": "تست دگزامتازون ۱ میلی‌گرم شبانه (کات‌آف ۱.۸ میکروگرم) یا کورتیزول ادرار ۲۴ ساعته",
+                    "gold_standard": "کاتتریزاسیون سینوس پتروزال تحتانی (BIPSS) با گرادیان > ۲ یا > ۳ بعد از CRH"
+                },
+                "high_yield_pearls": [
+                    "کات‌آف ACTH: زیر ۵ نشانه آدرنال (سی‌تی‌اسکن) و بالای ۲۰ وابسته به ACTH.",
+                    "تست دگزامتازون ۸ میلی‌گرم: سرکوب > ۵۰٪ نشانه بیماری کوشینگ هیپوفیزی است."
+                ],
+                "surgical_and_interventional_indications": ["خط اول درمان: جراحی ترانس اسفنوئیدال (TSS) هیپوفیز یا آدرنالکتومی"],
+                "contraindications_and_warnings": [
+                    "هشدار بسیار مهم: قطع ناگهانی کورتون یا جراحی بدون جایگزینی استروئید منجر به بحران نارسایی حاد آدرنال و شوک کشنده می‌شود."
+                ],
+                "pharmacology_and_management": [
+                    {"drug_class": "کتوکونازول و متیراپون", "mechanism": "مهار سنتز کورتیکواستروئید با دوز ۲۰۰ تا ۴۰۰ میلی‌گرم", "exam_pearl": "در موارد عود یا غیرقابل جراحی"}
+                ]
+            }
+        ]
+    }
+
+    rep_compressed = audit_coverage(long_lecture_source, compressed_summary)
+    assert rep_compressed["verdict"] == "PASSED", f"High-yield summary unexpectedly failed audit: {rep_compressed}"
+    assert rep_compressed["scores"]["compression_ratio"] < 0.85, "Expected compact compression ratio!"
+    assert not rep_compressed["scores"]["verbatim_bloat_detected"], "Bloat falsely detected on compact summary!"
+    assert rep_compressed["compression_audit"]["high_yield_compressed"], "High yield compression flag not set!"
+
+    # 2. Verbatim Bloat Summary: dumps entire raw lecture paragraphs verbatim into bullets
+    bloated_summary = {
+        "modules": [
+            {
+                "module_type": "illness_script",
+                "name": "سندرم کوشینگ",
+                "definition_and_etiology": [long_lecture_source[:300]],
+                "pathophysiology_cascade": [long_lecture_source[300:600]],
+                "clinical_presentation": [{"sign": long_lecture_source[600:900], "mechanism": "نامشخص"}],
+                "diagnostics": {
+                    "best_initial_test": long_lecture_source[900:1200],
+                    "gold_standard": long_lecture_source[1200:1500]
+                },
+                "high_yield_pearls": [long_lecture_source[1500:1800]],
+                "surgical_and_interventional_indications": [long_lecture_source[1800:2000]],
+                "contraindications_and_warnings": [
+                    "هشدار بسیار مهم: قطع ناگهانی درمان کورتیزول یا جراحی بدون جایگزینی استروئید منجر به نارسایی حاد آدرنال و شوک کشنده می‌شود."
+                ],
+                "pharmacology_and_management": [
+                    {"drug_class": "کتوکونازول", "mechanism": long_lecture_source[2000:], "exam_pearl": "دوز ۲۰۰ تا ۴۰۰ میلی‌گرم"}
+                ]
+            }
+        ]
+    }
+
+    rep_bloat = audit_coverage(long_lecture_source, bloated_summary)
+    assert rep_bloat["scores"]["verbatim_bloat_detected"], "Failed to detect verbatim bloat on huge raw dump!"
+    assert rep_bloat["verdict"] == "WARNING_VERBATIM_BLOAT_DETECTED", f"Expected bloat warning, got {rep_bloat['verdict']}"
+
+    print("[PASS] Bug AA Test Passed: High-yield compression gate & verbatim bloat prevention audit verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1098,4 +1290,6 @@ if __name__ == "__main__":
     test_bug_w_morning_exam_checklist_and_comparative_matrices()
     test_bug_x_pdf_designer_engine_dual_pass_and_geometry()
     test_bug_y_comprehensive_course_bundling()
+    test_bug_z_polymorphic_modules_and_balanced_coverage()
+    test_bug_aa_high_compression_ratio_and_anti_bloat_audit()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

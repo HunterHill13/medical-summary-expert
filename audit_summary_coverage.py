@@ -237,25 +237,104 @@ def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any
         if not isinstance(mod, dict):
             continue
         m_name = mod.get("name", "Unnamed Module")
+        mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
 
-        has_etio = bool(mod.get("definition_and_etiology") or mod.get("pathophysiology_cascade") or mod.get("flowchart_steps") or mod.get("etiology"))
-        has_pres = bool(mod.get("clinical_presentation") or mod.get("triads_and_pathognomonics") or mod.get("symptoms_and_signs"))
+        # Archetype 1: Foundational Physiology & Regulatory Loops
+        is_foundation = (
+            mod_type == "foundational_concept"
+            or bool(mod.get("feedback_cascade"))
+            or bool(mod.get("regulatory_mechanisms_and_feedback"))
+            or bool(mod.get("physiological_role"))
+            or bool(mod.get("anatomical_physiological_basis"))
+        )
+        if is_foundation:
+            total_clinical_modules += 1
+            has_role = bool(mod.get("physiological_role") or mod.get("anatomical_physiological_basis"))
+            has_feed = bool(mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback"))
+            has_tests = bool(mod.get("baseline_tests"))
+            has_rel = bool(mod.get("clinical_relevance"))
+            f_pillars = sum([has_role, has_feed, has_tests, has_rel])
+            is_sound = (f_pillars >= 2)
+            if is_sound:
+                sound_modules_count += 1
+            module_audits.append({
+                "module": m_name,
+                "type": "foundational_concept",
+                "pillars_met_count": f_pillars,
+                "has_role": has_role,
+                "has_feedback": has_feed,
+                "has_tests": has_tests,
+                "has_clinical_relevance": has_rel,
+                "is_sound": is_sound
+            })
+            continue
+
+        # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
+        is_approach = (
+            mod_type == "clinical_approach"
+            or bool(mod.get("step_by_step_algorithm"))
+        )
+        if is_approach:
+            total_clinical_modules += 1
+            has_init = bool(mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario"))
+            has_alg = bool(mod.get("step_by_step_algorithm"))
+            has_pivot = bool(mod.get("pivot_points") or mod.get("high_yield_decision_points"))
+            has_def = bool(mod.get("definitive_action"))
+            a_pillars = sum([has_init, has_alg, has_pivot, has_def])
+            is_sound = (a_pillars >= 2)
+            if is_sound:
+                sound_modules_count += 1
+            module_audits.append({
+                "module": m_name,
+                "type": "clinical_approach",
+                "pillars_met_count": a_pillars,
+                "has_initial": has_init,
+                "has_algorithm": has_alg,
+                "has_pivot": has_pivot,
+                "has_definitive": has_def,
+                "is_sound": is_sound
+            })
+            continue
+
+        # Archetype 3: Disease Illness Script
+        has_etio = bool(
+            mod.get("definition_and_etiology")
+            or mod.get("pathophysiology_cascade")
+            or mod.get("risk_factors_and_epidemiology")
+            or mod.get("risk_factors_and_predisposing")
+            or mod.get("flowchart_steps")
+            or mod.get("etiology")
+        )
+        has_pres = bool(
+            mod.get("clinical_presentation")
+            or mod.get("triads_and_pathognomonics")
+            or mod.get("symptoms_and_signs")
+            or mod.get("clinical_semiology")
+        )
         diag = mod.get("diagnostics")
         has_diag = bool(isinstance(diag, dict) and (diag.get("best_initial_test") or diag.get("gold_standard")))
-        has_pearls = bool(mod.get("high_yield_pearls") or mod.get("exam_traps") or mod.get("contraindications_and_warnings") or mod.get("instructor_exam_alerts"))
+        has_pearls = bool(
+            mod.get("high_yield_pearls")
+            or mod.get("exam_traps")
+            or mod.get("contraindications_and_warnings")
+            or mod.get("instructor_exam_alerts")
+            or mod.get("complications_and_prognosis")
+            or mod.get("surgical_and_interventional")
+            or mod.get("surgical_and_interventional_indications")
+        )
         has_pharm = bool(mod.get("pharmacology_and_management"))
 
         is_clinical = has_etio or has_pres or has_diag or (not has_pharm)
         if is_clinical:
             total_clinical_modules += 1
             pillars_met = sum([has_etio, has_pres, has_diag, has_pearls])
-            # A module is sound if it preserves at least 2 pillars (or all applicable non-null pillars from source)
             is_sound = (pillars_met >= 2)
             if is_sound:
                 sound_modules_count += 1
 
             module_audits.append({
                 "module": m_name,
+                "type": "illness_script",
                 "pillars_met_count": pillars_met,
                 "has_etiology_cascade": has_etio,
                 "has_clinical_presentation": has_pres,
@@ -414,16 +493,45 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     # 6. Anti-Pharmacology-Skew & Illness Script Integrity Audit
     illness_script_report = audit_illness_script_integrity(norm_source, summary_data)
 
+    # 7. High-Yield Compression & Anti-Bloat Audit
+    src_words = len(re.findall(r'\b\w+\b', norm_source))
+    sum_words = len(re.findall(r'\b\w+\b', norm_summary_text))
+    compression_ratio = round(sum_words / src_words, 2) if src_words > 0 else 0.0
+
+    # Check for individual bloated bullets (>120 words per bullet indicates verbatim raw pasting)
+    has_bloated_bullet = False
+    for mod in (summary_data.get("modules") or []):
+        if not isinstance(mod, dict):
+            continue
+        for key, val in mod.items():
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str) and len(re.findall(r'\b\w+\b', item)) > 120:
+                        has_bloated_bullet = True
+            elif isinstance(val, str) and len(re.findall(r'\b\w+\b', val)) > 150:
+                has_bloated_bullet = True
+
+    # A true medical revision summary must compress verbose explanations into high-yield pearls
+    # Bloat is flagged if source is substantial (>=300 words) but summary exceeds 85% of source volume,
+    # or if individual bullets contain verbatim paragraph dumps (>120 words).
+    verbatim_bloat_detected = bool((src_words >= 300 and compression_ratio > 0.85) or has_bloated_bullet)
+
     passed = (
         num_coverage_pct >= 80.0
         and entity_recall_pct >= 85.0
         and all_bifurcations_valid
         and len(omitted_warnings) == 0
         and illness_script_report["illness_script_compliant"]
+        and not verbatim_bloat_detected
     )
 
+    if not passed:
+        verdict = "WARNING_VERBATIM_BLOAT_DETECTED" if (verbatim_bloat_detected and num_coverage_pct >= 80.0) else "WARNING_OMISSIONS_DETECTED"
+    else:
+        verdict = "PASSED"
+
     report = {
-        "verdict": "PASSED" if passed else "WARNING_OMISSIONS_DETECTED",
+        "verdict": verdict,
         "scores": {
             "numerical_coverage_pct": num_coverage_pct,
             "entity_recall_pct": entity_recall_pct,
@@ -432,7 +540,16 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "instructor_emphasis_omitted_count": len(omitted_emphasis),
             "illness_script_compliance_pct": illness_script_report["illness_script_compliance_pct"],
             "illness_script_compliant": illness_script_report["illness_script_compliant"],
-            "pharmacology_skew_detected": illness_script_report["pharmacology_skew_detected"]
+            "pharmacology_skew_detected": illness_script_report["pharmacology_skew_detected"],
+            "compression_ratio": compression_ratio,
+            "verbatim_bloat_detected": verbatim_bloat_detected
+        },
+        "compression_audit": {
+            "source_word_count": src_words,
+            "summary_word_count": sum_words,
+            "compression_ratio": compression_ratio,
+            "verbatim_bloat_detected": verbatim_bloat_detected,
+            "high_yield_compressed": bool(0.10 <= compression_ratio <= 0.85)
         },
         "total_source_clinical_numbers": len(source_nums),
         "total_omitted_numbers_count": len(unique_omissions),

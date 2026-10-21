@@ -1,21 +1,21 @@
-# 🩺 Medical Summary Expert (v3.8.0)
+# 🩺 Medical Summary Expert (v3.9.0)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-34%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.8.0-orange?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-35%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.9.0-teal?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Google%20Antigravity-Compatible-blueviolet?style=for-the-badge)](https://antigravity.google)
 
-A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via a **Polymorphic Module Architecture**, structures conditions using canonical **Illness Scripts**, renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, and outputs the synchronized **Quad-Pack**:
-1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
-2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom burgundy headers (`#78281F`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
-3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, collapsible clinical vignettes (`<details>`), and interactive matrices.
-4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting.
-5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, auto-synthesized visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
+A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via the **Table-First Hybrid Architecture (v3.9.0)** with **6 Context-Aware Table Archetypes**, highlights critical points via **In-Cell Badges** (`🔴 تله امتحانی`, `💎 استاندارد طلایی`, `⚠️ خطای رایج`), renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, synthesizes atomic Anki cards via the **Table-Row Cloze Engine**, and outputs the synchronized **Quad-Pack**:
+1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, Teal Medical palette (`#007A87`), repeating table headers across page breaks (`tblHeader`), anti-row split enforcement (`cantSplit`), subtle zebra striping (`#F0FDFA`), true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
+2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom teal medical headers (`#007A87`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
+3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, in-cell badge styling, collapsible clinical vignettes (`<details>`), and interactive matrices.
+4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting with `<br>` multi-line cells.
+5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, auto-synthesized table-row cloze cards (`::TableMatrix`), visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
 
 ---
 
@@ -40,36 +40,34 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 
 ---
 
-## 🌟 Key Innovations & Architectural Pillars (v3.6.1)
+## 🌟 Key Innovations & Architectural Pillars (v3.9.0)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                  MEDICAL SUMMARY EXPERT PIPELINE (v3.6.1)              │
+│             MEDICAL SUMMARY EXPERT PIPELINE (v3.9.0 - Table-First)     │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 1. INGESTION ENGINE (DOCX & PDF)                                       │
+│ 1. INGESTION & ZERO-OMISSION PARSING                                   │
 │    - OOXML Deep Traversal: Word Textboxes, Table-Cell Shapes & SDT     │
-│    - Natural Word Flow: <w:br>, <w:cr>, <w:tab>, <w:noBreakHyphen>     │
 │    - PyMuPDF Vector Extraction + 150 DPI Scanned Page OCR Fallback     │
+│    - 100% Mandatory Slide & Clinical Photo Inspection                  │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2. SHARD-AND-MERGE MULTI-AGENT ORCHESTRATION                           │
-│    - 2500-Word Semantic Partitioning by Section Headings               │
-│    - 150-Word Context Halo preventing boundary amnesia                 │
-│    - Polymorphic Schemas: Foundational, Approach & Balanced Illness    │
+│ 2. TABLE-FIRST HYBRID ARCHITECTURE & CONTEXT-AWARE SCHEMAS             │
+│    - 6 Thematic Table Archetypes: Pathophysiology, Anatomy, Pharma,    │
+│      Diagnostic Cutoffs, Differential Matrix & Dynamic Tests           │
+│    - In-Cell Badges: 🔴 Trap, ⚠️ Error, 💎 Gold Standard, 📌 Key Note │
+│    - 3-4 Page Compact Golden Review Budget per Lecture Session         │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3. ZERO-OMISSION & UNIVERSAL CLINICAL AUDIT GATE                      │
-│    - Universal Dynamic Syndrome Audit (Cardiology, Nephrology, Neuro...)│
-│    - High-Yield Compression Gate (Flags ratio > 0.85 & bullets > 120w) │
-│    - Anti-Pharmacology-Skew Law (Illness Script 4 Pillars + Syndromes) │
-│    - Persian/Arabic Digit Canonicalization (۴۰٪ -> 40%, ۱،۵ -> 1.5)    │
-│    - Substantive Warning Audit & USMLE Pharmacology Suffix Detection   │
+│ 3. RIGOROUS QUALITY GATES & VERIFICATION AUDIT                         │
+│    - Flowchart Legibility Gate: Vertical TD, Aspect Ratio (0.7-1.6:1)  │
+│    - Multimodal Policy: Strict Omission of Patient Photos from Canvas  │
+│    - LaTeX/BiDi Gate: Zero raw TeX leaks, native math formula cards    │
+│    - Word Bold Run Engine: True run.bold without asterisk leaks        │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 4. PUBLICATION-GRADE DELIVERABLES COMPILER                             │
-│    - Polymorphic Crash Sheets & Morning Checklist Priority Synthesis   │
-│    - Direct Playwright PDF: Edge/Chrome headless + 'دانشگاه بق' header │
-│    - Persian BiDi Stamping: 'صفحه X از Y' via ReportLab + pypdf        │
-│    - DOCX: Word RTL, Dubai Font, Dedicated Emergency & Special Boxes   │
-│    - Master Course Booklet: Cover Page + Auto TOC + Multi-Chapter Sync │
-│    - Anki: CLOZE Model, Deterministic Hash GUIDs, Staging & Emergency  │
+│    - Teal Medical Palette (#007A87 header, #F0FDFA zebra, clean borders)│
+│    - DOCX: Word RTL, Dubai Font, tblHeader, cantSplit, True Bold Runs  │
+│    - Playwright PDF: Direct HTML-to-PDF + 'دانشگاه بق' header + BiDi   │
+│    - Anki: Table-Row Cloze Engine, deterministic hash GUIDs, .apkg/.tsv│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 

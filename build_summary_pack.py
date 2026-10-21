@@ -33,24 +33,64 @@ from docx.oxml.ns import nsdecls, qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-# Color Palette Specifications
-COLOR_PRIMARY_BURGUNDY = (0x78, 0x28, 0x1F)  # #78281F - Main Headings & Accent
-COLOR_SECONDARY_TEAL   = (0x0E, 0x62, 0x51)  # #0E6251 - Subheadings (H2)
-COLOR_TEXT_CHARCOAL    = (0x26, 0x26, 0x26)  # #262626 - Main Body Text
-COLOR_BLUE_BORDER      = "85C1E9"            # Soft Sky Blue Border for Pathophysiology
-COLOR_BLUE_BG          = "EBF5FB"            # Soft Sky Blue Header Fill
-COLOR_AMBER_BORDER     = "D35400"            # Amber/Orange Border for High-Yield Pearls
-COLOR_AMBER_BG         = "FEF9E7"            # Soft Yellow/Cream Fill for Pearls
-COLOR_TABLE_HEADER_BG  = "78281F"            # Burgundy Table Header
-COLOR_TABLE_HEADER_TXT = "FFFFFF"            # White Table Header Text
-COLOR_TABLE_ALT_ROW    = "FDFEFE"            # Alternating Row Light Fill
-COLOR_MUTED_GRAY       = (0x7F, 0x8C, 0x8D)  # Gray for timestamps/meta
-COLOR_SEMIOLOGY_TEAL   = "16A085"            # Teal for Track 4: Clinical Semiology
-COLOR_SEMIOLOGY_BG     = "E8F8F5"            # Light Teal Fill
-COLOR_CHECKLIST_NAVY   = "1A5276"            # Navy for Morning-of-Exam Capsule
-COLOR_CHECKLIST_BG     = "FEFDE8"            # Warm Amber Tint for Morning Checklist
+# Teal Medical Palette Specifications (v3.9.0 Table-First Hybrid)
+COLOR_PRIMARY_TEAL      = (0x00, 0x7A, 0x87)  # #007A87 - Main Headings & Table Headers
+COLOR_TEAL_DARK         = (0x0B, 0x72, 0x85)  # #0B7285 - Deep Teal Accent
+COLOR_SECONDARY_CYAN    = (0x08, 0x91, 0xB2)  # #0891B2 - Subheadings & Section Borders
+COLOR_TEXT_CHARCOAL     = (0x1F, 0x29, 0x37)  # #1F2937 - Main Body Text (Dark Slate)
+COLOR_MUTED_GRAY        = (0x64, 0x74, 0x8B)  # #64748B - Metadata & Subtitles
+COLOR_CARD_BORDER       = "CBD5E1"            # Table Border Crisp Light Gray
+COLOR_CARD_BG           = "F8FAFC"            # Soft Slate BG
+COLOR_AMBER_BORDER      = "D97706"            # Amber/Orange Border for High-Yield Pearls
+COLOR_AMBER_BG          = "FFFBEB"            # Soft Yellow/Cream Fill for Pearls
+COLOR_TABLE_HEADER_BG   = "007A87"            # Teal Medical Header Background (#007A87)
+COLOR_TABLE_HEADER_TXT  = "FFFFFF"            # White Table Header Text
+COLOR_TABLE_ALT_ROW     = "F0FDFA"            # Subtle Mint/Teal Zebra Row Fill (#F0FDFA)
+COLOR_RUBY_RED          = (0xB9, 0x1C, 0x1C)  # #B91C1C - Red Trap Badges (🔴 تله امتحانی)
+COLOR_EMERALD_GREEN     = (0x04, 0x78, 0x57)  # #047857 - Gold Standard Badges (💎 استاندارد طلایی)
+COLOR_AMBER_ORANGE      = (0xC2, 0x41, 0x0C)  # #C2410C - Common Error Badges (⚠️ خطای رایج)
+COLOR_BLUE_BORDER       = "38BDF8"            # Sky Blue Border
+COLOR_BLUE_BG           = "F0F9FF"            # Sky Blue Fill
+COLOR_SEMIOLOGY_TEAL    = "0D9488"            # Teal for Clinical Semiology
+COLOR_SEMIOLOGY_BG      = "F0FDFA"            # Light Teal Fill
+COLOR_CHECKLIST_NAVY    = "0369A1"            # Navy for Morning-of-Exam Capsule
+COLOR_CHECKLIST_BG      = "FEFDE8"            # Warm Amber Tint for Morning Checklist
+
+# Legacy compatibility aliases
+COLOR_PRIMARY_BURGUNDY  = COLOR_PRIMARY_TEAL
+COLOR_SECONDARY_TEAL    = COLOR_SECONDARY_CYAN
 
 FONT_DUBAI = "Dubai"
+
+# ---------------------------------------------------------------------------
+# 6 Context-Aware Table Archetypes (v3.9.0 Table-First Hybrid)
+# ---------------------------------------------------------------------------
+TABLE_ARCHETYPES = {
+    "pathophysiology": {
+        "name": "اصول پاتوفیزیولوژی و اتیولوژی",
+        "headers": ["مکانیسم پاتوفیزیولوژیک", "علل و اتیولوژی‌های شایع", "نمونه‌های بالینی و نکات امتحانی"]
+    },
+    "anatomy": {
+        "name": "آناتومی بالینی و مجاورات توده‌ای",
+        "headers": ["عنصر آناتومیک", "موقعیت و ساختار / اثر مکانیکی", "پیامد بالینی، علائم تیپیک و نکات جراحی"]
+    },
+    "pharmacology": {
+        "name": "کلاس‌های بیوشیمیایی، هورمون‌ها و داروشناسی",
+        "headers": ["کلاس بیوشیمیایی / دارویی", "نمونه‌های شاخص و لیگاندها", "ویژگی‌های اختصاصی، فارماکوکینتیک و نکات امتحانی"]
+    },
+    "diagnostic": {
+        "name": "معیارهای تشخیصی، آزمایشگاهی و کات‌آف‌ها",
+        "headers": ["تست تشخیصی / روش سنجش", "طبیعی (Normal)", "پیش‌دیابت / بینابینی", "حالت بیماری / آستانه تشخیصی"]
+    },
+    "differential": {
+        "name": "ماتریس جامع تشخیص افتراقی (Illness Script)",
+        "headers": ["ویژگی افتراقی", "بیماری الف", "بیماری ب", "بیماری ج"]
+    },
+    "multiorgan": {
+        "name": "پاتوژنز چندارگانی و تست‌های دینامیک",
+        "headers": ["ارگان درگیر / گام تست", "نقص پاتوفیزیولوژیک / اندیکاسیون", "پیامد بالینی / پروتکل محرک-مهار", "درمان دارویی / تفسیر تشخیصی"]
+    }
+}
 
 # ---------------------------------------------------------------------------
 # BiDi & OpenXML Typography Helpers for Word (.docx) & TeX Sanitization
@@ -129,6 +169,34 @@ def format_inline_markdown(text: str) -> str:
     )
 
     return s
+
+
+def format_cell_html(text: str) -> str:
+    """
+    Formats a table cell's multi-line text with bullets, bolding, and colored badge spans
+    matching the v3.9.0 Table-First Hybrid specification.
+    """
+    if not text:
+        return ""
+    lines = str(text).splitlines()
+    formatted_lines = []
+    for line in lines:
+        l = line.strip()
+        if not l:
+            continue
+        # In-cell badge replacements with high-contrast colored spans
+        l = re.sub(r'(🔴\s*تله\s*(?:بزرگ\s*)?امتحانی(?:\s*:\s*)?)', r'<span class="badge-trap">\1</span>', l)
+        l = re.sub(r'(⚠️\s*خطای\s*(?:فاحش\s*|رایج\s*)(?:پزشکی\s*)?(?:\s*:\s*)?)', r'<span class="badge-error">\1</span>', l)
+        l = re.sub(r'(💎\s*استاندارد\s*طلایی(?:\s*:\s*)?)', r'<span class="badge-gold">\1</span>', l)
+        l = re.sub(r'(📌\s*نکته(?:\s*دقیق\s*پاتولوژی|\s*مهم|\s*امتحانی)?(?:\s*:\s*)?)', r'<span class="badge-note">\1</span>', l)
+        l = re.sub(r'(🏆\s*شایع‌ترین(?:\s*فرم|\s*علت|\s*نمونه)?(?:\s*:\s*)?)', r'<span class="badge-freq">\1</span>', l)
+        l = re.sub(r'(•\s*)مهم\s+(?!<)', r'\1<span class="badge-trap">مهم: </span>', l)
+        l = format_inline_markdown(l)
+        if l.startswith("• "):
+            formatted_lines.append(f'<div class="cell-bullet">{l}</div>')
+        else:
+            formatted_lines.append(f'<div class="cell-line">{l}</div>')
+    return "".join(formatted_lines)
 
 
 def render_formula_html(raw_f_code: str, title: str = "") -> str:
@@ -494,6 +562,101 @@ def add_callout_box(doc, title: str, content_items: List[str],
               color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
         add_bidi_text(p, item, font_name=FONT_DUBAI, size_pt=10.5, bold=False,
                       color_rgb=COLOR_TEXT_CHARCOAL)
+
+    # Space after table
+    p_after = doc.add_paragraph()
+    set_p_rtl(p_after, space_before_pt=0, space_after_pt=6)
+
+
+def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Optional[str] = None):
+    """
+    Renders an exam-grade Teal Medical table matching the v3.9.0 Table-First Hybrid specification:
+    - #007A87 header with bold white text
+    - Repeating header on page break (w:tblHeader)
+    - Prevention of mid-row page splits (w:cantSplit)
+    - #F0FDFA zebra striping on alternating rows
+    - In-cell badge recognition and colored typography
+    """
+    if not headers or not rows:
+        return
+    valid_rows = [r for r in rows if r and any(str(c).strip() for c in r)]
+    if not valid_rows:
+        return
+
+    if title:
+        p_title = doc.add_paragraph()
+        set_p_rtl(p_title, space_before_pt=10, space_after_pt=4)
+        add_r(p_title, f"■ {title}", font_name=FONT_DUBAI, size_pt=12.0, bold=True,
+              color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+
+    table = doc.add_table(rows=len(valid_rows) + 1, cols=len(headers))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+
+    # Force table RTL
+    tblPr = table._tbl.tblPr
+    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+
+    # Header Row
+    trPr0 = table.rows[0]._tr.get_or_add_trPr()
+    trPr0.append(parse_xml(r'<w:tblHeader {}/>'.format(nsdecls('w'))))
+    trPr0.append(parse_xml(r'<w:cantSplit {}/>'.format(nsdecls('w'))))
+
+    for col_idx, h_text in enumerate(headers):
+        cell = table.cell(0, col_idx)
+        set_cell_margins(cell, top=130, bottom=130, left=130, right=130)
+        set_cell_shading(cell, COLOR_TABLE_HEADER_BG)  # #007A87
+        cell._tc.get_or_add_tcPr().append(parse_xml(
+            r'<w:tcBorders {}><w:top w:val="single" w:sz="6" w:color="007A87"/><w:bottom w:val="single" w:sz="12" w:color="007A87"/><w:left w:val="single" w:sz="4" w:color="005C66"/><w:right w:val="single" w:sz="4" w:color="005C66"/></w:tcBorders>'.format(nsdecls('w'))
+        ))
+        p = cell.paragraphs[0]
+        set_p_rtl(p, space_before_pt=0, space_after_pt=0)
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        add_r(p, str(h_text), font_name=FONT_DUBAI, size_pt=9.5, bold=True,
+              color_rgb=(0xFF, 0xFF, 0xFF), is_rtl=True)
+
+    # Data Rows
+    for row_idx, r_data in enumerate(valid_rows):
+        trPr = table.rows[row_idx + 1]._tr.get_or_add_trPr()
+        trPr.append(parse_xml(r'<w:cantSplit {}/>'.format(nsdecls('w'))))
+
+        bg_fill = COLOR_TABLE_ALT_ROW if row_idx % 2 == 1 else "FFFFFF"
+        safe_row = r_data[:len(headers)] if isinstance(r_data, (list, tuple)) else [str(r_data)]
+        for col_idx, cell_value in enumerate(safe_row):
+            cell = table.cell(row_idx + 1, col_idx)
+            set_cell_margins(cell, top=100, bottom=100, left=120, right=120)
+            if bg_fill != "FFFFFF":
+                set_cell_shading(cell, bg_fill)
+            cell._tc.get_or_add_tcPr().append(parse_xml(
+                r'<w:tcBorders {}><w:top w:val="none"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="E2E8F0"/><w:right w:val="single" w:sz="4" w:color="E2E8F0"/></w:tcBorders>'.format(nsdecls('w'))
+            ))
+
+            lines = str(cell_value).splitlines()
+            p_first = cell.paragraphs[0]
+            for l_idx, line in enumerate(lines):
+                p = p_first if l_idx == 0 else cell.add_paragraph()
+                set_p_rtl(p, space_before_pt=1, space_after_pt=2)
+                l = line.strip()
+                if not l:
+                    continue
+                # In-cell badge recognition
+                badge_color = None
+                if any(k in l for k in ["تله امتحانی", "🔴", "تله بزرگ"]):
+                    badge_color = COLOR_RUBY_RED
+                elif any(k in l for k in ["خطای رایج", "خطای فاحش", "⚠️"]):
+                    badge_color = COLOR_AMBER_ORANGE
+                elif any(k in l for k in ["استاندارد طلایی", "💎"]):
+                    badge_color = COLOR_EMERALD_GREEN
+                elif any(k in l for k in ["نکته", "مهم", "📌"]):
+                    badge_color = COLOR_PRIMARY_TEAL
+
+                is_anchor = (col_idx == 0)
+                if badge_color:
+                    add_bidi_text(p, l, font_name=FONT_DUBAI, size_pt=9.0,
+                                  bold=True, color_rgb=badge_color)
+                else:
+                    add_bidi_text(p, l, font_name=FONT_DUBAI, size_pt=9.0,
+                                  bold=is_anchor, color_rgb=COLOR_PRIMARY_TEAL if is_anchor else COLOR_TEXT_CHARCOAL)
 
     # Space after table
     p_after = doc.add_paragraph()
@@ -1071,6 +1234,20 @@ def ensure_master_matrices(data: Dict[str, Any]):
     # 3. Morning-of-Exam 30-Point High-Yield Capsule (Auto-synthesized if missing)
     if not data.get("morning_exam_checklist") and len(modules) >= 1:
         bullets = []
+        # Priority 0: Thematic Sections & In-cell Badges (v3.9.0 Table-First Hybrid)
+        for sec in (data.get("sections") or data.get("thematic_sections") or []):
+            if not isinstance(sec, dict):
+                continue
+            sec_t = sec.get("title", "")
+            for row in (sec.get("rows") or []):
+                if not isinstance(row, (list, tuple)):
+                    continue
+                for cell in row:
+                    for line in str(cell).splitlines():
+                        l = line.strip().lstrip("• ")
+                        if any(b in l for b in ["تله امتحانی", "خطای رایج", "استاندارد طلایی", "مهم"]):
+                            bullets.append(f"{l} ({sec_t})")
+
         # Priority 0: Immediate Emergency Stabilization
         for mod in modules:
             if not isinstance(mod, dict):
@@ -1186,6 +1363,46 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     add_r(p_tag, f"📌 کورس: {organ_system}  |  🎯 سطح: فیزیوپاتولوژی بالینی  |  ⚡ نوع سند: مرور های‌یلد و شب امتحان",
           font_name=FONT_DUBAI, size_pt=10.0, bold=False, color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
 
+    # -------------------------------------------------------------------
+    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
+    # -------------------------------------------------------------------
+    sections = data.get("sections") or data.get("thematic_sections") or []
+    if sections:
+        for sec_idx, sec in enumerate(sections, 1):
+            if not isinstance(sec, dict):
+                continue
+            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_headers = sec.get("headers") or []
+            sec_rows = sec.get("rows") or []
+
+            p_sec = doc.add_paragraph()
+            set_p_rtl(p_sec, space_before_pt=14, space_after_pt=4)
+            add_r(p_sec, f"■ {sec_title}", font_name=FONT_DUBAI, size_pt=13.0, bold=True,
+                  color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+
+            if sec_headers and sec_rows:
+                add_thematic_table(doc, headers=sec_headers, rows=sec_rows)
+
+            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+            if sec_flowchart:
+                m_hash = hashlib.md5(sec_flowchart.strip().encode("utf-8")).hexdigest()[:10]
+                candidate_png = os.path.join("dist", "diagrams", f"diag_sec_{m_hash}.png")
+                if render_mermaid_diagram_to_png(sec_flowchart, candidate_png, title=f"الگوریتم {sec_title}"):
+                    add_diagram_picture_block(doc, candidate_png, title=f"الگوریتم بالینی {sec_title}")
+
+            sec_callouts = sec.get("callouts") or []
+            if sec_callouts:
+                callout_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
+                add_callout_box(
+                    doc,
+                    title="🚨 هشدار اورژانسی و خطای بالینی",
+                    content_items=callout_list,
+                    border_color="C0392B",
+                    header_bg="FDEDEC",
+                    body_bg="FFFFFF",
+                    icon="🚨"
+                )
+
     # Iterate over modules/diseases in the data
     modules = data.get("modules", [])
     for mod_idx, mod in enumerate(modules, 1):
@@ -1217,6 +1434,15 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
         if mod_name_en:
             add_r(p_h1, f"  ({mod_name_en})", font_name=FONT_DUBAI, size_pt=12.0, bold=True,
                   color_rgb=COLOR_SECONDARY_TEAL, is_rtl=False)
+
+        # Module-level Thematic Tables (v3.9.0 Table-First Hybrid)
+        if mod.get("tables") and isinstance(mod["tables"], list):
+            for t_item in mod["tables"]:
+                if isinstance(t_item, dict):
+                    add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
+        elif mod.get("thematic_table") and isinstance(mod["thematic_table"], dict):
+            t_item = mod["thematic_table"]
+            add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
 
         # -------------------------------------------------------------------
         # Archetype 1: Foundational Physiology & Regulatory Loops
@@ -1728,6 +1954,37 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
     lines.append(f"# 🩺 {topic_title} ({topic_title_en})")
     lines.append(f"> **کورس آموزشی:** {organ_system} | **مقطع:** فیزیوپاتولوژی بالینی | **نوع سند:** راهنمای مرور های‌یلد\n")
 
+    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
+    sections = data.get("sections") or data.get("thematic_sections") or []
+    if sections:
+        for sec_idx, sec in enumerate(sections, 1):
+            if not isinstance(sec, dict):
+                continue
+            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_headers = sec.get("headers") or []
+            sec_rows = sec.get("rows") or []
+
+            lines.append(f"## ■ {sec_title}\n")
+            if sec_headers and sec_rows:
+                lines.append(format_md_table_row(sec_headers))
+                lines.append("| " + " | ".join([":---"] * len(sec_headers)) + " |")
+                for r in sec_rows:
+                    safe_r = r[:len(sec_headers)] if isinstance(r, (list, tuple)) else [str(r)]
+                    clean_r = ["<br>".join(str(c).splitlines()) for c in safe_r]
+                    lines.append(format_md_table_row(clean_r))
+                lines.append("")
+
+            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+            if sec_flowchart:
+                lines.append("```mermaid")
+                lines.append(clean_mermaid_code(sec_flowchart.strip()))
+                lines.append("```\n")
+
+            sec_callouts = sec.get("callouts") or []
+            if sec_callouts:
+                c_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
+                add_markdown_alert(lines, "WARNING", "هشدار اورژانسی و بالینی", c_list, icon="🚨")
+
     for mod in (data.get("modules") or []):
         if not isinstance(mod, dict):
             continue
@@ -2184,6 +2441,43 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
         return cards
 
     cards = []
+
+    # -------------------------------------------------------------------
+    # Synthesize from Thematic Table Sections (v3.9.0 Table-Row Cloze Engine)
+    # -------------------------------------------------------------------
+    topic_name = data.get("topic_title", "General")
+    sections = data.get("sections") or data.get("thematic_sections") or []
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        sec_title = str(sec.get("title") or "Table Section").strip()
+        for row in (sec.get("rows") or []):
+            if not row or not isinstance(row, (list, tuple)):
+                continue
+            col_0 = str(row[0]).strip().replace("\n", " ") if len(row) > 0 else ""
+            col_last = str(row[-1]).strip().replace("\n", " ") if len(row) > 1 else ""
+
+            row_has_badge = False
+            for cell_idx, cell in enumerate(row):
+                c_str = str(cell).strip()
+                for line in c_str.splitlines():
+                    l = line.strip().lstrip("• ")
+                    if not l:
+                        continue
+                    if any(b in l for b in ["تله امتحانی", "خطای رایج", "استاندارد طلایی", "مهم"]):
+                        row_has_badge = True
+                        cards.append({
+                            "text": f"در مبحث {sec_title} ({col_0}): {{{{c1::{l}}}}}",
+                            "extra": f"نکته کلیدی جدول {sec_title}.",
+                            "tag": f"PhysioPath::{topic_name}::TableMatrix"
+                        })
+            if not row_has_badge and len(row) >= 2 and col_0 and col_last and len(col_last) > 3:
+                cards.append({
+                    "text": f"در {sec_title}، ویژگی بالینی یا امتحانی {col_0} عبارت است از: {{{{c1::{col_last}}}}}",
+                    "extra": f"برگرفته از جدول خلاصه {sec_title}.",
+                    "tag": f"PhysioPath::{topic_name}::TableMatrix"
+                })
+
     for mod in (data.get("modules") or []):
         if not isinstance(mod, dict):
             continue
@@ -2584,36 +2878,46 @@ body {
     padding: 0;
 }
 .banner {
-    border-bottom: 2px solid #78281F;
+    border-bottom: 2px solid #007A87;
     padding-bottom: 8px;
     margin-bottom: 18px;
 }
 .title-main {
-    color: #78281F;
+    color: #007A87;
     font-size: 17pt;
     font-weight: bold;
     margin: 0 0 4px 0;
 }
 .title-en {
-    color: #1A5276;
+    color: #0891B2;
     font-size: 12.5pt;
     font-weight: bold;
 }
 .meta-tag {
-    color: #707B7C;
+    color: #64748B;
     font-size: 9pt;
     margin-top: 4px;
 }
 .module-header {
-    color: #78281F;
+    color: #007A87;
     font-size: 13.5pt;
     font-weight: bold;
-    border-right: 4px solid #78281F;
+    border-right: 4px solid #007A87;
     padding-right: 10px;
     margin: 22px 0 10px 0;
 }
+.section-banner {
+    color: #007A87;
+    font-size: 13pt;
+    font-weight: bold;
+    border-right: 4px solid #007A87;
+    padding-right: 10px;
+    margin: 20px 0 8px 0;
+    page-break-after: avoid;
+    break-after: avoid;
+}
 .section-title {
-    color: #1A5276;
+    color: #0B7285;
     font-size: 10.5pt;
     font-weight: bold;
     margin: 12px 0 5px 0;
@@ -2639,24 +2943,24 @@ body {
 .callout-patho .callout-header { background: #EBF5FB; color: #1B4F72; border-bottom: 1px solid #2980B9; }
 .callout-patho .callout-body { background: #FAFDFF; }
 
-.callout-semiology { border: 1.5px solid #1ABC9C; }
-.callout-semiology .callout-header { background: #E8F8F5; color: #0E6251; border-bottom: 1px solid #1ABC9C; }
-.callout-semiology .callout-body { background: #FDFEFE; }
+.callout-semiology { border: 1.5px solid #0D9488; }
+.callout-semiology .callout-header { background: #F0FDFA; color: #0F766E; border-bottom: 1px solid #0D9488; }
+.callout-semiology .callout-body { background: #FFFFFF; }
 
-.callout-pearl { border: 1.5px solid #F1C40F; }
-.callout-pearl .callout-header { background: #FEF9E7; color: #7D6608; border-bottom: 1px solid #F1C40F; }
+.callout-pearl { border: 1.5px solid #D97706; }
+.callout-pearl .callout-header { background: #FFFBEB; color: #B45309; border-bottom: 1px solid #D97706; }
 .callout-pearl .callout-body { background: #FFFFFD; }
 
-.callout-alert { border: 1.5px solid #F39C12; }
-.callout-alert .callout-header { background: #FEFDE8; color: #7D6608; border-bottom: 1px solid #F39C12; }
+.callout-alert { border: 1.5px solid #F59E0B; }
+.callout-alert .callout-header { background: #FEFDE8; color: #7D6608; border-bottom: 1px solid #F59E0B; }
 .callout-alert .callout-body { background: #FFFFFB; }
 
-.callout-contra { border: 1.5px solid #C0392B; }
-.callout-contra .callout-header { background: #FDEDEC; color: #78281F; border-bottom: 1px solid #C0392B; }
+.callout-contra { border: 1.5px solid #DC2626; }
+.callout-contra .callout-header { background: #FEF2F2; color: #991B1B; border-bottom: 1px solid #DC2626; }
 .callout-contra .callout-body { background: #FFFDFD; }
 
-.callout-emergency { border: 1.5px solid #C0392B; }
-.callout-emergency .callout-header { background: #FDEDEC; color: #78281F; border-bottom: 1.5px solid #C0392B; }
+.callout-emergency { border: 1.5px solid #DC2626; }
+.callout-emergency .callout-header { background: #FEF2F2; color: #991B1B; border-bottom: 1.5px solid #DC2626; }
 .callout-emergency .callout-body { background: #FFFDFD; font-weight: 500; }
 
 .callout-special { border: 1.5px solid #8E44AD; }
@@ -2670,51 +2974,50 @@ body {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 9.2pt;
+    margin: 10px 0;
+    font-size: 9.0pt;
+    page-break-inside: auto;
+    break-inside: auto;
+}
+thead {
+    display: table-header-group;
+}
+tr {
     page-break-inside: avoid;
     break-inside: avoid;
 }
 th {
-    background-color: #78281F;
+    background-color: #007A87;
     color: #FFFFFF;
     font-weight: bold;
     padding: 7px 10px;
-    border: 1px solid #78281F;
+    border: 1px solid #007A87;
     text-align: right;
+    font-size: 9.2pt;
 }
 td {
-    padding: 6px 10px;
-    border: 1px solid #D5D8DC;
+    padding: 6px 9px;
+    border: 1px solid #CBD5E1;
     vertical-align: top;
-}
-tr:nth-child(even) {
-    background-color: #F8F9F9;
-}
-tr:nth-child(odd) {
-    background-color: #FFFFFF;
-}
-    break-inside: avoid;
-}
-th {
-    background-color: #78281F;
-    color: #FFFFFF;
-    padding: 8px 10px;
-    font-weight: bold;
-    border: 1px solid #78281F;
     text-align: right;
+    line-height: 1.55;
 }
-td {
-    padding: 7px 10px;
-    border: 1px solid #E0E0E0;
-    text-align: right;
-}
-tr:nth-child(even) { background-color: #FDFEFE; }
+tr:nth-child(even) { background-color: #F0FDFA; }
+tr:nth-child(odd) { background-color: #FFFFFF; }
+
+.badge-trap { color: #B91C1C; font-weight: bold; }
+.badge-error { color: #C2410C; font-weight: bold; }
+.badge-gold { color: #047857; font-weight: bold; }
+.badge-note { color: #007A87; font-weight: bold; }
+.badge-freq { color: #7C3AED; font-weight: bold; }
+.cell-bullet { margin: 2px 0; line-height: 1.5; }
+.cell-line { margin: 2px 0; line-height: 1.5; }
+
 .checklist-item {
     padding: 5px 8px;
     margin: 3px 0;
     background: #FEFDE8;
-    border-bottom: 1px solid #E0E0E0;
+    border-bottom: 1px solid #E2E8F0;
     display: flex;
     align-items: center;
     page-break-inside: avoid;
@@ -2723,8 +3026,9 @@ tr:nth-child(even) { background-color: #FDFEFE; }
 .box {
     margin-left: 8px;
     font-size: 12pt;
-    color: #78281F;
+    color: #007A87;
     font-weight: bold;
+}
 }
 .cascade-step {
     padding: 4px 0;
@@ -2903,6 +3207,43 @@ tr:nth-child(even) { background-color: #FDFEFE; }
         html_parts.append(f'    <div class="title-en">({topic_title_en})</div>')
     html_parts.append(f"""    <div class="meta-tag">🏛️ {institution} | 📌 کورس: {organ_system} | 🎯 سطح: فیزیوپاتولوژی بالینی | ⚡ نوع سند: کتابچه مرور های‌یلد</div>
 </div>""")
+
+    # -------------------------------------------------------------------
+    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
+    # -------------------------------------------------------------------
+    sections = data.get("sections") or data.get("thematic_sections") or []
+    if sections:
+        for sec_idx, sec in enumerate(sections, 1):
+            if not isinstance(sec, dict):
+                continue
+            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_headers = sec.get("headers") or []
+            sec_rows = sec.get("rows") or []
+
+            html_parts.append(f'<div class="section-banner">■ {sec_title}</div>')
+            if sec_headers and sec_rows:
+                html_parts.append('<table><thead><tr>')
+                for h in sec_headers:
+                    html_parts.append(f'<th>{h}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for r_idx, row in enumerate(sec_rows):
+                    html_parts.append('<tr>')
+                    safe_row = row[:len(sec_headers)] if isinstance(row, (list, tuple)) else [str(row)]
+                    for col_idx, cell in enumerate(safe_row):
+                        html_parts.append(f'<td>{format_cell_html(str(cell))}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+
+            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+            if sec_flowchart:
+                html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><pre class="mermaid">{clean_mermaid_code(sec_flowchart.strip())}</pre></div>')
+
+            sec_callouts = sec.get("callouts") or []
+            if sec_callouts:
+                html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 هشدار اورژانسی و بالینی</div><div class="callout-body">')
+                for c_item in (sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]):
+                    html_parts.append(f'<div>• {format_inline_markdown(str(c_item))}</div>')
+                html_parts.append('</div></div>')
 
     for mod_idx, mod in enumerate((data.get("modules") or []), 1):
         if not isinstance(mod, dict):
@@ -3339,14 +3680,14 @@ tr:nth-child(even) { background-color: #FDFEFE; }
 
     # Morning Exam Checklist
     if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
-        html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
+        html_parts.append('<h2 style="color: #007A87; border-bottom: 2px solid #007A87; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
             html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {format_inline_markdown(item)}</span></div>')
 
     # Multimodal Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد)
     top_atlas = data.get("visual_atlas") or data.get("clinical_figures")
     if top_atlas and isinstance(top_atlas, list):
-        html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📸 اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد</h2>')
+        html_parts.append('<h2 style="color: #007A87; border-bottom: 2px solid #007A87; padding-bottom: 6px; margin-top: 30px;">📸 اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد</h2>')
         for fig in top_atlas:
             if not isinstance(fig, dict):
                 continue
@@ -3421,18 +3762,18 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
             can.setLineWidth(0.85)
             can.roundRect(bx, by, bw, bh, radius=4, stroke=1, fill=0)
 
-            # ۲. خط حائل و محتوای هدر عنابی رسمی
-            can.setStrokeColorRGB(0.47, 0.16, 0.12)  # #78281F
+            # ۲. خط حائل و محتوای هدر فیروزه‌ای رسمی
+            can.setStrokeColorRGB(0.0, 0.48, 0.53)  # #007A87
             can.setLineWidth(1.2)
             can.line(bx, hy, bx + bw, hy)
 
             can.setFont(font_name, 8.5)
-            can.setFillColorRGB(0.47, 0.16, 0.12)
+            can.setFillColorRGB(0.0, 0.48, 0.53)
             if chapter_title:
                 can.drawRightString(bx + bw - 12, hy + 7, shape_persian(chapter_title))
 
             can.setFont(font_name, 7.5)
-            can.setFillColorRGB(0.1, 0.32, 0.46)  # #1A5276
+            can.setFillColorRGB(0.04, 0.45, 0.52)  # #0B7285
             can.drawString(bx + 12, hy + 7, shape_persian(institution or "دانشگاه بق"))
 
             # ۳. خط حائل و محتوای فوتر طوسی ملایم
@@ -3513,10 +3854,10 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
 
     header_html = f"""
     <div style="font-size: 8pt; font-family: 'Dubai', 'Vazirmatn', Tahoma, sans-serif; width: 100%;
-                border-bottom: 1.5px solid #78281F; padding-bottom: 4px; margin: 0 13mm;
+                border-bottom: 1.5px solid #007A87; padding-bottom: 4px; margin: 0 13mm;
                 display: flex; justify-content: space-between; direction: rtl;">
-        <span style="font-weight: bold; color: #78281F;">{topic_title}</span>
-        <span style="color: #1A5276;">{inst_name}</span>
+        <span style="font-weight: bold; color: #007A87;">{topic_title}</span>
+        <span style="color: #0891B2;">{inst_name}</span>
     </div>
     """
 

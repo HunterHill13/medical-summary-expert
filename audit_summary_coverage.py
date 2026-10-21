@@ -288,13 +288,32 @@ def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any
     strictly preventing pharmacology over-indexing from dropping clinical syndromes.
     """
     modules = summary_data.get("modules") or []
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
     raw_summary_text = json.dumps(summary_data, ensure_ascii=False)
     norm_summary_text = normalize_medical_text(raw_summary_text)
 
-    # 1. Inspect 4 pillars for each clinical module
+    # 1. Inspect 4 pillars for each clinical module or table section
     module_audits = []
     sound_modules_count = 0
     total_clinical_modules = 0
+
+    if not modules and sections:
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            s_title = sec.get("title", "Unnamed Section")
+            s_rows = sec.get("rows") or []
+            s_headers = sec.get("headers") or []
+            total_clinical_modules += 1
+            is_sound = len(s_rows) >= 1 and len(s_headers) >= 2
+            if is_sound:
+                sound_modules_count += 1
+            module_audits.append({
+                "module": s_title,
+                "type": sec.get("archetype", "thematic_table"),
+                "pillars_met_count": len(s_headers),
+                "is_sound": is_sound
+            })
 
     for mod in modules:
         if not isinstance(mod, dict):
@@ -577,27 +596,38 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     # 3. Diagnostic Bifurcation Audit
     bifurcation_status = []
     modules = summary_data.get("modules") or []
-    for mod in modules:
-        if not isinstance(mod, dict):
-            continue
-        m_name = mod.get("name", "Unknown")
-        diag = mod.get("diagnostics")
-        if isinstance(diag, dict):
-            has_initial = bool(diag.get("best_initial_test"))
-            has_gold = bool(diag.get("gold_standard"))
-            # If diagnostics is declared, at least initial test or gold standard should be captured if present in lecture
-            is_compliant = (has_initial or has_gold) if (has_initial or has_gold or not norm_source) else True
-        else:
-            has_initial = False
-            has_gold = False
-            is_compliant = True
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
 
+    if not modules and sections:
+        has_dx_col = any(any("تشخیص" in str(h) or "تست" in str(h) or "معیار" in str(h) for h in sec.get("headers", [])) for sec in sections if isinstance(sec, dict))
+        has_gold = any("استاندارد طلایی" in norm_summary_text or "gold standard" in norm_summary_text.lower() for sec in sections if isinstance(sec, dict))
         bifurcation_status.append({
-            "module": m_name,
-            "has_best_initial_test": has_initial,
+            "module": summary_data.get("topic_title", "Table Curriculum"),
+            "has_best_initial_test": has_dx_col,
             "has_gold_standard": has_gold,
-            "is_compliant": is_compliant
+            "is_compliant": (has_dx_col or has_gold) if (has_dx_col or has_gold or not norm_source) else True
         })
+    else:
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "Unknown")
+            diag = mod.get("diagnostics")
+            if isinstance(diag, dict):
+                has_initial = bool(diag.get("best_initial_test"))
+                has_gold = bool(diag.get("gold_standard"))
+                is_compliant = (has_initial or has_gold) if (has_initial or has_gold or not norm_source) else True
+            else:
+                has_initial = False
+                has_gold = False
+                is_compliant = True
+
+            bifurcation_status.append({
+                "module": m_name,
+                "has_best_initial_test": has_initial,
+                "has_gold_standard": has_gold,
+                "is_compliant": is_compliant
+            })
 
     all_bifurcations_valid = all(b["is_compliant"] for b in bifurcation_status) if bifurcation_status else True
 

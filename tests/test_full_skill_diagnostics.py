@@ -1931,6 +1931,143 @@ def test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates():
 
     print("[PASS] Bug AH Test Passed: LaTeX/BiDi sanitization, true Word bold runs, flowchart legibility, alert continuity and quality gates verified.")
 
+
+def test_bug_ai_table_first_hybrid_teal_architecture():
+    """Bug AI: v3.9.0 Table-First Hybrid Architecture & Teal Medical Palette Verification."""
+    from build_summary_pack import (
+        build_docx_summary, build_html_summary, build_markdown_summary,
+        build_pdf_summary, build_anki_tsv, build_anki_apkg,
+        get_or_synthesize_flashcards, TABLE_ARCHETYPES
+    )
+    from audit_summary_coverage import audit_coverage
+    import docx
+
+    sample_table_data = {
+        "topic_title": "خلاصه جامع و نکات کلیدی امتحانی غدد (جلسه ۱)",
+        "topic_title_en": "Endocrine Core Revision",
+        "organ_system": "فیزیوپاتولوژی غدد",
+        "institution": "دانشگاه بق",
+        "sections": [
+            {
+                "section_number": 1,
+                "title": "بخش ۱: اصول پاتوفیزیولوژی و اتیولوژی بیماری‌های اندوکرین (هاریسون)",
+                "archetype": "pathophysiology",
+                "headers": TABLE_ARCHETYPES["pathophysiology"]["headers"],
+                "rows": [
+                    [
+                        "کاهش ترشح\n(Hypofunction)",
+                        "• تخریب خودایمنی (Autoimmune)\n• آسیب‌های ایاتروژنیک (جراحی، رادیوتراپی)\n• عفونت و التهاب",
+                        "• هاشیموتو، دیابت نوع ۱، نارسایی اولیه آدرنال (آدیسون)\n• 🔴 تله امتحانی: سل آدرنال و هایپرپلازی مادرزادی آدرنال"
+                    ],
+                    [
+                        "افزایش ترشح\n(Hyperfunction)",
+                        "• نئوپلاسم‌های خوش‌خیم و بدخیم (آدنوم‌ها)\n• تحریک خودایمنی (آنتی‌بادی‌های محرک)",
+                        "• مهم: بیماری گریوز با TSI\n• 💎 استاندارد طلایی: سنجش آنتی‌بادی TSI"
+                    ]
+                ]
+            },
+            {
+                "section_number": 2,
+                "title": "بخش ۲: مجاورات آناتومیک سلا تورسیکا و اثر توده‌ای",
+                "archetype": "anatomy",
+                "headers": TABLE_ARCHETYPES["anatomy"]["headers"],
+                "rows": [
+                    [
+                        "مجاورت فوقانی: کیاسمای بینایی",
+                        "رشد توده به سمت بالا و عبور از دیافراگم سلا",
+                        "• همی‌آنوپسی بای‌تمپورال (نقص میدان دید دوطرفه طرف گیجگاهی)\n• ⚠️ خطای رایج: ارسال به MRI بدون اثبات بیوشیمیایی"
+                    ]
+                ],
+                "flowchart": "flowchart TD\n  A[مشکوک به آدنوم هیپوفیز] --> B{اثبات بیوشیمیایی}\n  B -->|مثبت| C[MRI هیپوفیز با گادولینیوم]\n  B -->|منفی| D[پایش دوره‌ای بدون جراحی]",
+                "callouts": [
+                    "در صورت بروز سردرد ناگهانی شدید و افت بینایی، شک به آپوپلکسی حاد هیپوفیز الزامی است."
+                ]
+            },
+            {
+                "section_number": 3,
+                "title": "بخش ۳: معیارهای آزمایشگاهی تشخیص دیابت و پیش‌دیابت (ADA)",
+                "archetype": "diagnostic",
+                "headers": TABLE_ARCHETYPES["diagnostic"]["headers"],
+                "rows": [
+                    [
+                        "قند ناشتای پلاسما (FPG)",
+                        "< 100 mg/dL",
+                        "100 - 125 mg/dL (IFG)",
+                        "≥ 126 mg/dL"
+                    ],
+                    [
+                        "قند ۲ ساعته در OGTT",
+                        "< 140 mg/dL",
+                        "140 - 199 mg/dL (IGT)",
+                        "≥ 200 mg/dL"
+                    ]
+                ]
+            }
+        ]
+    }
+
+    # 1. Test Word Generation
+    out_docx = "dist/diag_test_ai.docx"
+    build_docx_summary(sample_table_data, out_docx)
+    assert os.path.exists(out_docx), "Word document was not generated!"
+    doc = docx.Document(out_docx)
+    assert len(doc.tables) >= 3, f"Expected at least 3 tables in Word doc, found {len(doc.tables)}"
+
+    # Check tblHeader and cantSplit in first table
+    t0 = doc.tables[0]
+    t0_xml = t0._tbl.xml
+    assert "tblHeader" in t0_xml, "tblHeader missing from Word table header!"
+    assert "cantSplit" in t0_xml, "cantSplit missing from Word table rows!"
+    assert "007A87" in t0_xml, "Teal header color #007A87 missing from Word table!"
+
+    # 2. Test HTML Generation
+    out_html = "dist/diag_test_ai.html"
+    build_html_summary(sample_table_data, out_html)
+    assert os.path.exists(out_html), "HTML document was not generated!"
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_txt = f.read()
+    assert "#007A87" in html_txt, "Teal color #007A87 missing from HTML stylesheet!"
+    assert "badge-trap" in html_txt, "In-cell badge-trap class missing from HTML!"
+    assert "badge-gold" in html_txt, "In-cell badge-gold class missing from HTML!"
+    assert "badge-error" in html_txt, "In-cell badge-error class missing from HTML!"
+    assert "section-banner" in html_txt, "Section-banner class missing from HTML!"
+
+    # 3. Test Markdown Generation
+    out_md = "dist/diag_test_ai.md"
+    build_markdown_summary(sample_table_data, out_md)
+    assert os.path.exists(out_md), "Markdown document was not generated!"
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_txt = f.read()
+    assert "| مکانیسم پاتوفیزیولوژیک |" in md_txt, "Markdown table headers missing!"
+    assert "## ■ بخش ۱" in md_txt, "Markdown section headers missing!"
+    assert "flowchart TD" in md_txt, "Mermaid flowchart missing from Markdown!"
+
+    # 4. Test Anki Table-Row Cloze Generation
+    cards = get_or_synthesize_flashcards(sample_table_data)
+    assert len(cards) >= 3, f"Expected at least 3 synthesized cloze cards from tables, got {len(cards)}"
+    assert any("{{c1::" in c.get("text", "") for c in cards), "Cloze syntax missing in synthesized table cards!"
+
+    out_tsv = "dist/diag_test_ai.tsv"
+    build_anki_tsv(sample_table_data, out_tsv)
+    assert os.path.exists(out_tsv), "Anki TSV missing!"
+
+    out_apkg = "dist/diag_test_ai.apkg"
+    build_anki_apkg(sample_table_data, out_apkg)
+    assert os.path.exists(out_apkg), "Anki APKG missing!"
+
+    # 5. Test PDF Generation via Playwright with BiDi Stamping
+    out_pdf = "dist/diag_test_ai.pdf"
+    build_pdf_summary(sample_table_data, out_pdf, institution="دانشگاه بق")
+    assert os.path.exists(out_pdf), "PDF Study Guide missing!"
+    assert os.path.getsize(out_pdf) > 2000, "PDF file too small or corrupt!"
+
+    # 6. Test Coverage Audit on Table Curriculum
+    audit_rep = audit_coverage("تخریب خودایمنی هاشیموتو و سل آدرنال و قند ناشتا ۱۲۶ و ۲ ساعته ۲۰۰", sample_table_data)
+    assert audit_rep["scores"]["numerical_coverage_pct"] >= 90.0
+    assert audit_rep["scores"]["entity_recall_pct"] >= 75.0
+
+    print("[PASS] Bug AI Test Passed: Table-First Hybrid Teal Architecture, in-cell badges, Word tblHeader/cantSplit, and Anki table-row cloze verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1967,4 +2104,5 @@ if __name__ == "__main__":
     test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
     test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
     test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
+    test_bug_ai_table_first_hybrid_teal_architecture()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

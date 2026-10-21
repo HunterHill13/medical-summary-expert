@@ -95,7 +95,7 @@ class MedicalPDFDesigner:
     }}
     body {{
         font-family: 'Dubai', 'Vazirmatn', Tahoma, sans-serif;
-        background: linear-gradient(135deg, #4A0E17 0%, #78281F 45%, #1A5276 100%);
+        background: linear-gradient(135deg, #042F2E 0%, #007A87 45%, #0891B2 100%);
         color: #FFFFFF;
         width: 210mm;
         height: 297mm;
@@ -272,7 +272,7 @@ class MedicalPDFDesigner:
         line-height: 1.6;
     }}
     .toc-header {{
-        border-bottom: 2px solid #78281F;
+        border-bottom: 2px solid #007A87;
         padding-bottom: 8px;
         margin-bottom: 22px;
         display: flex;
@@ -280,12 +280,12 @@ class MedicalPDFDesigner:
         align-items: baseline;
     }}
     .toc-header h1 {{
-        color: #78281F;
+        color: #007A87;
         font-size: 17pt;
         margin: 0;
     }}
     .toc-header span {{
-        color: #1A5276;
+        color: #0891B2;
         font-size: 10pt;
     }}
     .toc-container {{
@@ -298,17 +298,17 @@ class MedicalPDFDesigner:
         align-items: center;
         background: #FDFEFE;
         border: 1px solid #E5E7E9;
-        border-right: 4px solid #78281F;
+        border-right: 4px solid #007A87;
         border-radius: 6px;
         padding: 9px 14px;
         gap: 15px;
     }}
     .toc-number {{
         font-weight: bold;
-        color: #78281F;
+        color: #007A87;
         font-size: 10.5pt;
         min-width: 65px;
-        background: #FADBD8;
+        background: #E0F2FE;
         padding: 3px 8px;
         border-radius: 4px;
         text-align: center;
@@ -469,18 +469,18 @@ class MedicalPDFDesigner:
             can.roundRect(bx, by, bw, bh, radius=4, stroke=1, fill=0)
 
             # ۲. خط حائل و محتوای هدر (y = 789.89 pt)
-            can.setStrokeColorRGB(0.47, 0.16, 0.12)  # #78281F عنابی رسمی
+            can.setStrokeColorRGB(0.0, 0.48, 0.53)  # #007A87 فیروزه‌ای رسمی
             can.setLineWidth(1.2)
             hy = A4[1] - 52
             can.line(bx, hy, bx + bw, hy)
 
             can.setFont(self.font_name, 8.5)
-            can.setFillColorRGB(0.47, 0.16, 0.12)
+            can.setFillColorRGB(0.0, 0.48, 0.53)
             if topic:
                 can.drawRightString(bx + bw - 12, hy + 7, shape_fa(topic))
 
             can.setFont(self.font_name, 7.5)
-            can.setFillColorRGB(0.1, 0.32, 0.46)  # #1A5276 سرمه‌ای متای دوره
+            can.setFillColorRGB(0.03, 0.57, 0.70)  # #0891B2
             can.drawString(bx + 12, hy + 7, shape_fa(self.institution))
 
             # ۳. خط حائل و محتوای فوتر (y = 44.0 pt)

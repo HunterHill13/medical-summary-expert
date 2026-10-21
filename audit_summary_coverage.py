@@ -213,6 +213,69 @@ def extract_instructor_emphasis(text: str) -> List[str]:
             results.append(s_clean)
     return results
 
+def extract_clinical_syndromes_and_diseases(text: str) -> List[Tuple[str, str]]:
+    """
+    Universally extracts clinical syndromes, diseases, triads, and diagnostic criteria across all medical specialties
+    (Cardiology, Nephrology, Pulmonology, Neurology, Rheumatology, Hematology, Pediatrics, etc.).
+    Returns a list of tuples: (matched_term, core_name).
+    """
+    found = []
+    seen = set()
+    norm_txt = normalize_medical_text(text)
+
+    # 1. Persian Clinical Patterns:
+    pe_pattern = re.compile(
+        r'\b(?P<prefix>سندرم|سندروم|بیماری|تریاد|تترالوژی|پنتاد|معیارهای|معیار|اسکور|سیستم\s+نمره‌دهی)'
+        r'\s+(?P<name>[آ-یa-zA-Z0-9\-\'\u200c]+(?:\s+[آ-یa-zA-Z0-9\-\'\u200c]+){0,2})',
+        re.IGNORECASE
+    )
+    STOP_WORDS = {
+        "و", "یا", "که", "به", "با", "در", "بر", "از", "تا", "بین", "برای", "یک", "یکی",
+        "شامل", "دارای", "بدون", "است", "بود", "شد", "می", "این", "آن", "هم", "نیز", "چون",
+        "زیرا", "اگر", "اما", "ولی", "علت", "دلیل", "ناشی", "متعاقب", "پیرو", "همراه",
+        "شایع", "نادر", "مهم", "اصلی", "دیگر", "مختلف", "بالینی", "حاد", "مزمن", "اولیه",
+        "ثانویه", "عفونی", "شدید", "خفیف", "های", "ها", "ای", "بیمار", "پیشرفته", "مربوطه",
+        "مورد", "نظر", "وجود", "دارد", "شود", "مانند", "نظیر", "طی", "پس", "قبل"
+    }
+
+    for m in pe_pattern.finditer(norm_txt):
+        prefix = m.group("prefix").strip()
+        name = m.group("name").strip()
+        name_tokens = name.split()
+        valid_tokens = []
+        for tok in name_tokens:
+            tok_clean = tok.strip()
+            if tok_clean.lower() in STOP_WORDS:
+                break
+            valid_tokens.append(tok_clean)
+        if not valid_tokens:
+            continue
+        clean_name = " ".join(valid_tokens)
+        full_phrase = f"{prefix} {clean_name}".strip()
+        full_key = full_phrase.lower()
+        if full_key not in seen and len(clean_name) >= 2:
+            seen.add(full_key)
+            found.append((full_phrase, clean_name.lower()))
+
+    # 2. English Clinical Patterns:
+    en_pattern = re.compile(
+        r'\b(?P<name>[A-Z][a-zA-Z0-9\-\']*(?:\s+[A-Z][a-zA-Z0-9\-\']*){0,2})\s+'
+        r'(?P<suffix>Syndrome|Disease|Triad|Tetralogy|Criteria|Score|Classification|Staging)\b'
+    )
+    EN_IGNORE_NAMES = {"This", "That", "The", "A", "An", "Each", "Every", "Which", "What", "Some", "Severe", "Acute", "Chronic", "Other", "First"}
+    for m in en_pattern.finditer(text):
+        name = m.group("name").strip()
+        suffix = m.group("suffix").strip()
+        if name in EN_IGNORE_NAMES:
+            continue
+        full_en = f"{name} {suffix}".strip()
+        full_key = full_en.lower()
+        if full_key not in seen:
+            seen.add(full_key)
+            found.append((full_en, name.lower()))
+
+    return found
+
 def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Audits Illness Script Integrity according to the Anti-Pharmacology-Skew Law (Principle 3):
@@ -366,11 +429,39 @@ def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any
     omitted_subtle_syndromes = []
 
     norm_src_lower = source_text.lower()
+    norm_sum_lower = norm_summary_text.lower()
+    seen_syndromes = set()
+
+    # Part A: Curated high-yield endocrine/rare conditions watchlist
     for fa_term, en_term in SUBTLE_SYNDROMES_WATCHLIST:
         if fa_term in norm_src_lower or en_term in norm_src_lower:
             detected_source_syndromes.append(fa_term)
-            if fa_term not in norm_summary_text.lower() and en_term not in norm_summary_text.lower():
+            seen_syndromes.add(fa_term.lower())
+            seen_syndromes.add(en_term.lower())
+            if fa_term not in norm_sum_lower and en_term not in norm_sum_lower:
                 omitted_subtle_syndromes.append(fa_term)
+
+    # Part B: Dynamic universal clinical entity extraction across all medical specialties
+    dynamic_syndromes = extract_clinical_syndromes_and_diseases(source_text)
+    for full_term, core_name in dynamic_syndromes:
+        core_tokens = [w for w in core_name.lower().split() if len(w) >= 3 and w not in {"syndrome", "disease", "triad", "criteria", "score"}]
+        if any(tok in seen_syndromes for tok in core_tokens):
+            continue
+        if full_term.lower() in seen_syndromes or core_name.lower() in seen_syndromes:
+            continue
+        detected_source_syndromes.append(full_term)
+        seen_syndromes.add(full_term.lower())
+        seen_syndromes.add(core_name.lower())
+        for tok in core_tokens:
+            seen_syndromes.add(tok)
+        # Check if full phrase, core name, or substantive core tokens appear in summary
+        is_covered = (
+            full_term.lower() in norm_sum_lower
+            or core_name.lower() in norm_sum_lower
+            or (bool(core_tokens) and any(tok in norm_sum_lower for tok in core_tokens))
+        )
+        if not is_covered:
+            omitted_subtle_syndromes.append(full_term)
 
     # 3. Check for pharmacology skew (drugs over-indexing over clinical scripts)
     total_pharm_words = 0

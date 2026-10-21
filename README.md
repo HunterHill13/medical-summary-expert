@@ -1,21 +1,21 @@
-# 🩺 Medical Summary Expert (v3.6.0)
+# 🩺 Medical Summary Expert (v3.6.1)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-27%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.6.0-orange?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-31%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.6.1-orange?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Google%20Antigravity-Compatible-blueviolet?style=for-the-badge)](https://antigravity.google)
 
 A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via a **Polymorphic Module Architecture**, structures conditions using canonical **Illness Scripts**, and outputs the synchronized **Quad-Pack**:
-1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, color-coded callouts, comparative tables, and Master Pharmacology Matrix.
+1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
 2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom burgundy headers (`#78281F`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
 3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with A4 print CSS, collapsible clinical vignettes (`<details>`), and interactive matrices.
 4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, Track 4 Clinical Semiology tables, and escaped table formatting.
-5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, and auto-synthesized semiology, surgery, and complication cards.
+5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, and auto-synthesized emergency, staging, special populations, semiology, surgery, and complication cards.
 
 ---
 
@@ -33,18 +33,18 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 1. **پرهیز مطلق از مقدمه‌چینی، توضیح درباره روند کار، نتیجه‌گیری، نظر شخصی، تکرار مطالب و حشو:** از تعارفات کلامی و توضیحات فرامتنی خودداری شود.
 2. **استخراج انحصاری عصاره علمی و نکات آزمونی:** فقط نکات تست‌خیز و قابل آزمون استخراج گردند.
 3. **وفاداری ۱۰۰٪ به منبع و منع مطلق افزودن اطلاعات:** اگر مطلبی در فایل نیست، به هیچ وجه به خلاصه اضافه نشود و فیلد مربوطه `null` بماند.
-4. **حفظ منظم و فوق‌فشرده ساختارهای بالینی:** علل، عوامل خطر، پاتوفیزیولوژی، علائم، آزمایش‌ها، تشخیص، درمان، عوارض و افتراق‌ها در فشرده‌ترین قالب حفظ شوند.
+4. **حفظ منظم و فوق‌فشرده ساختارهای بالینی:** علل، عوامل خطر، پاتوفیزیولوژی، علائم، آزمایش‌ها، تشخیص، درمان، عوارض، پیش‌آگهی، استیجینگ و افتراق‌ها در فشرده‌ترین قالب حفظ شوند.
 5. **حفظ روابط علت و معلولی و زنجیره پاتوفیزیولوژی:** توجیه مکانیسمی و منطق رخداد علائم حفظ شود تا خلاصه فقط فهرستی خشک از کلمات نباشد.
 6. **پرهیز از بولت‌سازی افراطی و تجمیع مطالب مرتبط:** مطالبی که به یکدیگر مرتبط هستند در یک بولت یا پاراگراف منسجم تجمیع شوند.
 7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا (قانون تلخیص فوق‌متراکم - ضد رونویسی):** ضریب فشردگی متراکم (۰.۱۵ تا ۰.۵۰ حجم متن) با منع اکید کپی کردن پاراگراف‌های طولانی (>۱۲۰ کلمه).
 
 ---
 
-## 🌟 Key Innovations & Architectural Pillars (v3.6)
+## 🌟 Key Innovations & Architectural Pillars (v3.6.1)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   MEDICAL SUMMARY EXPERT PIPELINE (v3.6)               │
+│                  MEDICAL SUMMARY EXPERT PIPELINE (v3.6.1)              │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. INGESTION ENGINE (DOCX & PDF)                                       │
 │    - OOXML Deep Traversal: Word Textboxes, Table-Cell Shapes & SDT     │
@@ -54,45 +54,44 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 │ 2. SHARD-AND-MERGE MULTI-AGENT ORCHESTRATION                           │
 │    - 2500-Word Semantic Partitioning by Section Headings               │
 │    - 150-Word Context Halo preventing boundary amnesia                 │
-│    - Polymorphic Prompt Schemas: Foundational, Approach & Illness Script│
+│    - Polymorphic Schemas: Foundational, Approach & Balanced Illness    │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3. ZERO-OMISSION & ANTI-BLOAT AUDIT GATE                               │
+│ 3. ZERO-OMISSION & UNIVERSAL CLINICAL AUDIT GATE                      │
+│    - Universal Dynamic Syndrome Audit (Cardiology, Nephrology, Neuro...)│
 │    - High-Yield Compression Gate (Flags ratio > 0.85 & bullets > 120w) │
 │    - Anti-Pharmacology-Skew Law (Illness Script 4 Pillars + Syndromes) │
-│    - Subtle Syndrome Protection (Sheehan, Nelson, Carney, FHH, CAIS...)│
 │    - Persian/Arabic Digit Canonicalization (۴۰٪ -> 40%, ۱،۵ -> 1.5)    │
 │    - Substantive Warning Audit & USMLE Pharmacology Suffix Detection   │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 4. PUBLICATION-GRADE DELIVERABLES COMPILER                             │
+│    - Polymorphic Crash Sheets & Morning Checklist Priority Synthesis   │
 │    - Direct Playwright PDF: Edge/Chrome headless + 'دانشگاه بق' header │
 │    - Persian BiDi Stamping: 'صفحه X از Y' via ReportLab + pypdf        │
-│    - DOCX: Word RTL, Dubai Font, 6 Custom Callout Styles, RTL Tables   │
+│    - DOCX: Word RTL, Dubai Font, Dedicated Emergency & Special Boxes   │
 │    - Master Course Booklet: Cover Page + Auto TOC + Multi-Chapter Sync │
-│    - Anki: CLOZE Model, Deterministic Hash GUIDs, Semiology & Surgery  │
+│    - Anki: CLOZE Model, Deterministic Hash GUIDs, Staging & Emergency  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. 🧬 Polymorphic Module Architecture (v3.6)
+### 1. 🧬 Polymorphic Module Architecture & Balanced Handout Coverage (v3.6.1)
 * **Foundational Physiology (`foundational_concept`):** Normal homeostasis, organ axes (HPA, HPT, HPG), baseline functional tests, and regulatory feedback loops with Mermaid diagrams.
 * **Clinical Diagnostic Approach (`clinical_approach`):** Step-by-step triage algorithms, decision bifurcations / pivot criteria, and definitive next steps.
 * **Disease Illness Script (`illness_script`):** Full disease coverage with surgical/interventional indications, lifestyle/conservative management, complications/prognosis, and high-yield pearls.
+* **Polymorphic Crash Sheets & Morning Checklist:** Auto-synthesizes non-empty crash sheet rows for non-disease modules and prioritizes emergency resuscitation, instructor alerts, contraindications, gold standards, and pivot points.
 
-### 2. ⚡ High-Yield Compression & Anti-Bloat Gate (v3.6)
-* **Compression Ratio Metric:** Ensures the summary is a genuine high-yield distillation (optimal compression ratio $0.15 \le CR \le 0.50$).
-* **Verbatim Copy-Paste Suppression:** Automatically flags raw dumps where summary exceeds 85% of source words or contains bloated bullets ($>120$ words per bullet).
+### 2. 📋 Staging Systems, Emergency Management & Special Populations
+* **Staging & Diagnostic Criteria (`staging_and_classification`):** Native multi-format rendering of Duke, Wells, NYHA, Killip, KDIGO, TNM criteria as tables or structured lists.
+* **Emergency Stabilization (`emergency_management`):** High-priority emergency resuscitation callouts for acute unstable patient care.
+* **Special Populations (`special_populations_and_pregnancy`):** Dedicated callouts for trimester-specific drug selections (e.g. PTU vs Methimazole), pediatrics, and organ failure dose titrations.
 
-### 3. 🖨️ Direct Playwright HTML-to-PDF & Persian BiDi Page Stamping
+### 3. 🔍 Universal Dynamic Clinical Syndrome & Disease Audit
+* **Cross-Specialty NER Engine:** Dynamically extracts clinical syndromes, diseases, triads, and criteria across Cardiology, Nephrology, Pulmonology, Neurology, Rheumatology, Hematology, Pediatrics, and Basic Sciences.
+* **Zero Omission Detection:** Eliminates dependence on a hardcoded endocrine list, ensuring syndromes like Eisenmenger syndrome, Kawasaki disease, Beck triad, or Duke criteria are never omitted.
+
+### 4. 🖨️ Direct Playwright HTML-to-PDF & Persian BiDi Page Stamping
 * **Playwright System Browser Rendering:** Renders publication-grade PDFs via Playwright using pre-installed Microsoft Edge or Google Chrome without downloading heavyweight browser binaries.
 * **Header & Artifact Suppression:** Custom burgundy header (`border-bottom: 1.5px solid #78281F`) featuring chapter title, course name, and **«دانشگاه بق»** institution branding. Browser default URLs, dates, and timestamps are suppressed.
 * **Persian BiDi Stamping (`صفحه X از Y`):** Utilizes `pypdf` + `reportlab` + `arabic-reshaper` + `python-bidi` with Windows Tahoma font to stamp bidirectional Persian page numbers at the footer without character reversal or font disconnection.
-
-### 4. ⚖️ Anti-Pharmacology-Skew Law (Illness Script Integrity Gate)
-* **Illness Script Integrity:** Enforces the 4 core pillars for every condition (Etiology & Cascade, Clinical Presentation & Triads, Diagnostics Bifurcation, High-Yield Pearls & Contraindications).
-* **Subtle Syndrome Protection:** Prevents clinical syndromes (e.g. Sheehan syndrome, Nelson syndrome, Carney complex, FHH, Looser zones, Asherman, CAIS, 5-alpha reductase, pituitary apoplexy) from being eclipsed or dropped when extensive drug tables are generated.
-
-### 5. 🩺 Track 4: Clinical Semiology & Physical Examination
-* **Dedicated Semiology Track:** Automatically extracts inspection and palpation maneuvers, ophthalmic signs, metabolic signs, and neuropathy exams.
-* **Auto-Synthesized Semiology Decks:** Automatically generates spaced-repetition Anki cards tagged with `PhysioPath::[Topic]::Semiology`.
 
 ---
 
@@ -103,11 +102,11 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 ├── parse_input_lecture.py      # DOCX & PDF ingestion engine (tables, shapes, SDT, images, OCR)
 ├── build_summary_pack.py       # Quad-pack compiler (DOCX, Playwright PDF, HTML, MD, Anki TSV/APKG)
 ├── pdf_designer_engine.py      # Standalone dual-pass PDF engine with vector borders and A4 geometry
-├── audit_summary_coverage.py   # Clinical NLP audit gate (numbers, cutoffs, warnings, illness scripts, anti-bloat)
-├── SKILL.md                    # Antigravity skill specification and guidelines (v3.6.0)
+├── audit_summary_coverage.py   # Clinical NLP audit gate (dynamic syndromes, cutoffs, warnings, anti-bloat)
+├── SKILL.md                    # Antigravity skill specification and guidelines (v3.6.1)
 ├── sample_summary.json         # Standard structured JSON data
 ├── tests/                      # Comprehensive automated stress-test suite
-│   ├── test_full_skill_diagnostics.py   # 27-test diagnostic suite (Bug A to Bug AA)
+│   ├── test_full_skill_diagnostics.py   # 31-test diagnostic suite (Bug A to Bug AE)
 │   ├── test_omission_bugs.py            # Word table & textbox preservation test
 │   ├── test_pdf_ingestion.py            # PyMuPDF table and scanned page test
 │   └── test_digit_and_guid_bugs.py      # Persian digit normalization & Anki GUID test
@@ -136,14 +135,14 @@ uv run python run_summary_pipeline.py partition --input "ingested_lecture.json" 
 # 3. Merge Subagent Generated Shards into Unified Summary JSON
 uv run python run_summary_pipeline.py merge-batches --batch-dir "batches" --out "summary_data.json"
 
-# 4. Run Clinical Zero-Omission, Illness Script & Anti-Bloat Compression Audit Gate
+# 4. Run Clinical Zero-Omission, Dynamic Syndrome & Anti-Bloat Compression Audit Gate
 uv run python run_summary_pipeline.py audit --source "ingested_lecture.json" --summary "summary_data.json" --report "coverage_audit_report.json"
 
 # 5. Build Deliverables (Word + Playwright PDF + HTML + Markdown + Anki TSV/APKG)
 uv run python run_summary_pipeline.py build --summary "summary_data.json" --institution "دانشگاه بق" --out-dir "dist" --prefix "summary_pack"
 
 # 6. Bundle Semester Course into Single Master Booklet (Cover + TOC + Chapters + Continuous BiDi Stamping)
-uv run python run_summary_pipeline.py bundle --inputs "sessions/*.json" --course-title "فیزیوپاتولوژی جامع غدد" --institution "دانشگاه بق" --out-dir "dist/master_bundle" --prefix "comprehensive_master_booklet"
+uv run python run_summary_pipeline.py bundle --inputs "sessions/*.json" --course-title "فیزیوپاتولوژی جامع" --institution "دانشگاه بق" --out-dir "dist/master_bundle" --prefix "comprehensive_master_booklet"
 
 # Auto-Pipeline (All-in-one for single handouts)
 uv run python run_summary_pipeline.py auto --input "lecture.docx" --summary-json "summary_data.json" --institution "دانشگاه بق"
@@ -151,7 +150,7 @@ uv run python run_summary_pipeline.py auto --input "lecture.docx" --summary-json
 
 ---
 
-## 🧪 Automated Test Suite (27/27 Passing - 100% Green)
+## 🧪 Automated Test Suite (31/31 Passing - 100% Green)
 
 Our hardened test suite verifies zero data loss, null resilience, and clinical accuracy:
 
@@ -184,6 +183,10 @@ Our hardened test suite verifies zero data loss, null resilience, and clinical a
 | **Bug Y** | Multi-session Comprehensive Course Master Booklet (Cover + TOC + Chapters + 'دانشگاه بق') | **PASS** ✅ |
 | **Bug Z** | Polymorphic Module Architecture (Foundational, Algorithm, Illness Script) and Anki Parity | **PASS** ✅ |
 | **Bug AA** | High-Yield Compression Gate & Verbatim Bloat Prevention Audit | **PASS** ✅ |
+| **Bug AB** | Polymorphic Module Parity in Crash Sheet & Multi-Priority Morning Checklist Auto-Synthesis | **PASS** ✅ |
+| **Bug AC** | Staging Systems, Scoring Criteria & Diagnostic Criteria Multi-Format Support | **PASS** ✅ |
+| **Bug AD** | Immediate Emergency Stabilization & Special Populations (Pregnancy/Pediatrics) Support | **PASS** ✅ |
+| **Bug AE** | Universal Dynamic Syndrome and Disease Detection Across All Medical Specialties | **PASS** ✅ |
 
 To run the full diagnostic suite:
 ```bash
@@ -194,15 +197,15 @@ uv run python tests/test_full_skill_diagnostics.py
 
 ## 🇮🇷 راهنمای جامع فارسی
 
-### هدف اسکیل (نسخه ۳.۶)
+### هدف اسکیل (نسخه ۳.۶.۱)
 این اسکیل تخصصی برای تبدیل جزوات اسلایدی و متنی اساتید، ترنسکریپت‌های کلاسی و هندآوت‌های درسی دانشگاه‌های علوم پزشکی به **بسته چندگانه مرور های‌یلد (Quad-Pack)** طراحی شده است:
 
-1. **جزوه رسمی Word (`.docx`):** با استایل‌بندی مدرن، فونت خوانای دبی، دایرکشن راست‌به‌چپ (RTL)، کادرهای رنگی اختصاصی (زنجیره پاتوفیزیولوژی، سمیولوژی، تأکیدات مستقیم استاد، موارد مصرف ممنوع، سناریوهای خودآزمایی بالینی، الگوریتم‌های تریاژ)، ماتریس‌های تطبیقی، ماتریس مقایسه جامع داروها و جدول فشرده شب امتحان.
+1. **جزوه رسمی Word (`.docx`):** با استایل‌بندی مدرن، فونت خوانای دبی، دایرکشن راست‌به‌چپ (RTL)، کادرهای رنگی اختصاصی (زنجیره پاتوفیزیولوژی، سمیولوژی، اقدامات اورژانس، ملاحظات بارداری، تأکیدات مستقیم استاد، موارد مصرف ممنوع، سناریوهای خودآزمایی بالینی، الگوریتم‌های تریاژ)، ماتریس‌های تطبیقی، جدول مرحله‌بندی و معیارهای بالینی، ماتریس مقایسه جامع داروها و جدول فشرده شب امتحان.
 2. **سند پرینت مستقیم PDF (`.pdf` با Playwright):** تولید فایل PDF با کیفیت چاپی عالی از طریق Playwright با مرورگرهای بومی ویندوز، هدر عنابی رنگ اختصاصی (`#78281F`)، بدون آرتفکت‌های مرورگر، درج «دانشگاه بق» در هدر و مجهز به شماره‌گذاری فارسی `صفحه X از Y`.
 3. **کتابچه جامع ترم (`comprehensive_master_booklet.pdf`):** صحافی و تجمیع تمام فصول و جلسات یک درس در قالب یک پی‌دی‌اف مرجع واحد با جلد نفیس رنگی، فهرست مطالب خودکار و شماره‌گذاری پیوسته.
-4. **داشبورد تعاملی HTML (`.html`):** نمایش تمیز تحت وب با استایل‌های اختصاصی `@page`، آکاردئون‌های تاشوی سناریوهای بالینی و پشتیبانی کامل BiDi.
-5. **سند مارک‌داون (`.md`):** شامل فلوچارت‌های کدنویسی‌شده استاندارد Mermaid، بخش سمیولوژی، خودآزمایی بالینی تاشو با پاسخ تشریحی مکانیسمی (`<details>`)، و پاک‌سازی کامل جدول‌ها با اسکپ کاراکترهای پایپ.
-6. **فلش‌کارت‌های استاندارد آنکی (`.tsv` و `.apkg`):** کارت‌های جای‌خالی اتمیک بر پایه ۲۰ قانون Wozniak، بدون ریسک تکراری شدن یا ریست زمان‌بندی مرور دانشجو به دلیل بهره‌گیری از شناسه‌های پایدار قطعی (Deterministic GUIDs)، به همراه سنتز خودکار کارت‌های سمیولوژی، اندیکاسیون‌های جراحی، عوارض و الگوریتم‌ها.
+4. **داشبورد تعاملی HTML (`.html`):** نمایش تمیز تحت وب با استایل‌های اختصاصی `@page`، آکاردئون‌های تاشوی سناریوهای بالینی، کادرهای اختصاصی اورژانس و بارداری و پشتیبانی کامل BiDi.
+5. **سند مارک‌داون (`.md`):** شامل فلوچارت‌های کدنویسی‌شده استاندارد Mermaid، بخش سمیولوژی، معیارهای تشخیصی و مرحله‌بندی، خودآزمایی بالینی تاشو با پاسخ تشریحی مکانیسمی (`<details>`)، و پاک‌سازی کامل جدول‌ها با اسکپ کاراکترهای پایپ.
+6. **فلش‌کارت‌های استاندارد آنکی (`.tsv` و `.apkg`):** کارت‌های جای‌خالی اتمیک بر پایه ۲۰ قانون Wozniak، بدون ریسک تکراری شدن یا ریست زمان‌بندی مرور دانشجو به دلیل بهره‌گیری از شناسه‌های پایدار قطعی (Deterministic GUIDs)، به همراه سنتز خودکار کارت‌های سمیولوژی، اورژانس، استیجینگ، بارداری، اندیکاسیون‌های جراحی، عوارض و الگوریتم‌ها.
 
 ---
 

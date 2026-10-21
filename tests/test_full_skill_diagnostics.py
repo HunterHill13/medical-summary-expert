@@ -1263,6 +1263,249 @@ def test_bug_aa_high_compression_ratio_and_anti_bloat_audit():
 
     print("[PASS] Bug AA Test Passed: High-yield compression gate & verbatim bloat prevention audit verified.")
 
+def test_bug_ab_ensure_master_matrices_polymorphic_parity_and_checklist():
+    """Bug AB: Polymorphic Module Parity in Crash Sheet & Checklist Auto-Synthesis."""
+    from build_summary_pack import ensure_master_matrices
+
+    raw_data = {
+        "topic_title": "فیزیوپاتولوژی جامع",
+        "modules": [
+            {
+                "type": "foundational_concept",
+                "name": "محور هورمونی HPA",
+                "feedback_cascade": ["ترشح CRH -> ACTH -> کورتیزول -> مهار بازخوردی"],
+                "physiological_role": ["تنظیم هموستاز گلوکز و پاسخ به استرس"],
+                "baseline_tests": ["کورتیزول پلاسما 8 صبح: 5-25 mcg/dL"],
+                "clinical_relevance": ["قطع ناگهانی درمان کورتون منجر به نارسایی حاد آدرنال می‌شود"]
+            },
+            {
+                "type": "clinical_approach",
+                "name": "رویکرد به شوک آنافیلاکسی",
+                "initial_presentation": "کهیر، آنژیوادم، برونکواسپاسم و هایپوتنشن شدید",
+                "step_by_step_algorithm": ["گام ۱: تزریق فوری اپی‌نفرین عضلانی ۰.۳ تا ۰.۵ میلی‌گرم", "گام ۲: اکسیژن‌تراپی و سرم نرمال‌سالین"],
+                "pivot_points": ["در صورت عدم پاسخ بعد از ۵ دقیقه: تکرار اپی‌نفرین IM"],
+                "definitive_action": "پایش حداقل ۶ تا ۸ ساعت جهت واکنش دو فازی"
+            }
+        ]
+    }
+
+    ensure_master_matrices(raw_data)
+
+    assert "last_minute_crash_sheet" in raw_data, "Crash sheet was not auto-synthesized!"
+    crash_rows = raw_data["last_minute_crash_sheet"]["rows"]
+    assert len(crash_rows) == 2, f"Expected 2 rows in crash sheet, got {len(crash_rows)}"
+
+    # Verify foundational row is NOT filled with dashes
+    found_row = crash_rows[0]
+    assert found_row[0] == "محور هورمونی HPA"
+    assert found_row[1] == "هموستاز فیزیولوژیک"
+    assert "CRH" in found_row[2] or "کورتیزول" in found_row[2]
+    assert "استرس" in found_row[3] or "گلوکز" in found_row[3]
+    assert "5-25" in found_row[4]
+    assert "نارسایی" in found_row[5] or "کورتون" in found_row[5]
+
+    # Verify approach row is NOT filled with dashes
+    app_row = crash_rows[1]
+    assert app_row[0] == "رویکرد به شوک آنافیلاکسی"
+    assert "رویکرد" in app_row[1]
+    assert "اپی‌نفرین" in app_row[2]
+    assert "کهیر" in app_row[3]
+    assert "تکرار" in app_row[4]
+    assert "پایش" in app_row[5]
+
+    # Verify morning checklist incorporated clinical relevance and pivot points
+    assert "morning_exam_checklist" in raw_data, "Checklist was not auto-synthesized!"
+    chk = raw_data["morning_exam_checklist"]
+    assert any("کورتون" in b or "نارسایی" in b for b in chk), "Checklist missed foundational clinical relevance!"
+    assert any("اپی‌نفرین" in b or "پایش" in b for b in chk), "Checklist missed approach pivot points!"
+
+    print("[PASS] Bug AB Test Passed: Polymorphic module parity in crash sheet and checklist synthesis verified.")
+
+def test_bug_ac_staging_classification_and_diagnostic_criteria_support():
+    """Bug AC: Diagnostic Criteria & Staging Systems Support Across Formats."""
+    from build_summary_pack import build_docx_summary, build_markdown_summary, build_html_summary, get_or_synthesize_flashcards
+
+    data = {
+        "topic_title": "کاردیولوژی بالینی",
+        "modules": [
+            {
+                "type": "illness_script",
+                "name": "اندوکاردیت عفونی (Infective Endocarditis)",
+                "definition_and_etiology": ["عفونت دریچه‌های قلبی"],
+                "staging_and_classification": {
+                    "title": "معیارهای تشخیصی دوک (Duke Criteria)",
+                    "headers": ["نوع معیار", "اجزا و نشانه‌ها", "تعریف قطعی"],
+                    "rows": [
+                        ["معیار ماژور", "کشت خون مثبت پایدار یا شواهد درگیری اندوکارد در اکو", "۲ ماژور یا ۱ ماژور + ۳ مینور"],
+                        ["معیار مینور", "تب بالای ۳۸ درجه، مصرف داروی تزریقی، پدیده‌های عروقی و ایمونولوژیک", "۵ مینور"]
+                    ]
+                },
+                "diagnostics": {"best_initial_test": "اکوکاردیوگرافی ترنس‌توراسیک (TTE)"}
+            },
+            {
+                "type": "illness_script",
+                "name": "آمبولی ریه (Pulmonary Embolism)",
+                "definition_and_etiology": ["انسداد شریان ریوی با لخته"],
+                "staging_and_classification": [
+                    {"معیار": "علائم بالینی DVT", "امتیاز": "۳ امتیاز"},
+                    {"معیار": "عدم وجود تشخیص محتمل‌تر", "امتیاز": "۳ امتیاز"},
+                    {"معیار": "ضربان قلب بالای ۱۰۰", "امتیاز": "۱.۵ امتیاز"}
+                ],
+                "diagnostics": {"best_initial_test": "سی‌تی آنژیوگرافی ریه (CTPA)"}
+            }
+        ]
+    }
+
+    out_docx = "dist/diag_test_ac.docx"
+    out_md = "dist/diag_test_ac.md"
+    out_html = "dist/diag_test_ac.html"
+
+    build_docx_summary(data, out_docx)
+    build_markdown_summary(data, out_md)
+    build_html_summary(data, out_html)
+
+    # 1. Verify Markdown contains both criteria tables
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "معیارهای تشخیصی دوک (Duke Criteria)" in md_text
+    assert "معیار ماژور" in md_text
+    assert "علائم بالینی DVT" in md_text
+    assert "۳ امتیاز" in md_text
+
+    # 2. Verify HTML contains tables
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "Duke Criteria" in html_text
+    assert "DVT" in html_text
+
+    # 3. Verify Anki cards generated
+    cards = get_or_synthesize_flashcards(data)
+    clozes = [c.get("text", "") for c in cards]
+    assert any("Duke" in c or "دوک" in c or "ماژور" in c for c in clozes), "Anki criteria card for Duke missing!"
+    assert any("DVT" in c or "امتیاز" in c for c in clozes), "Anki criteria card for Wells missing!"
+
+    print("[PASS] Bug AC Test Passed: Diagnostic criteria and staging systems rendered across DOCX, MD, HTML, and Anki.")
+
+def test_bug_ad_emergency_and_special_populations_support():
+    """Bug AD: Emergency Stabilization & Special Populations Support Across Formats."""
+    from build_summary_pack import build_docx_summary, build_markdown_summary, build_html_summary, get_or_synthesize_flashcards
+
+    data = {
+        "topic_title": "اورژانس‌های داخلی و اندوکرین",
+        "modules": [
+            {
+                "type": "illness_script",
+                "name": "طوفان تیروئیدی (Thyroid Storm)",
+                "emergency_management": [
+                    "پایدارسازی فوری: تجویز پروپرانولول وریدی یا خوراکی جهت کنترل طوفان آدرنرژیک",
+                    "تجویز هیدروکورتیزون وریدی جهت پیشگیری از نارسایی نسبی آدرنال و مهار تبدیل محیطی T4 به T3"
+                ],
+                "special_populations_and_pregnancy": [
+                    "در سه ماهه اول بارداری: پروپیل‌تیواوراسیل (PTU) داروی انتخابی است.",
+                    "از سه ماهه دوم و سوم به بعد: سوئیچ به متی‌مازول جهت کاهش سمیت کبدی شدید PTU."
+                ],
+                "contraindications_and_warnings": [
+                    "محلول ید (Lugol) باید حداقل ۱ ساعت بعد از آنتی‌تیروئید تجویز شود تا اثر Jod-Basedow رخ ندهد."
+                ]
+            }
+        ]
+    }
+
+    out_docx = "dist/diag_test_ad.docx"
+    out_md = "dist/diag_test_ad.md"
+    out_html = "dist/diag_test_ad.html"
+
+    build_docx_summary(data, out_docx)
+    build_markdown_summary(data, out_md)
+    build_html_summary(data, out_html)
+
+    # 1. Verify Markdown
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "اقدامات اورژانس و احیای فوری" in md_text
+    assert "پروپرانولول" in md_text
+    assert "ملاحظات گروه‌های خاص، بارداری و سالمندان" in md_text
+    assert "سه ماهه اول بارداری" in md_text
+
+    # 2. Verify HTML callouts
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "callout-emergency" in html_text
+    assert "callout-special" in html_text
+    assert "PTU" in html_text
+
+    # 3. Verify Anki cards
+    cards = get_or_synthesize_flashcards(data)
+    clozes = [c.get("text", "") for c in cards]
+    assert any("پروپرانولول" in c or "اورژانس" in c for c in clozes), "Emergency Anki card missing!"
+    assert any("PTU" in c or "بارداری" in c for c in clozes), "Special population pregnancy Anki card missing!"
+
+    print("[PASS] Bug AD Test Passed: Emergency management and special populations rendered across DOCX, MD, HTML, and Anki.")
+
+def test_bug_ae_universal_dynamic_syndrome_and_disease_detection():
+    """Bug AE: Universal Dynamic Syndrome and Disease Detection Across All Medical Specialties."""
+    from audit_summary_coverage import audit_coverage, audit_illness_script_integrity
+
+    source_text = (
+        "در بخش قلب و عروق اطفال، بیماری کاوازاکی یکی از علل مهم واسکولیت است که منجر به آنوریسم عروق کرونر می‌شود. "
+        "همچنین در شانت‌های چپ به راست درمان‌نشده، سندرم آیزن‌منگر در اثر وازوکانستریکشن ریوی ایجاد می‌گردد. "
+        "در تامپوناد قلبی تریاد بک شامل هایپوتنشن، اتساع وریدهای ژوگولار و صداهای قلبی مبهم دیده می‌شود. "
+        "برای تشخیص اندوکاردیت از معیارهای دوک و در آمبولی ریه از Wells Score استفاده می‌گردد. "
+        "دوز اولیه آسپیرین ۸۰ میلی گرم بر کیلوگرم است."
+    )
+
+    # Incomplete summary that omitted Kawasaki disease and Eisenmenger syndrome
+    incomplete_summary = {
+        "modules": [
+            {
+                "type": "illness_script",
+                "name": "تامپوناد قلبی",
+                "clinical_presentation": [{"sign": "تریاد بک", "mechanism": "تجمع مایع پریکارد"}],
+                "diagnostics": {"best_initial_test": "اکوکاردیوگرافی"}
+            }
+        ]
+    }
+
+    rep = audit_illness_script_integrity(source_text, incomplete_summary)
+    omitted = rep.get("omitted_subtle_syndromes", [])
+    detected = rep.get("detected_source_syndromes", [])
+
+    # Verify that dynamic syndromes were detected from source
+    assert any("کاوازاکی" in s for s in detected), f"Kawasaki disease was not detected from source! Detected: {detected}"
+    assert any("آیزن" in s and "منگر" in s for s in detected), f"Eisenmenger syndrome was not detected from source! Detected: {detected}"
+    assert any("Wells" in s or "wells" in s.lower() for s in detected), f"Wells Score was not detected from source! Detected: {detected}"
+
+    # Verify that omitted syndromes were flagged
+    assert any("کاوازاکی" in s for s in omitted), f"Kawasaki disease omission was not flagged! Omitted: {omitted}"
+    assert any("آیزن" in s and "منگر" in s for s in omitted), f"Eisenmenger syndrome omission was not flagged! Omitted: {omitted}"
+    assert not rep["illness_script_compliant"], "Audit should fail compliance when dynamic syndromes are omitted!"
+
+    # Now verify complete summary passes
+    complete_summary = {
+        "modules": [
+            {
+                "type": "illness_script",
+                "name": "بیماری کاوازاکی",
+                "pathophysiology_cascade": ["واسکولیت عروق کرونر"],
+                "clinical_presentation": [{"sign": "تب و بثورات", "mechanism": "واسکولیت"}],
+                "diagnostics": {"best_initial_test": "اکوکاردیوگرافی"},
+                "pharmacology_and_management": [{"drug_class": "آسپیرین", "mechanism": "ضد التهاب"}]
+            },
+            {
+                "type": "illness_script",
+                "name": "سندرم آیزن‌منگر و تامپوناد قلبی",
+                "pathophysiology_cascade": ["معکوس شدن شانت در اثر افزایش فشار ریوی"],
+                "clinical_presentation": [{"sign": "سیانوز و تریاد بک", "mechanism": "شانت راست به چپ"}],
+                "diagnostics": {"best_initial_test": "معیارهای دوک و Wells Score"}
+            }
+        ]
+    }
+    rep_pass = audit_illness_script_integrity(source_text, complete_summary)
+    assert rep_pass["illness_script_compliant"], f"Complete summary unexpectedly failed: {rep_pass['omitted_subtle_syndromes']}"
+    assert len(rep_pass["omitted_subtle_syndromes"]) == 0, f"Expected 0 omissions, got {rep_pass['omitted_subtle_syndromes']}"
+
+    print("[PASS] Bug AE Test Passed: Universal dynamic syndrome and disease detection across medical specialties verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1292,4 +1535,8 @@ if __name__ == "__main__":
     test_bug_y_comprehensive_course_bundling()
     test_bug_z_polymorphic_modules_and_balanced_coverage()
     test_bug_aa_high_compression_ratio_and_anti_bloat_audit()
+    test_bug_ab_ensure_master_matrices_polymorphic_parity_and_checklist()
+    test_bug_ac_staging_classification_and_diagnostic_criteria_support()
+    test_bug_ad_emergency_and_special_populations_support()
+    test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

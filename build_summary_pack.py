@@ -532,16 +532,45 @@ def ensure_master_matrices(data: Dict[str, Any]):
             if not isinstance(mod, dict):
                 continue
             m_name = str(mod.get("name") or "")
-            etio_items = mod.get("definition_and_etiology") or ["-"]
-            m_etio = " ".join(str(x) for x in etio_items if x)[:60] or "-"
-            mech_items = mod.get("pathophysiology_cascade") or ["-"]
-            m_mech = str(mech_items[0] if mech_items else "-")[:60]
-            pres_items = mod.get("clinical_presentation") or []
-            m_sign = str(pres_items[0].get("sign", "-") if pres_items and isinstance(pres_items[0], dict) else "-")[:50]
-            diag_dict = mod.get("diagnostics") or {}
-            m_dx = str(diag_dict.get("best_initial_test") or "-")[:50]
-            rx_items = mod.get("pharmacology_and_management") or []
-            m_rx = str(rx_items[0].get("drug_class", "-") if rx_items and isinstance(rx_items[0], dict) else "-")[:50]
+            mod_type = mod.get("type", "illness_script")
+            if mod_type == "clinical_approach" or mod.get("step_by_step_algorithm"):
+                m_etio = "رویکرد تشخیصی / تریاژ"
+                alg_list = mod.get("step_by_step_algorithm") or ["-"]
+                m_mech = str(alg_list[0] if alg_list else "-")[:60]
+                m_sign = str(mod.get("initial_presentation") or "-")[:50]
+                pv_list = mod.get("pivot_points") or mod.get("high_yield_decision_points") or ["-"]
+                m_dx = str(pv_list[0] if pv_list else "-")[:50]
+                m_rx = str(mod.get("definitive_action") or "-")[:50]
+            elif mod_type == "foundational_concept" or mod.get("feedback_cascade"):
+                m_etio = "هموستاز فیزیولوژیک"
+                f_list = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback") or ["-"]
+                m_mech = str(f_list[0] if f_list else "-")[:60]
+                roles = mod.get("physiological_role") or ["-"]
+                m_sign = str(roles[0] if isinstance(roles, list) else roles)[:50]
+                tests = mod.get("baseline_tests") or ["-"]
+                m_dx = str(tests[0] if isinstance(tests, list) else tests)[:50]
+                rels = mod.get("clinical_relevance") or ["-"]
+                m_rx = str(rels[0] if isinstance(rels, list) else rels)[:50]
+            else:
+                etio_items = mod.get("definition_and_etiology") or ["-"]
+                m_etio = " ".join(str(x) for x in etio_items if x)[:60] or "-"
+                mech_items = mod.get("pathophysiology_cascade") or ["-"]
+                m_mech = str(mech_items[0] if mech_items else "-")[:60]
+                pres_items = mod.get("clinical_presentation") or []
+                m_sign = str(pres_items[0].get("sign", "-") if pres_items and isinstance(pres_items[0], dict) else "-")[:50]
+                diag_dict = mod.get("diagnostics") or {}
+                m_dx = str(diag_dict.get("best_initial_test") or "-")[:50]
+                rx_items = mod.get("pharmacology_and_management") or []
+                if rx_items and isinstance(rx_items[0], dict):
+                    m_rx = str(rx_items[0].get("drug_class", "-"))[:50]
+                elif mod.get("surgical_and_interventional"):
+                    surg = mod.get("surgical_and_interventional")
+                    m_rx = str(surg[0] if isinstance(surg, list) else surg)[:50]
+                elif mod.get("lifestyle_and_conservative"):
+                    life = mod.get("lifestyle_and_conservative")
+                    m_rx = str(life[0] if isinstance(life, list) else life)[:50]
+                else:
+                    m_rx = "-"
             crash_rows.append([m_name, m_etio, m_mech, m_sign, m_dx, m_rx])
         if crash_rows:
             data["last_minute_crash_sheet"] = {
@@ -552,6 +581,17 @@ def ensure_master_matrices(data: Dict[str, Any]):
     # 3. Morning-of-Exam 30-Point High-Yield Capsule (Auto-synthesized if missing)
     if not data.get("morning_exam_checklist") and len(modules) >= 1:
         bullets = []
+        # Priority 0: Immediate Emergency Stabilization
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            emerg = mod.get("emergency_management") or mod.get("immediate_stabilization") or []
+            if isinstance(emerg, str):
+                emerg = [emerg]
+            for em in emerg:
+                if em and str(em).strip():
+                    bullets.append(f"احیای فوری و اورژانس ({m_name}): {str(em).strip()}")
         # Priority 1: Instructor Exam Alerts
         for mod in modules:
             if not isinstance(mod, dict):
@@ -568,7 +608,7 @@ def ensure_master_matrices(data: Dict[str, Any]):
             for c in (mod.get("contraindications_and_warnings") or []):
                 if c and str(c).strip():
                     bullets.append(f"ممنوعیت مرگبار ({m_name}): {str(c).strip()}")
-        # Priority 3: Diagnostic Gold Standards
+        # Priority 3: Diagnostic Gold Standards & Staging Systems
         for mod in modules:
             if not isinstance(mod, dict):
                 continue
@@ -577,7 +617,14 @@ def ensure_master_matrices(data: Dict[str, Any]):
             gs = diag.get("gold_standard") if isinstance(diag, dict) else None
             if gs and str(gs).strip() and str(gs).lower() not in {"null", "none", "ذکر نشده"}:
                 bullets.append(f"استاندارد طلایی تشخیص {m_name}: {str(gs).strip()}")
-        # Priority 4: High-Yield Pearls
+            crit = mod.get("staging_and_classification") or mod.get("diagnostic_criteria") or mod.get("scoring_criteria")
+            if isinstance(crit, list):
+                for cr in crit:
+                    if isinstance(cr, str) and cr.strip():
+                        bullets.append(f"معیار بالینی ({m_name}): {cr.strip()}")
+            elif isinstance(crit, dict) and crit.get("title"):
+                bullets.append(f"سیستم طبقه‌بندی ({m_name}): {crit.get('title')}")
+        # Priority 4: High-Yield Pearls & Clinical Pivot Points
         for mod in modules:
             if not isinstance(mod, dict):
                 continue
@@ -585,6 +632,29 @@ def ensure_master_matrices(data: Dict[str, Any]):
             for p in (mod.get("high_yield_pearls") or []):
                 if p and str(p).strip():
                     bullets.append(f"نکته های‌یلد ({m_name}): {str(p).strip()}")
+            for pv in (mod.get("pivot_points") or mod.get("high_yield_decision_points") or []):
+                if pv and str(pv).strip():
+                    bullets.append(f"نقطه انشعاب بالینی ({m_name}): {str(pv).strip()}")
+            for cr in (mod.get("clinical_relevance") or []):
+                if cr and str(cr).strip():
+                    bullets.append(f"اهمیت بالینی پایه ({m_name}): {str(cr).strip()}")
+        # Priority 5: Surgical Indications & Severe Complications
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            m_name = mod.get("name", "")
+            surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications") or []
+            if isinstance(surg, str):
+                surg = [surg]
+            for s in surg:
+                if s and str(s).strip():
+                    bullets.append(f"اندیکاسیون جراحی ({m_name}): {str(s).strip()}")
+            comps = mod.get("complications_and_prognosis") or []
+            if isinstance(comps, str):
+                comps = [comps]
+            for comp in comps:
+                if comp and str(comp).strip():
+                    bullets.append(f"عارضه وخیم ({m_name}): {str(comp).strip()}")
         if bullets:
             data["morning_exam_checklist"] = bullets[:30]
 
@@ -959,6 +1029,20 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                 icon="⭐"
             )
 
+        # Emergency Management & Immediate Stabilization (🚨 اقدامات اورژانس و احیا)
+        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
+        if emerg_items:
+            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            add_callout_box(
+                doc,
+                title="🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)",
+                content_items=emerg_list,
+                border_color="C0392B",
+                header_bg="FDEDEC",
+                body_bg="FFFFFF",
+                icon="🚨"
+            )
+
         # Contraindications & Lethal Withholds (⛔ موارد مصرف ممنوع)
         if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
             add_callout_box(
@@ -971,12 +1055,43 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                 icon="⛔"
             )
 
-        # Clinical Scoring Criteria (if any)
-        if mod.get("scoring_criteria") and isinstance(mod["scoring_criteria"], dict):
-            sc = mod["scoring_criteria"]
-            sc_headers = sc.get("headers", ["معیار بالینی", "آستانه / امتیاز", "تفسیر بالینی"])
-            sc_rows = sc.get("rows", [])
-            add_comparison_table(doc, title=sc.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {mod_name}"), headers=sc_headers, rows=sc_rows)
+        # Special Populations & Pregnancy (🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان)
+        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
+        if special_items:
+            spec_list = special_items if isinstance(special_items, list) else [special_items]
+            add_callout_box(
+                doc,
+                title="🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)",
+                content_items=spec_list,
+                border_color="8E44AD",
+                header_bg="F4ECF7",
+                body_bg="FFFFFF",
+                icon="🤰"
+            )
+
+        # Clinical Scoring Criteria, Staging & Diagnostic Systems (📋 معیارها و سیستم‌های مرحله‌بندی)
+        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
+        if criteria_obj:
+            if isinstance(criteria_obj, dict):
+                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی بالینی {mod_name}")
+                sc_headers = criteria_obj.get("headers", ["معیار بالینی", "آستانه / امتیاز", "تفسیر بالینی"])
+                sc_rows = criteria_obj.get("rows", [])
+                add_comparison_table(doc, title=sc_title, headers=sc_headers, rows=sc_rows)
+            elif isinstance(criteria_obj, list) and criteria_obj:
+                if isinstance(criteria_obj[0], dict):
+                    sc_headers = list(criteria_obj[0].keys())
+                    sc_rows = [[str(item.get(k, "-")) for k in sc_headers] for item in criteria_obj]
+                    add_comparison_table(doc, title=f"جدول مرحله‌بندی و معیارهای بالینی {mod_name}", headers=sc_headers, rows=sc_rows)
+                else:
+                    add_callout_box(
+                        doc,
+                        title=f"📋 سیستم طبقه‌بندی و معیارهای بالینی {mod_name} (Staging & Diagnostic Criteria)",
+                        content_items=[str(x) for x in criteria_obj if x],
+                        border_color=COLOR_TEAL_BORDER,
+                        header_bg=COLOR_TEAL_BG,
+                        body_bg="FFFFFF",
+                        icon="📋"
+                    )
 
         # Embedded Figures (if any)
         for fig in (mod.get("figures") or []):
@@ -1328,6 +1443,15 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 lines.append(f"> - ⭐ {alert}")
             lines.append("")
 
+        # Emergency Management & Immediate Resuscitation
+        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
+        if emerg_items:
+            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            lines.append("> [!CAUTION] **🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):**")
+            for em in emerg_list:
+                lines.append(f"> - 🚨 {em}")
+            lines.append("")
+
         # Contraindications & Lethal Withholds
         if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
             lines.append("> [!CAUTION] **⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications):**")
@@ -1335,17 +1459,41 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 lines.append(f"> - ⛔ {warning}")
             lines.append("")
 
-        # Scoring Criteria
-        if mod.get("scoring_criteria") and isinstance(mod["scoring_criteria"], dict):
-            sc = mod["scoring_criteria"]
-            sc_title = sc.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
-            lines.append(f"### 📋 {sc_title}")
-            sc_hdrs = sc.get("headers", ["معیار", "آستانه", "تفسیر"])
-            lines.append(format_md_table_row(sc_hdrs))
-            lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
-            for row in sc.get("rows", []):
-                lines.append(format_md_table_row(row))
+        # Special Populations & Pregnancy
+        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
+        if special_items:
+            spec_list = special_items if isinstance(special_items, list) else [special_items]
+            lines.append("> [!NOTE] **🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy):**")
+            for sp in spec_list:
+                lines.append(f"> - 🤰 {sp}")
             lines.append("")
+
+        # Staging & Diagnostic Criteria (Polymorphic)
+        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
+        if criteria_obj:
+            if isinstance(criteria_obj, dict):
+                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
+                lines.append(f"### 📋 {sc_title}")
+                sc_hdrs = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
+                lines.append(format_md_table_row(sc_hdrs))
+                lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
+                for row in criteria_obj.get("rows", []):
+                    lines.append(format_md_table_row(row))
+                lines.append("")
+            elif isinstance(criteria_obj, list) and criteria_obj:
+                if isinstance(criteria_obj[0], dict):
+                    lines.append(f"### 📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}")
+                    sc_hdrs = list(criteria_obj[0].keys())
+                    lines.append(format_md_table_row(sc_hdrs))
+                    lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
+                    for item in criteria_obj:
+                        lines.append(format_md_table_row([str(item.get(k, "-")) for k in sc_hdrs]))
+                    lines.append("")
+                else:
+                    lines.append(f"### 📋 سیستم طبقه‌بندی و معیارهای بالینی {m_name} (Staging & Criteria)")
+                    for cr in criteria_obj:
+                        lines.append(f"- 📋 {cr}")
+                    lines.append("")
 
         # Clinical Vignettes
         if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
@@ -1567,6 +1715,69 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "text": f"نقطه انشعاب تشخیصی و تصمیم‌گیری در {mod_name}: {{{{c1::{d_str}}}}}",
                     "extra": f"معیار تمایز و تصمیم‌گیری قطعی در الگوریتم بالینی {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Approach"
+                })
+
+        # Synthesize from Emergency Management & Immediate Stabilization
+        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization") or []
+        if isinstance(emerg_items, str):
+            emerg_items = [emerg_items]
+        for em in emerg_items:
+            if em and str(em).strip():
+                e_str = str(em).strip()
+                cards.append({
+                    "text": f"اقدام اورژانس و احیای فوری در {mod_name}: {{{{c1::{e_str}}}}}",
+                    "extra": f"اقدام نجات‌بخش نخستین و پایدارسازی بیمار در شرایط حاد و اورژانس {mod_name}.",
+                    "tag": f"PhysioPath::{mod_name}::Emergency"
+                })
+
+        # Synthesize from Staging & Diagnostic Criteria
+        crit_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria") or []
+        if isinstance(crit_obj, list):
+            for cr in crit_obj:
+                if isinstance(cr, dict):
+                    cr_str = " | ".join(f"{k}: {v}" for k, v in cr.items() if v)
+                else:
+                    cr_str = str(cr).strip()
+                if cr_str:
+                    cards.append({
+                        "text": f"معیار بالینی و سیستم مرحله‌بندی {mod_name}: {{{{c1::{cr_str}}}}}",
+                        "extra": f"سیستم طبقه‌بندی، نمره‌دهی بالینی و پیش‌آگهی در {mod_name}.",
+                        "tag": f"PhysioPath::{mod_name}::Staging"
+                    })
+        elif isinstance(crit_obj, dict) and crit_obj.get("rows"):
+            for row in crit_obj.get("rows", []):
+                r_str = " - ".join(str(c) for c in row if c)
+                if r_str:
+                    cards.append({
+                        "text": f"معیار و طبقه‌بندی بالینی {mod_name}: {{{{c1::{r_str}}}}}",
+                        "extra": f"سیستم نمره‌دهی و مرحله‌بندی: {crit_obj.get('title', mod_name)}",
+                        "tag": f"PhysioPath::{mod_name}::Staging"
+                    })
+
+        # Synthesize from Special Populations & Pregnancy
+        spec_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics") or []
+        if isinstance(spec_items, str):
+            spec_items = [spec_items]
+        for sp in spec_items:
+            if sp and str(sp).strip():
+                sp_str = str(sp).strip()
+                cards.append({
+                    "text": f"ملاحظه در بارداری و گروه‌های خاص در {mod_name}: {{{{c1::{sp_str}}}}}",
+                    "extra": f"تعدیل درمانی، عوارض جنینی و ملاحظات پره‌ناتال یا ارگان‌های نارسا در {mod_name}.",
+                    "tag": f"PhysioPath::{mod_name}::SpecialPopulations"
+                })
+
+        # Synthesize from Foundational Clinical Relevance
+        clin_rels = mod.get("clinical_relevance") or []
+        if isinstance(clin_rels, str):
+            clin_rels = [clin_rels]
+        for cr in clin_rels:
+            if cr and str(cr).strip():
+                cr_str = str(cr).strip()
+                cards.append({
+                    "text": f"اهمیت بالینی مفهوم پایه {mod_name}: {{{{c1::{cr_str}}}}}",
+                    "extra": f"پل ارتباطی علوم پایه با بالین و سؤالات آزمونی در {mod_name}.",
+                    "tag": f"PhysioPath::{mod_name}::ClinicalRelevance"
                 })
 
     # Synthesize from Top-Level Clinical Semiology (Track 4)
@@ -1811,6 +2022,14 @@ body {
 .callout-contra .callout-header { background: #FDEDEC; color: #78281F; border-bottom: 1px solid #C0392B; }
 .callout-contra .callout-body { background: #FFFDFD; }
 
+.callout-emergency { border: 1.5px solid #C0392B; }
+.callout-emergency .callout-header { background: #FDEDEC; color: #78281F; border-bottom: 1.5px solid #C0392B; }
+.callout-emergency .callout-body { background: #FFFDFD; font-weight: 500; }
+
+.callout-special { border: 1.5px solid #8E44AD; }
+.callout-special .callout-header { background: #F4ECF7; color: #512E5F; border-bottom: 1.5px solid #8E44AD; }
+.callout-special .callout-body { background: #FCF9FD; }
+
 .callout-vignette { border: 1.5px solid #6C3483; }
 .callout-vignette .callout-header { background: #F5EEF8; color: #512E5F; border-bottom: 1px solid #6C3483; }
 .callout-vignette .callout-body { background: #FFFFFF; }
@@ -2020,11 +2239,6 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                 for r in risk_items:
                     html_parts.append(f'<li>👥 <b>عامل خطر / اپیدمیولوژی:</b> {r}</li>')
                 html_parts.append('</ul>')
-                if isinstance(risk_items, str):
-                    risk_items = [risk_items]
-                for r in risk_items:
-                    html_parts.append(f'<li>👥 <b>عامل خطر / اپیدمیولوژی:</b> {r}</li>')
-                html_parts.append('</ul>')
 
             # Pathophysiology Cascade
             if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
@@ -2145,6 +2359,15 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                 html_parts.append(f'<div>⭐ {a}</div>')
             html_parts.append('</div></div>')
 
+        # Emergency Management & Immediate Stabilization
+        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
+        if emerg_items:
+            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)</div><div class="callout-body">')
+            for em in emerg_list:
+                html_parts.append(f'<div>🚨 {em}</div>')
+            html_parts.append('</div></div>')
+
         # Contraindications & Warnings
         if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
             html_parts.append('<div class="callout callout-contra"><div class="callout-header">⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications)</div><div class="callout-body">')
@@ -2152,23 +2375,51 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                 html_parts.append(f'<div>⛔ {c}</div>')
             html_parts.append('</div></div>')
 
-        # Scoring Criteria
-        if mod.get("scoring_criteria") and isinstance(mod["scoring_criteria"], dict):
-            sc = mod["scoring_criteria"]
-            sc_title = sc.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
-            headers = sc.get("headers", ["معیار", "آستانه", "تفسیر"])
-            rows = sc.get("rows", [])
-            if headers and rows:
-                html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table><thead><tr>')
-                for h in headers:
-                    html_parts.append(f'<th>{h}</th>')
-                html_parts.append('</tr></thead><tbody>')
-                for row in rows:
-                    html_parts.append('<tr>')
-                    for cell in row:
-                        html_parts.append(f'<td>{cell}</td>')
-                    html_parts.append('</tr>')
-                html_parts.append('</tbody></table>')
+        # Special Populations & Pregnancy
+        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
+        if special_items:
+            spec_list = special_items if isinstance(special_items, list) else [special_items]
+            html_parts.append('<div class="callout callout-special"><div class="callout-header">🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)</div><div class="callout-body">')
+            for sp in spec_list:
+                html_parts.append(f'<div>🤰 {sp}</div>')
+            html_parts.append('</div></div>')
+
+        # Staging & Diagnostic Criteria (Polymorphic)
+        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
+        if criteria_obj:
+            if isinstance(criteria_obj, dict):
+                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
+                headers = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
+                rows = criteria_obj.get("rows", [])
+                if headers and rows:
+                    html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table><thead><tr>')
+                    for h in headers:
+                        html_parts.append(f'<th>{h}</th>')
+                    html_parts.append('</tr></thead><tbody>')
+                    for row in rows:
+                        html_parts.append('<tr>')
+                        for cell in row:
+                            html_parts.append(f'<td>{cell}</td>')
+                        html_parts.append('</tr>')
+                    html_parts.append('</tbody></table>')
+            elif isinstance(criteria_obj, list) and criteria_obj:
+                if isinstance(criteria_obj[0], dict):
+                    headers = list(criteria_obj[0].keys())
+                    html_parts.append(f'<div class="section-title">📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}</div><table><thead><tr>')
+                    for h in headers:
+                        html_parts.append(f'<th>{h}</th>')
+                    html_parts.append('</tr></thead><tbody>')
+                    for item in criteria_obj:
+                        html_parts.append('<tr>')
+                        for k in headers:
+                            html_parts.append(f'<td>{item.get(k, "-")}</td>')
+                        html_parts.append('</tr>')
+                    html_parts.append('</tbody></table>')
+                else:
+                    html_parts.append(f'<div class="section-title">📋 معیارهای بالینی و طبقه‌بندی {m_name}</div><ul>')
+                    for cr in criteria_obj:
+                        html_parts.append(f'<li>📋 {cr}</li>')
+                    html_parts.append('</ul>')
 
         # Clinical Vignettes
         if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):

@@ -942,7 +942,7 @@ def render_mermaid_diagram_to_png(
         }}
     </style>
 </head>
-<body>
+<body dir="rtl">
     <div class="card">
         <div class="card-header">🧬 {title}</div>
         <div class="mermaid">
@@ -1371,7 +1371,7 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
         for sec_idx, sec in enumerate(sections, 1):
             if not isinstance(sec, dict):
                 continue
-            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
             sec_headers = sec.get("headers") or []
             sec_rows = sec.get("rows") or []
 
@@ -1960,7 +1960,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         for sec_idx, sec in enumerate(sections, 1):
             if not isinstance(sec, dict):
                 continue
-            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
             sec_headers = sec.get("headers") or []
             sec_rows = sec.get("rows") or []
 
@@ -2450,7 +2450,7 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     for sec in sections:
         if not isinstance(sec, dict):
             continue
-        sec_title = str(sec.get("title") or "Table Section").strip()
+        sec_title = str(sec.get("title") or sec.get("section_title") or "Table Section").strip()
         for row in (sec.get("rows") or []):
             if not row or not isinstance(row, (list, tuple)):
                 continue
@@ -2978,6 +2978,8 @@ table {
     font-size: 9.0pt;
     page-break-inside: auto;
     break-inside: auto;
+    direction: rtl;
+    text-align: right;
 }
 thead {
     display: table-header-group;
@@ -2994,6 +2996,7 @@ th {
     border: 1px solid #007A87;
     text-align: right;
     font-size: 9.2pt;
+    direction: rtl;
 }
 td {
     padding: 6px 9px;
@@ -3001,6 +3004,7 @@ td {
     vertical-align: top;
     text-align: right;
     line-height: 1.55;
+    direction: rtl;
 }
 tr:nth-child(even) { background-color: #F0FDFA; }
 tr:nth-child(odd) { background-color: #FFFFFF; }
@@ -3010,8 +3014,8 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
 .badge-gold { color: #047857; font-weight: bold; }
 .badge-note { color: #007A87; font-weight: bold; }
 .badge-freq { color: #7C3AED; font-weight: bold; }
-.cell-bullet { margin: 2px 0; line-height: 1.5; }
-.cell-line { margin: 2px 0; line-height: 1.5; }
+.cell-bullet { margin: 2px 0; line-height: 1.5; direction: rtl; text-align: right; }
+.cell-line { margin: 2px 0; line-height: 1.5; direction: rtl; text-align: right; }
 
 .checklist-item {
     padding: 5px 8px;
@@ -3199,7 +3203,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     });
 </script>
 </head>
-<body>
+<body dir="rtl">
 <div class="container">
 <div class="banner">
     <div class="title-main">🩺 """ + topic_title + """</div>""")
@@ -3216,13 +3220,13 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
         for sec_idx, sec in enumerate(sections, 1):
             if not isinstance(sec, dict):
                 continue
-            sec_title = sec.get("title", f"بخش {sec_idx}: مبحث بالینی")
+            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
             sec_headers = sec.get("headers") or []
             sec_rows = sec.get("rows") or []
 
             html_parts.append(f'<div class="section-banner">■ {sec_title}</div>')
             if sec_headers and sec_rows:
-                html_parts.append('<table><thead><tr>')
+                html_parts.append('<table dir="rtl"><thead><tr>')
                 for h in sec_headers:
                     html_parts.append(f'<th>{h}</th>')
                 html_parts.append('</tr></thead><tbody>')
@@ -3452,7 +3456,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
             rows = dt.get("rows", [])
             if headers and rows:
-                html_parts.append(f'<div class="section-title">۶. تشخیص افتراقی ({m_name})</div><table><thead><tr>')
+                html_parts.append(f'<div class="section-title">۶. تشخیص افتراقی ({m_name})</div><table dir="rtl"><thead><tr>')
                 for h in headers:
                     html_parts.append(f'<th>{h}</th>')
                 html_parts.append('</tr></thead><tbody>')
@@ -3519,7 +3523,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                 headers = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
                 rows = criteria_obj.get("rows", [])
                 if headers and rows:
-                    html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table><thead><tr>')
+                    html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table dir="rtl"><thead><tr>')
                     for h in headers:
                         html_parts.append(f'<th>{h}</th>')
                     html_parts.append('</tr></thead><tbody>')
@@ -3532,7 +3536,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             elif isinstance(criteria_obj, list) and criteria_obj:
                 if isinstance(criteria_obj[0], dict):
                     headers = list(criteria_obj[0].keys())
-                    html_parts.append(f'<div class="section-title">📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}</div><table><thead><tr>')
+                    html_parts.append(f'<div class="section-title">📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}</div><table dir="rtl"><thead><tr>')
                     for h in headers:
                         html_parts.append(f'<th>{h}</th>')
                     html_parts.append('</tr></thead><tbody>')
@@ -3629,7 +3633,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
         rows = matrix.get("rows", [])
         if headers and rows:
             html_parts.append(f'<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">💊 {m_title}</h2>')
-            html_parts.append('<table><thead><tr>')
+            html_parts.append('<table dir="rtl"><thead><tr>')
             for h in headers:
                 html_parts.append(f'<th>{h}</th>')
             html_parts.append('</tr></thead><tbody>')
@@ -3649,7 +3653,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                 rows = mat.get("rows", [])
                 if headers and rows:
                     html_parts.append(f'<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📊 {c_title}</h2>')
-                    html_parts.append('<table><thead><tr>')
+                    html_parts.append('<table dir="rtl"><thead><tr>')
                     for h in headers:
                         html_parts.append(f'<th>{h}</th>')
                     html_parts.append('</tr></thead><tbody>')
@@ -3667,7 +3671,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
         rows = crash.get("rows", [])
         if headers and rows:
             html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">🚀 کپسول طلایی شب امتحان (Last-Minute High-Yield Cheat Sheet)</h2>')
-            html_parts.append('<table><thead><tr>')
+            html_parts.append('<table dir="rtl"><thead><tr>')
             for h in headers:
                 html_parts.append(f'<th>{h}</th>')
             html_parts.append('</tr></thead><tbody>')

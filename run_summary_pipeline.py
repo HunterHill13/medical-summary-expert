@@ -206,6 +206,7 @@ def cmd_merge_batches(args):
     with open(manifest_path, "r", encoding="utf-8") as fm:
         manifest = json.load(fm)
 
+    merged_sections = []
     merged_modules = []
     merged_flashcards = []
     merged_semiology = []
@@ -229,6 +230,11 @@ def cmd_merge_batches(args):
             topic_title_en = shard_data.get("topic_title_en", "")
             organ_system = shard_data.get("organ_system", "")
 
+        for sec in shard_data.get("sections", []):
+            merged_sections.append(sec)
+        for sec in shard_data.get("thematic_sections", []):
+            merged_sections.append(sec)
+
         for mod in shard_data.get("modules", []):
             merged_modules.append(mod)
 
@@ -251,6 +257,9 @@ def cmd_merge_batches(args):
         "modules": merged_modules,
         "anki_flashcards": merged_flashcards
     }
+
+    if merged_sections:
+        final_data["sections"] = merged_sections
 
     if merged_semiology:
         final_data["clinical_semiology"] = merged_semiology

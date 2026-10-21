@@ -1,20 +1,20 @@
-# 🩺 Medical Summary Expert (v3.9.0)
+# 🩺 Medical Summary Expert (v3.9.1)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-35%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.9.0-teal?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-36%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.9.1-teal?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Google%20Antigravity-Compatible-blueviolet?style=for-the-badge)](https://antigravity.google)
 
-A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via the **Table-First Hybrid Architecture (v3.9.0)** with **6 Context-Aware Table Archetypes**, highlights critical points via **In-Cell Badges** (`🔴 تله امتحانی`, `💎 استاندارد طلایی`, `⚠️ خطای رایج`), renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, synthesizes atomic Anki cards via the **Table-Row Cloze Engine**, and outputs the synchronized **Quad-Pack**:
-1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, Teal Medical palette (`#007A87`), repeating table headers across page breaks (`tblHeader`), anti-row split enforcement (`cantSplit`), subtle zebra striping (`#F0FDFA`), true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
+A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, preserves exact **Chronological Sequence of Topics & Teaching Flow (v3.9.1)**, enforces universal **Strict RTL Directionality & BiDi Typography (v3.9.1)**, balances medical content via the **Table-First Hybrid Architecture** with **6 Context-Aware Table Archetypes**, highlights critical points via **In-Cell Badges** (`🔴 تله امتحانی`, `💎 استاندارد طلایی`, `⚠️ خطای رایج`), renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, synthesizes atomic Anki cards via the **Table-Row Cloze Engine**, and outputs the synchronized **Quad-Pack**:
+1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, Teal Medical palette (`#007A87`), repeating table headers across page breaks (`tblHeader`), anti-row split enforcement (`cantSplit`), table RTL visual orientation (`<w:bidiVisual w:val="1"/>`), subtle zebra striping (`#F0FDFA`), true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
 2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom teal medical headers (`#007A87`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
-3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, in-cell badge styling, collapsible clinical vignettes (`<details>`), and interactive matrices.
-4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting with `<br>` multi-line cells.
+3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, strict RTL tables (`<table dir="rtl">`), native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, in-cell badge styling, collapsible clinical vignettes (`<details>`), and interactive matrices.
+4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, sequential section order matching lecture slides, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting with `<br>` multi-line cells.
 5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, auto-synthesized table-row cloze cards (`::TableMatrix`), visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
 
 ---
@@ -28,7 +28,7 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 
 ---
 
-## 📋 اصول هفت‌گانه تلخیص، انسجام و پرهیز از حشو (High-Yield Editorial Directives)
+## 📋 اصول نُه‌گانه تلخیص، انسجام و انضباط ساختاری (High-Yield Editorial Directives)
 
 1. **پرهیز مطلق از مقدمه‌چینی، توضیح درباره روند کار، نتیجه‌گیری، نظر شخصی، تکرار مطالب و حشو:** از تعارفات کلامی و توضیحات فرامتنی خودداری شود.
 2. **استخراج انحصاری عصاره علمی و نکات آزمونی:** فقط نکات تست‌خیز و قابل آزمون استخراج گردند.
@@ -37,14 +37,16 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 5. **حفظ روابط علت و معلولی و زنجیره پاتوفیزیولوژی:** توجیه مکانیسمی و منطق رخداد علائم حفظ شود تا خلاصه فقط فهرستی خشک از کلمات نباشد.
 6. **پرهیز از بولت‌سازی افراطی و تجمیع مطالب مرتبط:** مطالبی که به یکدیگر مرتبط هستند در یک بولت یا پاراگراف منسجم تجمیع شوند.
 7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا (قانون تلخیص فوق‌متراکم - ضد رونویسی):** ضریب فشردگی متراکم (۰.۱۵ تا ۰.۵۰ حجم متن) با منع اکید کپی کردن پاراگراف‌های طولانی (>۱۲۰ کلمه).
+8. **حفظ دقیق توالی زمانی و سرفصل‌های جزوه (Strict Chronological Sequence):** ترتیب تمام بخش‌ها، جداول و بیماری‌ها در تمامی خروجی‌ها (Word, PDF, HTML, Markdown) باید **دقیقاً و مو‌به‌مو منطبق بر روند تدریس استاد و توالی اسلایدهای جزوه اصلی** باشد؛ هرگونه جابه‌جایی یا پس‌وپیش کردن مباحث اکیداً ممنوع است.
+9. **جهت‌داری راست‌به‌چپ مطلق و انضباط BiDi (Strict RTL Typography):** تمامی صفحات، جداول (`<table dir="rtl">`، `<w:bidiVisual w:val="1"/>`)، پاراگراف‌ها (`<w:bidi w:val="1"/>`) و سلول‌ها صددرصد راست‌به‌چپ بوده و عبارات انگلیسی و فرمول‌ها با ایزولاسیون کامل LTR رندر می‌شوند تا از پرش متنی جلوگیری گردد.
 
 ---
 
-## 🌟 Key Innovations & Architectural Pillars (v3.9.0)
+## 🌟 Key Innovations & Architectural Pillars (v3.9.1)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│             MEDICAL SUMMARY EXPERT PIPELINE (v3.9.0 - Table-First)     │
+│             MEDICAL SUMMARY EXPERT PIPELINE (v3.9.1)                   │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. INGESTION & ZERO-OMISSION PARSING                                   │
 │    - OOXML Deep Traversal: Word Textboxes, Table-Cell Shapes & SDT     │
@@ -57,13 +59,18 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 │    - In-Cell Badges: 🔴 Trap, ⚠️ Error, 💎 Gold Standard, 📌 Key Note │
 │    - 3-4 Page Compact Golden Review Budget per Lecture Session         │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3. RIGOROUS QUALITY GATES & VERIFICATION AUDIT                         │
+│ 3. SEQUENTIAL ORDER & UNIVERSAL RTL BIDI TYPOGRAPHY                    │
+│    - Strict Chronological Teaching Flow: Shard index order preserved   │
+│    - Universal RTL: dir="rtl", w:bidiVisual="1", set_p_rtl everywhere  │
+│    - Zero BiDi Flip: Latin acronyms, drug dosages & units LTR-isolated │
+├────────────────────────────────────────────────────────────────────────┤
+│ 4. RIGOROUS QUALITY GATES & VERIFICATION AUDIT                         │
 │    - Flowchart Legibility Gate: Vertical TD, Aspect Ratio (0.7-1.6:1)  │
 │    - Multimodal Policy: Strict Omission of Patient Photos from Canvas  │
 │    - LaTeX/BiDi Gate: Zero raw TeX leaks, native math formula cards    │
 │    - Word Bold Run Engine: True run.bold without asterisk leaks        │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 4. PUBLICATION-GRADE DELIVERABLES COMPILER                             │
+│ 5. PUBLICATION-GRADE DELIVERABLES COMPILER                             │
 │    - Teal Medical Palette (#007A87 header, #F0FDFA zebra, clean borders)│
 │    - DOCX: Word RTL, Dubai Font, tblHeader, cantSplit, True Bold Runs  │
 │    - Playwright PDF: Direct HTML-to-PDF + 'دانشگاه بق' header + BiDi   │

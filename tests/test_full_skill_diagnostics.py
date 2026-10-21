@@ -2068,6 +2068,172 @@ def test_bug_ai_table_first_hybrid_teal_architecture():
 
     print("[PASS] Bug AI Test Passed: Table-First Hybrid Teal Architecture, in-cell badges, Word tblHeader/cantSplit, and Anki table-row cloze verified.")
 
+def test_bug_aj_chronological_sequence_and_strict_rtl_compliance():
+    """Bug AJ: Verify strict chronological sequence preservation across batch merge and universal RTL BiDi typography."""
+    from run_summary_pipeline import cmd_merge_batches
+    from build_summary_pack import build_html_summary
+    import argparse
+
+    test_batch_dir = "dist/test_batches_aj"
+    os.makedirs(test_batch_dir, exist_ok=True)
+
+    manifest = {
+        "file_name": "test_lecture_chronology.docx",
+        "total_batches": 3,
+        "batches": [
+            {"batch_index": 1, "target_shard": "shard_01.json"},
+            {"batch_index": 2, "target_shard": "shard_02.json"},
+            {"batch_index": 3, "target_shard": "shard_03.json"}
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "manifest.json"), "w", encoding="utf-8") as fm:
+        json.dump(manifest, fm)
+
+    # Shard 1: Foundational Physiology (Beginning of lecture)
+    shard_1 = {
+        "topic_title": "فیزیوپاتولوژی غدد فوق کلیه",
+        "sections": [
+            {
+                "section_title": "بخش ۱: آناتومی کاربردی و فیزیولوژی پایه محور HPA",
+                "headers": ["عنصر آناتومیک", "عملکرد هورمونی", "نکات کلیدی"],
+                "rows": [["کورتکس آدرنال", "ترشح کورتیزول و آلدوسترون", "تنظیم فیدبکی منفی با ACTH"]]
+            }
+        ],
+        "modules": [
+            {
+                "name": "محور HPA و کورتیزول",
+                "module_type": "foundational_concept",
+                "definition_and_etiology": "تنظیم ترشح گلوکوکورتیکوئیدها",
+                "pathophysiology_cascade": "CRH -> ACTH -> Cortisol",
+                "clinical_presentation": "حفظ هموستاز گلوکز و پاسخ به استرس",
+                "diagnostics": {"best_initial_test": "سنجش کورتیزول آزاد ادرار ۲۴ ساعته"},
+                "pharmacology_and_management": [{"class": "استروئید", "agent": "هیدروکورتیزون", "pearl": "جایگزینی در نارسایی"}]
+            }
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "shard_01.json"), "w", encoding="utf-8") as fs1:
+        json.dump(shard_1, fs1)
+
+    # Shard 2: Disease Pathophysiology (Middle of lecture)
+    shard_2 = {
+        "topic_title": "فیزیوپاتولوژی غدد فوق کلیه",
+        "sections": [
+            {
+                "section_title": "بخش ۲: پاتوفیزیولوژی هایپرکورتیکولیسم (سندروم کوشینگ)",
+                "headers": ["اتیولوژی", "مکانیسم", "نکات آزمونی"],
+                "rows": [["آدنوم هیپوفیز (بیماری کوشینگ)", "ترشح نابجای ACTH", "شایع‌ترین فرم اندوژن"]]
+            }
+        ],
+        "modules": [
+            {
+                "name": "سندروم کوشینگ",
+                "module_type": "illness_script",
+                "definition_and_etiology": "مجموعه علائم ناشی از افزایش پایدار کورتیکواستروئیدها",
+                "pathophysiology_cascade": "افزایش کاتابولیسم پروتئین -> ضعف عضلانی پروگزیمال",
+                "clinical_presentation": "چاقی مرکزی، ماه گرد (Moon Face)، خطوط بنفش (Purple Striae)",
+                "diagnostics": {"best_initial_test": "تست مهار دگزامتازون ۱ میلی‌گرم شبانه", "gold_standard": "تست دگزامتازون دوز بالا"},
+                "pharmacology_and_management": [{"class": "مهارکننده سنتز", "agent": "کتوکونازول", "pearl": "مهار آنزیم ۱۱-بتا هیدروکسیلاز"}]
+            }
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "shard_02.json"), "w", encoding="utf-8") as fs2:
+        json.dump(shard_2, fs2)
+
+    # Shard 3: Intervention & Surgery (End of lecture)
+    shard_3 = {
+        "topic_title": "فیزیوپاتولوژی غدد فوق کلیه",
+        "sections": [
+            {
+                "section_title": "بخش ۳: رویکرد جراحی و درمان‌های تکمیلی",
+                "headers": ["اقدام درمانی", "اندیکاسیون", "عوارض احتمالی"],
+                "rows": [["جراحی ترانس‌اسفنوئیدال (TSS)", "آدنوم کورتیکوتروف هیپوفیز", "دیابت بی‌مزه گذرا"]]
+            }
+        ],
+        "modules": [
+            {
+                "name": "درمان جراحی آدرنالکتومی و TSS",
+                "module_type": "clinical_approach",
+                "definition_and_etiology": "پروتکل‌های درمانی خط اول و دوم",
+                "pathophysiology_cascade": "برداشت توده -> رفع ترشح خودمختار هورمون",
+                "clinical_presentation": "پایش بعد از عمل و جایگزینی استروئید",
+                "diagnostics": {"best_initial_test": "پایش سطح کورتیزول صبحگاهی روز اول بعد عمل"},
+                "pharmacology_and_management": [{"class": "هورمون جایگزین", "agent": "هیدروکورتیزون وریدی", "pearl": "پیشگیری از کرایزیس آدرنال"}]
+            }
+        ]
+    }
+    with open(os.path.join(test_batch_dir, "shard_03.json"), "w", encoding="utf-8") as fs3:
+        json.dump(shard_3, fs3)
+
+    # 1. Merge batches and test sequence integrity
+    out_merged = "dist/diag_test_aj_merged.json"
+    args = argparse.Namespace(batch_dir=test_batch_dir, out=out_merged)
+    cmd_merge_batches(args)
+
+    assert os.path.exists(out_merged), "Merged output file was not created!"
+    with open(out_merged, "r", encoding="utf-8") as fm:
+        merged_res = json.load(fm)
+
+    # Verify sections sequence
+    sections = merged_res.get("sections", [])
+    assert len(sections) == 3, f"Expected 3 merged sections, got {len(sections)}"
+    assert "بخش ۱" in sections[0]["section_title"], f"Section 0 must be Part 1, got {sections[0]['section_title']}"
+    assert "بخش ۲" in sections[1]["section_title"], f"Section 1 must be Part 2, got {sections[1]['section_title']}"
+    assert "بخش ۳" in sections[2]["section_title"], f"Section 2 must be Part 3, got {sections[2]['section_title']}"
+
+    # Verify modules sequence
+    modules = merged_res.get("modules", [])
+    assert len(modules) == 3, f"Expected 3 merged modules, got {len(modules)}"
+    assert "محور HPA" in modules[0]["name"], f"Module 0 must be HPA, got {modules[0]['name']}"
+    assert "سندروم کوشینگ" in modules[1]["name"], f"Module 1 must be Cushing, got {modules[1]['name']}"
+    assert "درمان جراحی" in modules[2]["name"], f"Module 2 must be Surgery, got {modules[2]['name']}"
+
+    # 2. Test Markdown Chronology
+    out_md = "dist/diag_test_aj.md"
+    build_markdown_summary(merged_res, out_md)
+    assert os.path.exists(out_md), "Markdown summary was not generated!"
+    with open(out_md, "r", encoding="utf-8") as fmd:
+        md_text = fmd.read()
+    pos1 = md_text.find("بخش ۱")
+    pos2 = md_text.find("بخش ۲")
+    pos3 = md_text.find("بخش ۳")
+    assert 0 <= pos1 < pos2 < pos3, "Markdown sections are out of chronological order!"
+
+    # 3. Test HTML RTL Attributes & Styles
+    out_html = "dist/diag_test_aj.html"
+    build_html_summary(merged_res, out_html)
+    assert os.path.exists(out_html), "HTML summary was not generated!"
+    with open(out_html, "r", encoding="utf-8") as fhtml:
+        html_text = fhtml.read()
+    assert '<html lang="fa" dir="rtl">' in html_text or 'dir="rtl"' in html_text, "HTML missing dir='rtl' attribute!"
+    assert '<body dir="rtl"' in html_text, "Body missing dir='rtl' attribute!"
+    assert '<table dir="rtl">' in html_text, "Table missing dir='rtl' attribute in HTML!"
+    assert "direction: rtl;" in html_text, "CSS missing 'direction: rtl;'!"
+    assert "text-align: right;" in html_text, "CSS missing 'text-align: right;'!"
+
+    # 4. Test Word Document RTL bidiVisual & Paragraph BiDi
+    out_docx = "dist/diag_test_aj.docx"
+    build_docx_summary(merged_res, out_docx)
+    assert os.path.exists(out_docx), "Word summary was not generated!"
+    doc = docx.Document(out_docx)
+    assert len(doc.tables) >= 3, f"Expected at least 3 tables in Word doc, found {len(doc.tables)}"
+
+    # Verify every table has bidiVisual
+    for i, t in enumerate(doc.tables):
+        tbl_xml = t._tbl.xml
+        assert "bidiVisual" in tbl_xml, f"Table {i} missing w:bidiVisual XML property!"
+
+    # Verify cell paragraphs are right-to-left
+    for t in doc.tables:
+        for row in t.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    p_xml = p._p.xml
+                    # Should either contain bidi or right alignment
+                    assert "bidi" in p_xml or "right" in p_xml or "both" in p_xml or len(p.text.strip()) == 0, \
+                        f"Paragraph missing bidi formatting: {p.text}"
+
+    print("[PASS] Bug AJ Test Passed: Chronological sequence preservation and universal RTL BiDi typography verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -2105,4 +2271,5 @@ if __name__ == "__main__":
     test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
     test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
     test_bug_ai_table_first_hybrid_teal_architecture()
+    test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

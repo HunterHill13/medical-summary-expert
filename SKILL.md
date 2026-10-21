@@ -191,7 +191,13 @@ description: >-
 
 ## 🛠️ ۲. خط فرمان یکپارچه پایپ‌لاین (`run_summary_pipeline.py`)
 
-تمامی مراحل از طریق اسکریپت واحد هماهنگ‌کننده اجرا می‌شوند:
+تمامی مراحل از طریق اسکریپت واحد هماهنگ‌کننده اجرا می‌شوند.
+
+> 💡 **راهنمای اجرا در سشن‌ها و مسیرهای دیگر (Global Execution):**
+> تمامی اسکریپت‌های هسته و کامپایلر در مسیر گلوبال اسکیل در آدرس زیر مستقر شده‌اند:
+> `C:\Users\Hill\.gemini\config\skills\medical-summary-expert\run_summary_pipeline.py`
+> در هر سشن جدید یا پوشه دلخواه در سیستم، می‌توانید پایپ‌لاین را با مسیر کامل فراخوانی کنید:
+> `uv run python "C:\Users\Hill\.gemini\config\skills\medical-summary-expert\run_summary_pipeline.py" <دستور> ...`
 
 ```bash
 # ۱. استخراج کامل جزوه ورودی (Word یا PDF)

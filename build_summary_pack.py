@@ -53,13 +53,204 @@ COLOR_CHECKLIST_BG     = "FEFDE8"            # Warm Amber Tint for Morning Check
 FONT_DUBAI = "Dubai"
 
 # ---------------------------------------------------------------------------
-# BiDi & OpenXML Typography Helpers for Word (.docx)
+# BiDi & OpenXML Typography Helpers for Word (.docx) & TeX Sanitization
 # ---------------------------------------------------------------------------
 
-def add_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
-          bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
-          is_rtl: bool = True):
-    """Adds a run with explicit Complex Script (w:szCs, w:bCs, w:rtl) settings for Word."""
+def sanitize_medical_text_symbols(text: str) -> str:
+    """
+    Sanitizes TeX math delimiters, arrows, comparison operators, and common chemical
+    formulas into clean Unicode representation, eliminating raw LaTeX token leaks and
+    BiDi character collision in Persian RTL text.
+    """
+    if not text:
+        return ""
+    s = str(text)
+
+    # 1. Chemical formulas & Hydroxyapatite isolation
+    s = re.sub(
+        r'(\\text\{Ca\}\_\{10\}\(\\text\{PO\}\_4\)\_6\(\\text\{OH\}\)\_2|\$?\\text\{Ca\}_?\{?10\}?\(?.*?\)?\$?)',
+        'Ca₁₀(PO₄)₆(OH)₂',
+        s
+    )
+    s = s.replace(r'\text{Ca}_{10}(\text{PO}_4)_6(\text{OH})_2', 'Ca₁₀(PO₄)₆(OH)₂')
+    s = s.replace(r'Ca_{10}(PO_4)_6(OH)_2', 'Ca₁₀(PO₄)₆(OH)₂')
+
+    # Common chemical ions and hormone notations
+    s = s.replace(r'$E_1$', 'E₁').replace(r'$E_2$', 'E₂').replace(r'$E_3$', 'E₃')
+    s = s.replace(r'E_1', 'E₁').replace(r'E_2', 'E₂').replace(r'E_3', 'E₃')
+    s = s.replace(r'T_3', 'T₃').replace(r'T_4', 'T₄').replace(r'FT_4', 'FT₄').replace(r'FT_3', 'FT₃')
+    s = s.replace(r'$T_3$', 'T₃').replace(r'$T_4$', 'T₄').replace(r'$FT_4$', 'FT₄').replace(r'$FT_3$', 'FT₃')
+    s = s.replace(r'Ca^{2+}', 'Ca²⁺').replace(r'Ca^2+', 'Ca²⁺').replace(r'$Ca^{2+}$', 'Ca²⁺')
+    s = s.replace(r'Na^+', 'Na⁺').replace(r'K^+', 'K⁺').replace(r'H^+', 'H⁺').replace(r'Mg^{2+}', 'Mg²⁺')
+    s = s.replace(r'HCO_3^-', 'HCO₃⁻').replace(r'PO_4^{3-}', 'PO₄³⁻')
+
+    # 2. Arrows & Relational Operators
+    s = s.replace(r'$\rightarrow$', '←').replace(r'\rightarrow', '←')
+    s = s.replace(r'$\leftarrow$', '→').replace(r'\leftarrow', '→')
+    s = s.replace(r'$\leftrightarrow$', '↔').replace(r'\leftrightarrow', '↔')
+    s = s.replace(r'$\ge$', '≥').replace(r'\ge', '≥')
+    s = s.replace(r'$\le$', '≤').replace(r'\le', '≤')
+    s = s.replace(r'$\pm$', '±').replace(r'\pm', '±')
+    s = s.replace(r'$\times$', '×').replace(r'\times', '×')
+    s = s.replace(r'$\approx$', '≈').replace(r'\approx', '≈')
+    s = s.replace(r'$\neq$', '≠').replace(r'\neq', '≠')
+
+    # 3. TeX wrapper cleanups
+    s = re.sub(r'\\text\{([^}]+)\}', r'\1', s)
+    s = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', s)
+    s = re.sub(r'\\mathbf\{([^}]+)\}', r'\1', s)
+
+    # 4. Remove unescaped dollar signs wrapping plain text
+    s = re.sub(r'\$([^\$]+)\$', r'\1', s)
+
+    return s
+
+
+def format_inline_markdown(text: str) -> str:
+    """
+    Sanitizes inline Markdown and TeX symbols into standard HTML tags and Unicode.
+    Converts **bold** to <strong>, `code` to <code class="med-code">, and TeX math to Unicode.
+    """
+    if not text:
+        return ""
+    s = sanitize_medical_text_symbols(str(text))
+
+    # 1. Bold: **text** -> <strong>text</strong>
+    s = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', s)
+
+    # 2. Inline code: `text` -> <code class="med-code">\1</code>
+    s = re.sub(r'`(.*?)`', r'<code class="med-code">\1</code>', s)
+
+    # 3. Wrap chemical formulas in <span dir="ltr">
+    s = re.sub(
+        r'(Ca₁₀\(PO₄\)₆\(OH\)₂)',
+        r'<span dir="ltr" class="chem-formula">\1</span>',
+        s
+    )
+
+    return s
+
+
+def render_formula_html(raw_f_code: str, title: str = "") -> str:
+    """
+    Renders high-contrast, bilingual diagnostic formula cards with fractions,
+    clean LTR alignment, and explanatory variable legends.
+    """
+    clean = str(raw_f_code).strip()
+    clean_sanitized = sanitize_medical_text_symbols(clean)
+
+    if "CCCR" in clean or "Clearance" in clean:
+        badge = title or "🧮 فرمول تشخیصی نسبت کلیرانس کلسیم به کلیرانس کراتینین (CCCR)"
+        return f"""
+        <div class="formula-card">
+            <div class="formula-badge">{badge}</div>
+            <div class="formula-container" dir="ltr">
+                <span class="formula-lhs">CCCR</span>
+                <span class="formula-eq-sign">=</span>
+                <div class="formula-fraction">
+                    <div class="formula-num">U<sub>Ca</sub> × S<sub>Cr</sub></div>
+                    <div class="formula-denom">S<sub>Ca</sub> × U<sub>Cr</sub></div>
+                </div>
+            </div>
+            <div class="formula-caption">
+                <span><strong>U<sub>Ca</sub>:</strong> کلسیم ادرار ۲۴ ساعته</span> | 
+                <span><strong>S<sub>Cr</sub>:</strong> کراتینین سرم</span> | 
+                <span><strong>S<sub>Ca</sub>:</strong> کلسیم تام سرم</span> | 
+                <span><strong>U<sub>Cr</sub>:</strong> کراتینین ادرار ۲۴ ساعته</span>
+            </div>
+        </div>
+        """
+    elif "Corrected" in clean or "آلبومین" in clean or "Albumin" in clean:
+        badge = title or "🧮 فرمول تصحیح کلسیم سرم بر اساس سطح آلبومین (Albumin Correction)"
+        return f"""
+        <div class="formula-card">
+            <div class="formula-badge">{badge}</div>
+            <div class="formula-container" dir="ltr">
+                <span class="formula-lhs">Corrected Ca (mg/dL)</span>
+                <span class="formula-eq-sign">=</span>
+                <span class="formula-rhs">Measured Ca + 0.8 × (4.0 − Serum Albumin)</span>
+            </div>
+            <div class="formula-caption">
+                به ازای هر ۱ g/dL افت آلبومین سرم کمتر از ۴.۰ g/dL، مقدار ۰.۸ mg/dL به کلسیم اندازه‌گیری‌شده اضافه می‌شود.
+            </div>
+        </div>
+        """
+    elif "Anion Gap" in clean or "آنیون گپ" in clean:
+        badge = title or "🧮 فرمول محاسبه آنیون گپ سرم (Serum Anion Gap)"
+        return f"""
+        <div class="formula-card">
+            <div class="formula-badge">{badge}</div>
+            <div class="formula-container" dir="ltr">
+                <span class="formula-lhs">Anion Gap (mEq/L)</span>
+                <span class="formula-eq-sign">=</span>
+                <span class="formula-rhs">Na<sup>+</sup> − (Cl<sup>−</sup> + HCO<sub>3</sub><sup>−</sup>)</span>
+            </div>
+            <div class="formula-caption">
+                مقدار نرمال: ۱۰ تا ۱۲ mEq/L (آستانه غیرطبیعی: بالای ۱۲).
+            </div>
+        </div>
+        """
+    else:
+        badge = title or "🧮 فرمول محاسباتی بالینی"
+        return f"""
+        <div class="formula-card">
+            <div class="formula-badge">{badge}</div>
+            <div class="formula-container" dir="ltr">
+                <span class="formula-rhs">{clean_sanitized}</span>
+            </div>
+        </div>
+        """
+
+
+def add_formula_card(doc, raw_f_code: str, title: str = ""):
+    """Renders a styled formula card in Word (.docx) with LTR typography and variable explanation."""
+    if not raw_f_code:
+        return
+    badge = title or "🧮 فرمول تشخیصی و محاسبات بالینی"
+    table = doc.add_table(rows=2, cols=1)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+
+    # Force table RTL
+    tblPr = table._tbl.tblPr
+    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+
+    # Header
+    h_cell = table.cell(0, 0)
+    set_cell_margins(h_cell, top=120, bottom=120, left=160, right=160)
+    set_cell_shading(h_cell, "EBF5FB")
+    h_cell._tc.get_or_add_tcPr().append(parse_xml(
+        r'<w:tcBorders {}><w:top w:val="single" w:sz="10" w:color="2980B9"/><w:left w:val="single" w:sz="10" w:color="2980B9"/><w:right w:val="single" w:sz="10" w:color="2980B9"/><w:bottom w:val="none"/></w:tcBorders>'.format(nsdecls('w'))
+    ))
+    p_h = h_cell.paragraphs[0]
+    set_p_rtl(p_h, space_before_pt=0, space_after_pt=0)
+    add_r(p_h, badge, font_name=FONT_DUBAI, size_pt=10.5, bold=True,
+          color_rgb=(0x1A, 0x52, 0x76), is_rtl=True)
+
+    # Body
+    b_cell = table.cell(1, 0)
+    set_cell_margins(b_cell, top=140, bottom=140, left=160, right=160)
+    set_cell_shading(b_cell, "FBFCFD")
+    b_cell._tc.get_or_add_tcPr().append(parse_xml(
+        r'<w:tcBorders {}><w:top w:val="none"/><w:left w:val="single" w:sz="10" w:color="2980B9"/><w:right w:val="single" w:sz="10" w:color="2980B9"/><w:bottom w:val="single" w:sz="10" w:color="2980B9"/></w:tcBorders>'.format(nsdecls('w'))
+    ))
+    p_f = b_cell.paragraphs[0]
+    p_f.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_f.paragraph_format.space_before = Pt(4)
+    p_f.paragraph_format.space_after = Pt(4)
+
+    clean_formula = sanitize_medical_text_symbols(raw_f_code)
+    _add_single_r(p_f, clean_formula, font_name="Cambria Math", size_pt=11.5, bold=True,
+                  color_rgb=(0x1B, 0x4F, 0x72), is_rtl=False)
+
+    p_after = doc.add_paragraph()
+    set_p_rtl(p_after, space_before_pt=0, space_after_pt=6)
+
+
+def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
+                  bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
+                  is_rtl: bool = True):
+    """Low-level run builder with explicit Complex Script settings for Word."""
     run = p.add_run(text)
     run.font.name = font_name
     run.font.size = Pt(size_pt)
@@ -110,23 +301,59 @@ def add_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
     return run
 
 
+def add_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
+          bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
+          is_rtl: bool = True):
+    """Adds a run or parses inline markdown **bold** and sanitizes TeX symbols into Word runs."""
+    clean_text = sanitize_medical_text_symbols(str(text))
+    if "**" in clean_text:
+        parts = re.split(r'(\*\*.*?\*\*)', clean_text)
+        last_run = None
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith("**") and part.endswith("**") and len(part) >= 4:
+                last_run = _add_single_r(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                         bold=True, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+            else:
+                last_run = _add_single_r(p, part, font_name=font_name, size_pt=size_pt,
+                                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+        return last_run
+    return _add_single_r(p, clean_text, font_name=font_name, size_pt=size_pt,
+                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+
+
 def add_bidi_text(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
                   bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL):
     """
     Renders mixed Persian/English scientific text with strict BiDi isolation.
     Preserves arrows (→, ⇌), chemical symbols (Ca²⁺, HCO₃⁻), inequalities (≥, ≤, ±)
     and Latin abbreviations without reversing English parentheses.
+    Sanitizes raw LaTeX/TeX tokens to Unicode, isolates chemical formulas,
+    and converts Markdown **bold** segments into true bold runs (zero raw asterisk leaks).
     """
     if not text:
         return
+
+    text = sanitize_medical_text_symbols(text)
 
     # Handle explicit line breaks
     lines = text.split('\n')
     for idx, line in enumerate(lines):
         if idx > 0:
             p.add_run().add_break()
-        _render_bidi_line(p, line, font_name=font_name, size_pt=size_pt,
-                          bold=bold, italic=italic, color_rgb=color_rgb)
+        # Parse inline markdown **bold**
+        parts = re.split(r'(\*\*.*?\*\*)', line)
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith("**") and part.endswith("**") and len(part) >= 4:
+                inner_text = part[2:-2]
+                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
+                                  bold=True, italic=italic, color_rgb=color_rgb)
+            else:
+                _render_bidi_line(p, part, font_name=font_name, size_pt=size_pt,
+                                  bold=bold, italic=italic, color_rgb=color_rgb)
 
 
 def _render_bidi_line(p, text_line: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
@@ -431,16 +658,50 @@ def add_visual_atlas_section(doc, figures: List[Dict[str, Any]], title: str = "�
             add_r(p_cap, f"⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}", font_name=FONT_DUBAI, size_pt=9.5,
                   bold=True, color_rgb=(0xD3, 0x54, 0x00), is_rtl=True)
 
+def clean_mermaid_code(code: str) -> str:
+    """
+    Sanitizes Mermaid code, enforces vertical stacking (flowchart TD),
+    fixes invalid syntax, and cleans TeX symbols inside node labels.
+    """
+    if not code or not str(code).strip():
+        return "flowchart TD\n    A[ملاحظه بالینی]"
+
+    raw = str(code).strip()
+    lines = raw.splitlines()
+    first_line = lines[0].strip() if lines else ""
+
+    if first_line.startswith("graph LR") or first_line.startswith("flowchart LR"):
+        lines[0] = "flowchart TD"
+    elif not (first_line.startswith("graph ") or first_line.startswith("flowchart ")):
+        lines.insert(0, "flowchart TD")
+
+    sanitized_lines = []
+    for l in lines:
+        sl = l
+        # Sanitize TeX symbols inside labels
+        sl = sl.replace(r'$\rightarrow$', '→').replace(r'\rightarrow', '→')
+        sl = sl.replace(r'$\leftarrow$', '←').replace(r'\leftarrow', '←')
+        sl = sl.replace(r'$\ge$', '≥').replace(r'\ge', '≥')
+        sl = sl.replace(r'$\le$', '≤').replace(r'\le', '≤')
+        sl = sl.replace(r'$\pm$', '±').replace(r'\pm', '±')
+        sl = sl.replace(r'$\times$', '×').replace(r'\times', '×')
+        sl = re.sub(r'\\text\{([^}]+)\}', r'\1', sl)
+        sanitized_lines.append(sl)
+
+    return "\n".join(sanitized_lines)
+
+
 def render_mermaid_diagram_to_png(
     mermaid_code: str,
     output_png_path: str,
     title: str = "دیاگرام الگوریتم بالینی",
-    min_width_px: int = 480,
+    min_width_px: int = 760,
     output_svg_path: Optional[str] = None
 ) -> bool:
     """
     Renders a Mermaid flowchart/diagram to a High-DPI transparent PNG image
-    using Playwright with a specialized clinical theme and Persian typography.
+    using Playwright with a specialized clinical theme, Rule 10 typography standard (17px),
+    and Golden Aspect Ratio constraints.
     """
     if not mermaid_code or not str(mermaid_code).strip():
         return False
@@ -449,6 +710,7 @@ def render_mermaid_diagram_to_png(
         return True
 
     os.makedirs(os.path.dirname(os.path.abspath(output_png_path)), exist_ok=True)
+    clean_code = clean_mermaid_code(mermaid_code)
 
     edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     exec_path = edge_exe if os.path.exists(edge_exe) else None
@@ -471,7 +733,7 @@ def render_mermaid_diagram_to_png(
                 secondaryColor: '#FEF9E7',
                 tertiaryColor: '#FDEDEC',
                 edgeLabelBackground: '#ffffff',
-                fontSize: '13px'
+                fontSize: '17px'
             }}
         }});
     </script>
@@ -489,12 +751,14 @@ def render_mermaid_diagram_to_png(
             padding: 16px 20px;
             background: #FAFCFD;
             box-shadow: 0 4px 12px rgba(41, 128, 185, 0.08);
-            display: inline-block;
-            min-width: {min_width_px}px;
+            width: 760px;
+            max-width: 760px;
+            box-sizing: border-box;
+            margin: 0 auto;
             text-align: center;
         }}
         .card-header {{
-            font-size: 14.5px;
+            font-size: 16px;
             font-weight: bold;
             color: #1A5276;
             margin-bottom: 14px;
@@ -519,7 +783,7 @@ def render_mermaid_diagram_to_png(
     <div class="card">
         <div class="card-header">🧬 {title}</div>
         <div class="mermaid">
-{mermaid_code.strip()}
+{clean_code}
         </div>
     </div>
 </body>
@@ -533,6 +797,11 @@ def render_mermaid_diagram_to_png(
             page.set_content(html_content)
             page.wait_for_selector(".mermaid svg", timeout=12000)
             card_el = page.locator(".card")
+            card_box = card_el.bounding_box()
+            if card_box and card_box["height"] > 0:
+                aspect_ratio = card_box["width"] / card_box["height"]
+                if aspect_ratio > 1.8:
+                    print(f"[WARN] [FLOWCHART_LEGIBILITY_GATE]: Diagram '{title}' aspect ratio {aspect_ratio:.2f} > 1.8 exceeds Golden Aspect Ratio (0.7:1 - 1.6:1). Vertical flowchart TD stacking recommended.")
             card_el.screenshot(path=output_png_path)
             if output_svg_path:
                 svg_content = page.locator(".mermaid").inner_html()
@@ -1312,6 +1581,15 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                         icon="📋"
                     )
 
+        # Diagnostic Formulas & Calculations in Word (🧮 فرمول‌های تشخیصی)
+        f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
+        if f_list and isinstance(f_list, list):
+            for f_item in f_list:
+                if isinstance(f_item, dict):
+                    add_formula_card(doc, f_item.get("formula", ""), f_item.get("title", ""))
+                elif isinstance(f_item, str):
+                    add_formula_card(doc, f_item, f"فرمول تشخیصی {mod_name}")
+
         # Diagram Rendering (Playwright PNG embed - Dual-Target High-DPI Engine)
         diag_png = mod.get("diagram_image_path") or mod.get("diagram_png")
         m_code = mod.get("mermaid_code") or mod.get("flowchart_mermaid") or mod.get("pathophysiology_cascade_mermaid") or mod.get("algorithm_mermaid")
@@ -1414,6 +1692,30 @@ def format_md_table_row(row) -> str:
         for c in row
     ]
     return "| " + " | ".join(clean_cells) + " |"
+
+def add_markdown_alert(lines: List[str], alert_type: str, title: str, items: List[Any], icon: str = ""):
+    """
+    Appends a GitHub/Obsidian alert block with strict line-by-line blockquote continuity (> prefix).
+    Sanitizes raw TeX symbols and prevents unrendered LaTeX or split quotes.
+    """
+    if not items:
+        return
+    clean_title = sanitize_medical_text_symbols(str(title).strip())
+    lines.append(f"> [!{alert_type}] **{clean_title}**")
+    for item in items:
+        clean_item = sanitize_medical_text_symbols(str(item).strip())
+        sub_lines = clean_item.splitlines()
+        for s_idx, s_line in enumerate(sub_lines):
+            s_clean = s_line.strip()
+            if not s_clean:
+                continue
+            if s_idx == 0:
+                bullet = f"{icon} " if icon else ""
+                lines.append(f"> - {bullet}{s_clean}")
+            else:
+                lines.append(f">   {s_clean}")
+    lines.append("")
+
 
 def build_markdown_summary(data: Dict[str, Any], output_path: str):
     """Generates a clean, GitHub/Obsidian-compatible Markdown study guide."""
@@ -1675,42 +1977,41 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
 
         # High Yield Pearls
         if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
-            lines.append("> [!WARNING] **نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls):**")
-            for pearl in mod["high_yield_pearls"]:
-                lines.append(f"> - ⚡ {pearl}")
-            lines.append("")
+            add_markdown_alert(lines, "WARNING", "نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls):", mod["high_yield_pearls"], icon="⚡")
 
         # Instructor Alerts
         if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
-            lines.append("> [!IMPORTANT] **⭐ اولویت اول مرور: تأکیدات مستقیم استاد در کلاس:**")
-            for alert in mod["instructor_exam_alerts"]:
-                lines.append(f"> - ⭐ {alert}")
-            lines.append("")
+            add_markdown_alert(lines, "IMPORTANT", "⭐ اولویت اول مرور: تأکیدات مستقیم استاد در کلاس:", mod["instructor_exam_alerts"], icon="⭐")
 
         # Emergency Management & Immediate Resuscitation
         emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
         if emerg_items:
             emerg_list = format_emergency_items(emerg_items)
-            lines.append("> [!CAUTION] **🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):**")
-            for em in emerg_list:
-                lines.append(f"> - 🚨 {em}")
-            lines.append("")
+            add_markdown_alert(lines, "CAUTION", "🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):", emerg_list, icon="🚨")
 
         # Contraindications & Lethal Withholds
         if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
-            lines.append("> [!CAUTION] **⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications):**")
-            for warning in mod["contraindications_and_warnings"]:
-                lines.append(f"> - ⛔ {warning}")
-            lines.append("")
+            add_markdown_alert(lines, "CAUTION", "⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications):", mod["contraindications_and_warnings"], icon="⛔")
 
         # Special Populations & Pregnancy
         special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
         if special_items:
             spec_list = special_items if isinstance(special_items, list) else [special_items]
-            lines.append("> [!NOTE] **🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy):**")
-            for sp in spec_list:
-                lines.append(f"> - 🤰 {sp}")
-            lines.append("")
+            add_markdown_alert(lines, "NOTE", "🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy):", spec_list, icon="🤰")
+
+        # Diagnostic Formulas in Markdown
+        if mod.get("formulas") or mod.get("diagnostic_formulas"):
+            f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
+            if isinstance(f_list, list):
+                lines.append(f"### 🧮 فرمول‌های تشخیصی و محاسبات بالینی {m_name}\n")
+                for f_item in f_list:
+                    if isinstance(f_item, dict):
+                        f_title = f_item.get("title", "فرمول محاسباتی")
+                        f_code = sanitize_medical_text_symbols(f_item.get("formula", ""))
+                        lines.append(f"> **🧮 {f_title}:** `{f_code}`")
+                    elif isinstance(f_item, str):
+                        lines.append(f"> **🧮 فرمول:** `{sanitize_medical_text_symbols(f_item)}`")
+                lines.append("")
 
         # Staging & Diagnostic Criteria (Polymorphic)
         criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
@@ -2513,7 +2814,78 @@ tr:nth-child(even) { background-color: #FDFEFE; }
     border-radius: 4px;
     border-right: 3px solid #D35400;
 }
+.formula-card {
+    margin: 16px 0;
+    padding: 12px 18px;
+    background: #FBFCFD;
+    border: 1.5px solid #2980B9;
+    border-radius: 6px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: 0 1px 4px rgba(41, 128, 185, 0.08);
+}
+.formula-badge {
+    font-size: 10pt;
+    font-weight: bold;
+    color: #1A5276;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #D4E6F1;
+    padding-bottom: 4px;
+}
+.formula-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    direction: ltr;
+    font-family: 'Cambria Math', 'Dubai', 'Segoe UI', serif;
+    font-size: 11pt;
+    color: #1B4F72;
+    padding: 8px 0;
+    gap: 8px;
+}
+.formula-fraction {
+    display: inline-flex;
+    flex-direction: column;
+    vertical-align: middle;
+    text-align: center;
+    padding: 0 4px;
+}
+.formula-num {
+    border-bottom: 1.5px solid #1B4F72;
+    padding-bottom: 2px;
+}
+.formula-denom {
+    padding-top: 2px;
+}
+.formula-caption {
+    font-size: 9pt;
+    color: #566573;
+    margin-top: 6px;
+    line-height: 1.5;
+    border-top: 1px dashed #E5E7E9;
+    padding-top: 4px;
+}
+.chem-formula {
+    display: inline-block;
+    direction: ltr;
+    font-weight: 600;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+.med-code {
+    background: #F2F4F4;
+    color: #C0392B;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-family: Consolas, monospace;
+    direction: ltr;
+    display: inline-block;
+}
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
     document.addEventListener("DOMContentLoaded", function() {
@@ -2754,14 +3126,14 @@ tr:nth-child(even) { background-color: #FDFEFE; }
         if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
             html_parts.append('<div class="callout callout-pearl"><div class="callout-header">⚡ نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls)</div><div class="callout-body">')
             for p in mod["high_yield_pearls"]:
-                html_parts.append(f'<div>⚡ {p}</div>')
+                html_parts.append(f'<div>⚡ {format_inline_markdown(p)}</div>')
             html_parts.append('</div></div>')
 
         # Instructor Alerts
         if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
             html_parts.append('<div class="callout callout-alert"><div class="callout-header">⭐ تأکیدات مستقیم استاد در کلاس</div><div class="callout-body">')
             for a in mod["instructor_exam_alerts"]:
-                html_parts.append(f'<div>⭐ {a}</div>')
+                html_parts.append(f'<div>⭐ {format_inline_markdown(a)}</div>')
             html_parts.append('</div></div>')
 
         # Emergency Management & Immediate Stabilization
@@ -2770,14 +3142,14 @@ tr:nth-child(even) { background-color: #FDFEFE; }
             emerg_list = format_emergency_items(emerg_items)
             html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)</div><div class="callout-body">')
             for em in emerg_list:
-                html_parts.append(f'<div>🚨 {em}</div>')
+                html_parts.append(f'<div>🚨 {format_inline_markdown(em)}</div>')
             html_parts.append('</div></div>')
 
         # Contraindications & Warnings
         if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
             html_parts.append('<div class="callout callout-contra"><div class="callout-header">⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications)</div><div class="callout-body">')
             for c in mod["contraindications_and_warnings"]:
-                html_parts.append(f'<div>⛔ {c}</div>')
+                html_parts.append(f'<div>⛔ {format_inline_markdown(c)}</div>')
             html_parts.append('</div></div>')
 
         # Special Populations & Pregnancy
@@ -2786,8 +3158,17 @@ tr:nth-child(even) { background-color: #FDFEFE; }
             spec_list = special_items if isinstance(special_items, list) else [special_items]
             html_parts.append('<div class="callout callout-special"><div class="callout-header">🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)</div><div class="callout-body">')
             for sp in spec_list:
-                html_parts.append(f'<div>🤰 {sp}</div>')
+                html_parts.append(f'<div>🤰 {format_inline_markdown(sp)}</div>')
             html_parts.append('</div></div>')
+
+        # Diagnostic Formulas & Calculations in HTML
+        f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
+        if f_list and isinstance(f_list, list):
+            for f_item in f_list:
+                if isinstance(f_item, dict):
+                    html_parts.append(render_formula_html(f_item.get("formula", ""), f_item.get("title", "")))
+                elif isinstance(f_item, str):
+                    html_parts.append(render_formula_html(f_item, f"فرمول تشخیصی {m_name}"))
 
         # Staging & Diagnostic Criteria (Polymorphic)
         criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
@@ -2804,7 +3185,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                     for row in rows:
                         html_parts.append('<tr>')
                         for cell in row:
-                            html_parts.append(f'<td>{cell}</td>')
+                            html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
                         html_parts.append('</tr>')
                     html_parts.append('</tbody></table>')
             elif isinstance(criteria_obj, list) and criteria_obj:
@@ -2817,13 +3198,13 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                     for item in criteria_obj:
                         html_parts.append('<tr>')
                         for k in headers:
-                            html_parts.append(f'<td>{item.get(k, "-")}</td>')
+                            html_parts.append(f'<td>{format_inline_markdown(item.get(k, "-"))}</td>')
                         html_parts.append('</tr>')
                     html_parts.append('</tbody></table>')
                 else:
                     html_parts.append(f'<div class="section-title">📋 معیارهای بالینی و طبقه‌بندی {m_name}</div><ul>')
                     for cr in criteria_obj:
-                        html_parts.append(f'<li>📋 {cr}</li>')
+                        html_parts.append(f'<li>📋 {format_inline_markdown(cr)}</li>')
                     html_parts.append('</ul>')
 
         # Clinical Vignettes
@@ -2896,7 +3277,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                     line += f" | پاتولوژی مرتبط ← <i>{path}</i>"
                 if pearl:
                     line += f" <i>(نکته: {pearl})</i>"
-                html_parts.append(f'<div style="margin-bottom: 6px;">{line}</div>')
+                html_parts.append(f'<div style="margin-bottom: 6px;">{format_inline_markdown(line)}</div>')
         html_parts.append('</div></div>')
 
     # Master Pharmacology Matrix
@@ -2914,7 +3295,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
             for row in rows:
                 html_parts.append('<tr>')
                 for cell in row:
-                    html_parts.append(f'<td>{cell}</td>')
+                    html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
                 html_parts.append('</tr>')
             html_parts.append('</tbody></table>')
 
@@ -2934,7 +3315,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                     for row in rows:
                         html_parts.append('<tr>')
                         for cell in row:
-                            html_parts.append(f'<td>{cell}</td>')
+                            html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
                         html_parts.append('</tr>')
                     html_parts.append('</tbody></table>')
 
@@ -2952,7 +3333,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
             for row in rows:
                 html_parts.append('<tr>')
                 for cell in row:
-                    html_parts.append(f'<td>{cell}</td>')
+                    html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
                 html_parts.append('</tr>')
             html_parts.append('</tbody></table>')
 
@@ -2960,7 +3341,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
     if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
         html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
-            html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {item}</span></div>')
+            html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {format_inline_markdown(item)}</span></div>')
 
     # Multimodal Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد)
     top_atlas = data.get("visual_atlas") or data.get("clinical_figures")
@@ -2978,9 +3359,9 @@ tr:nth-child(even) { background-color: #FDFEFE; }
             if f_p:
                 html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
             if f_cap:
-                html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
+                html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {format_inline_markdown(f_cap)}</div>')
             if f_pearl:
-                html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}</div>')
+                html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {format_inline_markdown(f_pearl)}</div>')
             html_parts.append('</div>')
 
     html_parts.append('</div></body></html>')

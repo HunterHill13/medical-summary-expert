@@ -492,6 +492,54 @@ def audit_illness_script_integrity(source_text: str, summary_data: Dict[str, Any
         "module_breakdown": module_audits
     }
 
+# ---------------------------------------------------------------------------
+# Visual & Markdown Quality Gates (LaTeX Leak, Callout Asterisks, Alert Continuity)
+# ---------------------------------------------------------------------------
+
+FORBIDDEN_RAW_LATEX_TOKENS = [r'\text{', r'\times', r'\frac{', r'\rightarrow', r'\leftarrow', r'\ge', r'\le', r'\pm', r'\mathrm{', r'\mathbf{']
+
+def audit_raw_latex_leak(content: str) -> List[str]:
+    """Audits content for unrendered or leaked raw LaTeX/TeX markup tokens."""
+    if not content:
+        return []
+    leaks = []
+    for tok in FORBIDDEN_RAW_LATEX_TOKENS:
+        if tok in content:
+            leaks.append(tok)
+    return leaks
+
+
+def audit_raw_markdown_in_callouts(html_content: str) -> List[str]:
+    """Checks that no unrendered raw Markdown asterisks (**) remain inside HTML callout elements."""
+    if not html_content:
+        return []
+    callout_matches = re.findall(r'<div class="callout.*?>(.*?)</div>\s*</div>', html_content, flags=re.DOTALL)
+    leaks = []
+    for c in callout_matches:
+        if '**' in c:
+            leaks.append(c.strip()[:100] + '...')
+    return leaks
+
+
+def audit_markdown_alert_continuity(md_content: str) -> List[str]:
+    """Audits Markdown content to ensure all lines inside alert blocks (> [!...) maintain the > prefix."""
+    if not md_content:
+        return []
+    lines = md_content.splitlines()
+    broken_lines = []
+    in_alert = False
+    for idx, l in enumerate(lines, 1):
+        if l.startswith('> [!'):
+            in_alert = True
+            continue
+        if in_alert:
+            if not l.strip():
+                in_alert = False
+            elif not l.startswith('>'):
+                broken_lines.append(f"Line {idx}: {l}")
+    return broken_lines
+
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -662,6 +710,10 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "valid_image_figures": valid_atlas_count,
             "annotated_with_findings_or_pearls": atlas_with_pearls
         },
+        "latex_leak_audit": {
+            "raw_latex_tokens_detected": audit_raw_latex_leak(raw_summary_text),
+            "passed": len(audit_raw_latex_leak(raw_summary_text)) == 0
+        },
         "total_source_clinical_numbers": len(source_nums),
         "total_omitted_numbers_count": len(unique_omissions),
         "omitted_clinical_numbers": list(unique_omissions.values()),
@@ -678,6 +730,8 @@ def main():
     parser.add_argument("--source", required=True, help="Path to original ingested lecture JSON or raw text")
     parser.add_argument("--summary", required=True, help="Path to generated summary JSON")
     parser.add_argument("--report", default="coverage_audit_report.json", help="Path to save audit report")
+    parser.add_argument("--html", help="Optional path to HTML file to audit callouts for raw markdown leaks")
+    parser.add_argument("--md", help="Optional path to Markdown file to audit alert blockquote continuity")
     args = parser.parse_args()
 
     # Read source
@@ -700,6 +754,28 @@ def main():
         summary_data = json.load(f)
 
     report = audit_coverage(source_text, summary_data)
+
+    # Optional HTML Callout Audit
+    if args.html and os.path.exists(args.html):
+        with open(args.html, "r", encoding="utf-8", errors="replace") as fh:
+            html_content = fh.read()
+        callout_leaks = audit_raw_markdown_in_callouts(html_content)
+        report["html_callout_markdown_leak_audit"] = {
+            "leaks_found": len(callout_leaks),
+            "passed": len(callout_leaks) == 0,
+            "details": callout_leaks
+        }
+
+    # Optional Markdown Alert Continuity Audit
+    if args.md and os.path.exists(args.md):
+        with open(args.md, "r", encoding="utf-8", errors="replace") as fm:
+            md_content = fm.read()
+        broken_alerts = audit_markdown_alert_continuity(md_content)
+        report["markdown_alert_continuity_audit"] = {
+            "broken_lines_count": len(broken_alerts),
+            "passed": len(broken_alerts) == 0,
+            "details": broken_alerts
+        }
 
     with open(args.report, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)

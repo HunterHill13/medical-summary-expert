@@ -1,20 +1,20 @@
-# 🩺 Medical Summary Expert (v3.7.0)
+# 🩺 Medical Summary Expert (v3.8.0)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-33%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.7.0-orange?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-34%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.8.0-orange?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Google%20Antigravity-Compatible-blueviolet?style=for-the-badge)](https://antigravity.google)
 
-A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via a **Polymorphic Module Architecture**, structures conditions using canonical **Illness Scripts**, renders high-DPI clinical diagrams and multimodal visual slide atlases, and outputs the synchronized **Quad-Pack**:
-1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Visual Atlas section (`Inches(4.8)` centered with structured clinical findings and exam pearls), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
+A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, balances medical content via a **Polymorphic Module Architecture**, structures conditions using canonical **Illness Scripts**, renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, and outputs the synchronized **Quad-Pack**:
+1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
 2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom burgundy headers (`#78281F`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
-3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, `.figure-card` visual atlas, A4 print CSS, collapsible clinical vignettes (`<details>`), and interactive matrices.
-4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting.
+3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, collapsible clinical vignettes (`<details>`), and interactive matrices.
+4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting.
 5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, auto-synthesized visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
 
 ---

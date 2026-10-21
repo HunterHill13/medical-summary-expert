@@ -1824,6 +1824,113 @@ def test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline():
 
     print("[PASS] Bug AG Test Passed: Visual diagram rendering and multimodal visual atlas pipeline verified across DOCX, MD, HTML, Anki, and Audit.")
 
+def test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates():
+    """Bug AH: LaTeX/BiDi Formula Sanitization, True Word Bold Runs, Flowchart Legibility Gate & Quality Gates."""
+    import docx
+    from build_summary_pack import (
+        sanitize_medical_text_symbols,
+        format_inline_markdown,
+        render_formula_html,
+        clean_mermaid_code,
+        render_mermaid_diagram_to_png,
+        add_bidi_text,
+        add_formula_card,
+        add_markdown_alert,
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary
+    )
+    from audit_summary_coverage import (
+        audit_raw_latex_leak,
+        audit_raw_markdown_in_callouts,
+        audit_markdown_alert_continuity
+    )
+
+    # 1. Test format_inline_markdown & sanitize_medical_text_symbols
+    raw_sample = (
+        r"۶. **دنوزوماب (Denosumab 120 mg SC):** آنتی‌بادی $\rightarrow$ افت کلسیم یونیزه و $\ge$ ۴.۰ mg/dL "
+        r"با رسوب کریستال‌های $\text{Ca}_{10}(\text{PO}_4)_6(\text{OH})_2$ و هورمون $E_2$"
+    )
+    formatted_html = format_inline_markdown(raw_sample)
+    assert "<strong>دنوزوماب (Denosumab 120 mg SC):</strong>" in formatted_html, "Markdown bold not converted to <strong>!"
+    assert "**" not in formatted_html, f"Raw asterisks leaked in HTML: {formatted_html}"
+    assert "←" in formatted_html, "TeX arrow not converted to Unicode!"
+    assert "≥" in formatted_html, "TeX inequality not converted to Unicode!"
+    assert "Ca₁₀(PO₄)₆(OH)₂" in formatted_html, "Chemical formula not converted to Unicode subscripts!"
+    assert r"\text{" not in formatted_html, "Raw \\text{ leaked in HTML!"
+    assert "E₂" in formatted_html, "TeX subscript not converted to Unicode subscript!"
+
+    # 2. Test render_formula_html
+    cccr_card = render_formula_html("CCCR = (U_Ca * S_Cr) / (S_Ca * U_Cr)", "فرمول کلیرانس کلسیم")
+    assert "formula-card" in cccr_card, "formula-card class missing!"
+    assert "formula-fraction" in cccr_card, "formula-fraction missing from CCCR!"
+    assert "U<sub>Ca</sub>" in cccr_card, "U_Ca subscript missing!"
+
+    ca_card = render_formula_html(r"\text{Corrected Calcium (mg/dL)} = \text{Measured Calcium} + 0.8 \times (4.0 - \text{Serum Albumin})")
+    assert "formula-card" in ca_card, "formula-card missing from Corrected Ca!"
+    assert r"\text{" not in ca_card, "Raw \\text{ leaked in formula card!"
+    assert r"\times" not in ca_card, "Raw \\times leaked in formula card!"
+
+    # 3. Test True Bold Run Creation in Word (.docx)
+    doc = docx.Document()
+    p = doc.add_paragraph()
+    add_bidi_text(p, "۶. **دنوزوماب (Denosumab 120 mg SC):** آنتی‌بادی منوکلونال")
+    
+    # Assert runs exist, bold is preserved, and zero asterisks leak into Word runs
+    bold_runs = [r for r in p.runs if r.bold and "دنوزوماب" in r.text]
+    assert len(bold_runs) > 0, "True bold run not generated for **bold** text in Word!"
+    for r in p.runs:
+        assert "**" not in r.text, f"Raw '**' leaked in Word run text: '{r.text}'"
+
+    # Test add_formula_card in Word
+    add_formula_card(doc, "CCCR = (U_Ca * S_Cr) / (S_Ca * U_Cr)", "فرمول کلیرانس کلسیم")
+    out_docx_ah = "dist/diag_test_ah.docx"
+    doc.save(out_docx_ah)
+    assert os.path.exists(out_docx_ah), "DOCX with formula card failed to save!"
+
+    # 4. Test clean_mermaid_code & Flowchart Legibility Gate
+    horizontal_code = "graph LR\n    A[\"تغییر pH $\\rightarrow$ کلسیم $\\ge$ ۱.۰\"] --> B[\"افت کلسیم یونیزه\"]"
+    cleaned = clean_mermaid_code(horizontal_code)
+    assert cleaned.startswith("flowchart TD"), f"Expected flowchart TD, got: {cleaned.splitlines()[0]}"
+    assert "→" in cleaned or "←" in cleaned, "TeX arrow not sanitized in Mermaid code!"
+    assert "≥" in cleaned, "TeX inequality not sanitized in Mermaid code!"
+    assert r"\rightarrow" not in cleaned, "Raw \\rightarrow leaked in Mermaid code!"
+
+    test_png_ah = "dist/diag_test_ah_mermaid.png"
+    if os.path.exists(test_png_ah):
+        os.remove(test_png_ah)
+    rendered = render_mermaid_diagram_to_png(cleaned, test_png_ah, title="چارت عمودی خوانا")
+    assert rendered, "Mermaid rendering failed!"
+    assert os.path.exists(test_png_ah) and os.path.getsize(test_png_ah) > 1000, "Mermaid PNG missing!"
+
+    # 5. Test Markdown Alert Continuity
+    md_lines = []
+    test_alert_items = [
+        "خط اول احیا: سالین ۳ درصد سریع\nخط دوم احیا: دیورتیک لوپ پس از اتساع حجم",
+        "پایش الکترولیت‌ها هر ۲ ساعت"
+    ]
+    add_markdown_alert(md_lines, "CAUTION", "پروتکل احیای اورژانسی", test_alert_items, icon="🚨")
+    md_content = "\n".join(md_lines)
+    
+    # Check that EVERY line inside the alert has the '> ' prefix
+    broken_lines = audit_markdown_alert_continuity(md_content)
+    assert len(broken_lines) == 0, f"Markdown alert continuity broken: {broken_lines}"
+
+    # 6. Test Quality Gates
+    # LaTeX Leak Gate
+    clean_text = "افزایش کلسیم ≥ ۱۲ mg/dL و هیدروکسی‌آپاتیت Ca₁₀(PO₄)₆(OH)₂"
+    dirty_text = r"افزایش کلسیم \ge 12 mg/dL و \text{Ca}_{10}(\text{PO}_4)_6(\text{OH})_2"
+    assert len(audit_raw_latex_leak(clean_text)) == 0, "False positive in LaTeX leak audit!"
+    assert len(audit_raw_latex_leak(dirty_text)) >= 2, "Failed to detect raw LaTeX tokens in dirty text!"
+
+    # HTML Callout Asterisk Gate
+    clean_html_callout = '<div class="callout callout-pearl"><div>⚡ <strong>دنوزوماب:</strong> داروی آنتی‌بادی</div></div>'
+    dirty_html_callout = '<div class="callout callout-pearl"><div>⚡ **دنوزوماب:** داروی آنتی‌بادی</div></div>'
+    assert len(audit_raw_markdown_in_callouts(clean_html_callout)) == 0, "False positive in callout asterisk audit!"
+    assert len(audit_raw_markdown_in_callouts(dirty_html_callout)) == 1, "Failed to detect raw '**' in HTML callout!"
+
+    print("[PASS] Bug AH Test Passed: LaTeX/BiDi sanitization, true Word bold runs, flowchart legibility, alert continuity and quality gates verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1859,4 +1966,5 @@ if __name__ == "__main__":
     test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
     test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
     test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
+    test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

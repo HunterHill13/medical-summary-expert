@@ -491,6 +491,37 @@ def add_comparative_matrices(doc, matrices: List[Dict[str, Any]]):
         if headers and rows:
             add_comparison_table(doc, title=title, headers=headers, rows=rows)
 
+def format_emergency_items(emerg_items: Any) -> List[str]:
+    """Polymorphically normalizes emergency management items (dict, list, string) into concise strings."""
+    if not emerg_items:
+        return []
+    if isinstance(emerg_items, dict):
+        cond = emerg_items.get("condition") or emerg_items.get("indication")
+        act = emerg_items.get("action") or emerg_items.get("intervention") or emerg_items.get("management")
+        tgt = emerg_items.get("target") or emerg_items.get("goal")
+        lines = []
+        if cond and act:
+            lines.append(f"شرایط بالینی: {cond} -> اقدام فوری: {act}" + (f" (هدف: {tgt})" if tgt else ""))
+        elif act:
+            lines.append(f"اقدام فوری: {act}" + (f" (هدف: {tgt})" if tgt else ""))
+        elif cond:
+            lines.append(f"شرایط بالینی: {cond}")
+        for k, v in emerg_items.items():
+            if k not in ("condition", "indication", "action", "intervention", "management", "target", "goal") and v:
+                lines.append(f"{k}: {v}")
+        return lines if lines else [str(emerg_items)]
+    elif isinstance(emerg_items, list):
+        res = []
+        for item in emerg_items:
+            if isinstance(item, dict):
+                res.extend(format_emergency_items(item))
+            elif item and str(item).strip():
+                res.append(str(item).strip())
+        return res
+    elif isinstance(emerg_items, str):
+        return [emerg_items.strip()] if emerg_items.strip() else []
+    return [str(emerg_items)]
+
 # ---------------------------------------------------------------------------
 # Core Summary Document Compilation Engine
 # ---------------------------------------------------------------------------
@@ -586,9 +617,7 @@ def ensure_master_matrices(data: Dict[str, Any]):
             if not isinstance(mod, dict):
                 continue
             m_name = mod.get("name", "")
-            emerg = mod.get("emergency_management") or mod.get("immediate_stabilization") or []
-            if isinstance(emerg, str):
-                emerg = [emerg]
+            emerg = format_emergency_items(mod.get("emergency_management") or mod.get("immediate_stabilization"))
             for em in emerg:
                 if em and str(em).strip():
                     bullets.append(f"احیای فوری و اورژانس ({m_name}): {str(em).strip()}")
@@ -1032,7 +1061,7 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
         # Emergency Management & Immediate Stabilization (🚨 اقدامات اورژانس و احیا)
         emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
         if emerg_items:
-            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            emerg_list = format_emergency_items(emerg_items)
             add_callout_box(
                 doc,
                 title="🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)",
@@ -1446,7 +1475,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         # Emergency Management & Immediate Resuscitation
         emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
         if emerg_items:
-            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            emerg_list = format_emergency_items(emerg_items)
             lines.append("> [!CAUTION] **🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):**")
             for em in emerg_list:
                 lines.append(f"> - 🚨 {em}")
@@ -1718,9 +1747,7 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
 
         # Synthesize from Emergency Management & Immediate Stabilization
-        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization") or []
-        if isinstance(emerg_items, str):
-            emerg_items = [emerg_items]
+        emerg_items = format_emergency_items(mod.get("emergency_management") or mod.get("immediate_stabilization"))
         for em in emerg_items:
             if em and str(em).strip():
                 e_str = str(em).strip()
@@ -1904,6 +1931,7 @@ def build_html_summary(data: Dict[str, Any], output_path: Optional[str] = None) 
     topic_title = data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
     topic_title_en = data.get("topic_title_en", "")
     organ_system = data.get("organ_system", "فیزیوپاتولوژی بالینی")
+    institution = data.get("institution", "دانشگاه بق")
 
     html_parts = []
     html_parts.append("""<!DOCTYPE html>
@@ -2124,7 +2152,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
     <div class="title-main">🩺 """ + topic_title + """</div>""")
     if topic_title_en:
         html_parts.append(f'    <div class="title-en">({topic_title_en})</div>')
-    html_parts.append(f"""    <div class="meta-tag">📌 کورس: {organ_system} | 🎯 سطح: فیزیوپاتولوژی بالینی | ⚡ نوع سند: کتابچه مرور های‌یلد</div>
+    html_parts.append(f"""    <div class="meta-tag">🏛️ {institution} | 📌 کورس: {organ_system} | 🎯 سطح: فیزیوپاتولوژی بالینی | ⚡ نوع سند: کتابچه مرور های‌یلد</div>
 </div>""")
 
     for mod_idx, mod in enumerate((data.get("modules") or []), 1):
@@ -2362,7 +2390,7 @@ tr:nth-child(even) { background-color: #FDFEFE; }
         # Emergency Management & Immediate Stabilization
         emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
         if emerg_items:
-            emerg_list = emerg_items if isinstance(emerg_items, list) else [emerg_items]
+            emerg_list = format_emergency_items(emerg_items)
             html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)</div><div class="callout-body">')
             for em in emerg_list:
                 html_parts.append(f'<div>🚨 {em}</div>')

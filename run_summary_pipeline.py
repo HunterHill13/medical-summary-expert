@@ -37,7 +37,8 @@ from build_summary_pack import (
     build_anki_tsv,
     build_anki_apkg,
     build_html_summary,
-    build_pdf_summary
+    build_pdf_summary,
+    ensure_master_matrices
 )
 
 def cmd_ingest(args):
@@ -243,69 +244,11 @@ def cmd_merge_batches(args):
         for chk in shard_data.get("morning_exam_checklist", []):
             merged_checklist.append(chk)
 
-    # Master Pharmacology Matrix synthesis across all modules
-    master_pharm_rows = []
-    for mod in merged_modules:
-        if not isinstance(mod, dict):
-            continue
-        m_name = mod.get("name", "")
-        for drug in (mod.get("pharmacology_and_management") or []):
-            if not isinstance(drug, dict):
-                continue
-            d_class = drug.get("drug_class", "-") or "-"
-            d_mech = drug.get("mechanism_of_action") or drug.get("mechanism") or "-"
-            d_ind = drug.get("indications", "-") or "-"
-            d_contra = drug.get("contraindications", "-") or "-"
-            d_pearl = drug.get("exam_pearl") or drug.get("pearl") or "-"
-            master_pharm_rows.append([m_name, d_class, d_mech, d_ind, d_contra, d_pearl])
-
-    # Global Synthesis: Build unified Last-Minute Crash Sheet
-    crash_rows = []
-    for mod in merged_modules:
-        if not isinstance(mod, dict):
-            continue
-        m_name = str(mod.get("name") or "")
-        mod_type = mod.get("type", "illness_script")
-        if mod_type == "clinical_approach" or mod.get("step_by_step_algorithm"):
-            m_etio = "رویکرد تشخیصی"
-            alg_list = mod.get("step_by_step_algorithm") or ["-"]
-            m_mech = str(alg_list[0] if alg_list else "-")[:60]
-            m_sign = str(mod.get("initial_presentation") or "-")[:50]
-            pv_list = mod.get("pivot_points") or ["-"]
-            m_dx = str(pv_list[0] if pv_list else "-")[:50]
-            m_rx = str(mod.get("definitive_action") or "-")[:50]
-        elif mod_type == "foundational_concept" or mod.get("feedback_cascade"):
-            m_etio = "هموستاز فیزیولوژیک"
-            f_list = mod.get("feedback_cascade") or ["-"]
-            m_mech = str(f_list[0] if f_list else "-")[:60]
-            roles = mod.get("physiological_role") or ["-"]
-            m_sign = str(roles[0] if isinstance(roles, list) else roles)[:50]
-            tests = mod.get("baseline_tests") or ["-"]
-            m_dx = str(tests[0] if isinstance(tests, list) else tests)[:50]
-            rels = mod.get("clinical_relevance") or ["-"]
-            m_rx = str(rels[0] if isinstance(rels, list) else rels)[:50]
-        else:
-            etio_items = mod.get("definition_and_etiology") or ["-"]
-            m_etio = " ".join(str(x) for x in etio_items if x)[:60] or "-"
-            mech_items = mod.get("pathophysiology_cascade") or ["-"]
-            m_mech = str(mech_items[0] if mech_items else "-")[:60]
-            pres_items = mod.get("clinical_presentation") or []
-            m_sign = str(pres_items[0].get("sign", "-") if pres_items and isinstance(pres_items[0], dict) else "-")[:50]
-            diag_dict = mod.get("diagnostics") or {}
-            m_dx = str(diag_dict.get("best_initial_test") or "-")[:50]
-            rx_items = mod.get("pharmacology_and_management") or []
-            m_rx = str(rx_items[0].get("drug_class", "-") if rx_items and isinstance(rx_items[0], dict) else "-")[:50]
-        crash_rows.append([m_name, m_etio, m_mech, m_sign, m_dx, m_rx])
-
     final_data = {
         "topic_title": topic_title or "خلاصه مباحث جزوه",
         "topic_title_en": topic_title_en,
         "organ_system": organ_system or "فیزیوپاتولوژی بالینی",
         "modules": merged_modules,
-        "last_minute_crash_sheet": {
-            "headers": ["بیماری / مبحث", "اتیولوژی اصلی", "مکانیسم پاتوفیزیولوژی کلیدی", "علامت شاخص / تریاد", "اقدام تشخیصی نخستین", "درمان انتخابی"],
-            "rows": crash_rows
-        },
         "anki_flashcards": merged_flashcards
     }
 
@@ -318,12 +261,8 @@ def cmd_merge_batches(args):
     if merged_checklist:
         final_data["morning_exam_checklist"] = merged_checklist
 
-    if len(master_pharm_rows) >= 2:
-        final_data["master_pharmacology_matrix"] = {
-            "title": "ماتریس جامع مقایسه داروشناسی بالینی (Master Pharmacology Matrix)",
-            "headers": ["مبحث / بیماری", "دسته دارویی و نمونه‌ها", "مکانیسم اثر سلولی", "اندیکاسیون دقیق", "کنترااندیکاسیون / عوارض مرگبار", "نکته کلیدی استاد / دام آزمون"],
-            "rows": master_pharm_rows
-        }
+    # Global Synthesis: Ensure Master Pharmacology Matrix, Crash Sheet, and Morning Checklist
+    ensure_master_matrices(final_data)
 
     with open(args.out, "w", encoding="utf-8") as f_out:
         json.dump(final_data, f_out, ensure_ascii=False, indent=2)

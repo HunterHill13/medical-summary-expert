@@ -1506,6 +1506,219 @@ def test_bug_ae_universal_dynamic_syndrome_and_disease_detection():
 
     print("[PASS] Bug AE Test Passed: Universal dynamic syndrome and disease detection across medical specialties verified.")
 
+def test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack():
+    """Bug AF: Capstone end-to-end integration test verifying all 3 user requirements simultaneously:
+    1. کم‌حجم (Ultra-condensed compression ratio 0.20 <= CR <= 0.65, zero verbatim bloat).
+    2. High-Yield (Emergency protocols, lethal contraindications, diagnostic criteria/staging, special populations, Anki cloze cards).
+    3. جامع (100% balanced coverage across physiology, clinical algorithms, and illness scripts with zero syndrome/disease omission).
+    4. Quad-Pack Deliverables Parity (DOCX, MD, HTML, Playwright PDF, Anki TSV & APKG).
+    """
+    from build_summary_pack import (
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        build_pdf_summary,
+        build_anki_tsv,
+        build_anki_apkg,
+        ensure_master_matrices
+    )
+    from audit_summary_coverage import audit_coverage
+
+    # Realistic 800+ word multi-topic lecture excerpt
+    source_lecture = (
+        "مقدمه و مروری بر پاتوفیزیولوژی سیستم غدد درون‌ریز و هورمون‌های تنظیم‌کننده آب و الکترولیت‌ها در بدن انسان: "
+        "محور رنین-آنژیوتانسین-آلدوسترون یا همان سیستم RAAS یکی از حیاتی‌ترین و اصلی‌ترین مکانیسم‌های هموستاتیک بدن برای تنظیم طولانی‌مدت فشار خون شریانی، "
+        "برون‌ده قلبی، حجم مؤثر در گردش خون و تعادل کاتیون‌های سدیم و پتاسیم و یون هیدروژن در نفرون‌های کلیوی است. در این مسیر بیوشیمیایی و سلولی پیچیده، "
+        "هرگاه خون‌رسانی و پرفیوژن کلیوی به دلایلی نظیر هایپوولمی، دهیدراتاسیون، تنگی شریان کلیه یا افت فشار سیستمیک کاهش یابد، "
+        "سلول‌های تخصص‌یافته ژوکستاگلومرولار (JG cells) در دیواره آرتریول آفرانت تحریک شده و آنزیم رنین را به داخل جریان خون آزاد می‌کنند. "
+        "رنین پروتئین آنژیوتانسینوژن تولیدشده توسط کبد را به دکاپپتید غیرفعال آنژیوتانسین ۱ تبدیل می‌کند. سپس آنزیم مبدل آنژیوتانسین یا ACE عمدتاً "
+        "در مویرگ‌های اندوتلیال عروق ریوی آن را به اکتاپپتید بسیار قدرتمند و فعال آنژیوتانسین ۲ تبدیل می‌نماید. آنژیوتانسین ۲ از طریق گیرنده‌های AT1 "
+        "اثرات وسیعی اعمال می‌کند: اولاً موجب انقباض شدید عروق خونی محیطی و افزایش مقاومت عروقی سیستمیک می‌شود، ثانیاً قشر غده آدرنال و به‌ویژه منطقه "
+        "گلومرولوزا را تحریک کرده تا هورمون استروئیدی آلدوسترون ترشح گردد. آلدوسترون بر روی سلول‌های اصلی (Principal cells) در لوله‌های جمع‌کننده قشری کلیه عمل کرده "
+        "و با فعال‌سازی کانال‌های ENaC و پمپ سدیم-پتاسیم، بازجذب فعال سدیم و آب را افزایش داده و متقابلاً دفع پتاسیم و پروتون را به داخل ادرار تسریع می‌بخشد تا تعادل کاتیونی حفظ گردد. "
+        "رویکرد بالینی و تشخیصی گام‌به‌گام به بیماران با هیپوناترمی: "
+        "هیپوناترمی یکی از شایع‌ترین اختلالات الکترولیتی در بخش‌های بستری و اورژانس پزشکی است و به صورت سطح سدیم سرم کمتر از ۱۳۵ میلی‌اکی‌والان در لیتر تعریف می‌شود. "
+        "گام اول و بنیادین در مواجهه با هر بیمار دچار هیپوناترمی، اندازه‌گیری دقیق اسمولالیته مؤثر سرم برای رد هیپوناترمی کاذب (مانند سودوهیپوناترمی ناشی از هایپرلیپیدمی شدید "
+        "یا هایپرپروتئینمی و همچنین هیپوناترمی ترنس‌لوکاسیونال ناشی از هایپرگلیسمی شدید در دیابت کنترل‌نشده) است. در مرحله بعد پس از اثبات هیپوتونیک بودن، وضعیت حجم مایع "
+        "خارج‌سلولی (ECF) بر اساس معاینه فیزیکی و سمیولوژی دقیق و تاریخچه بالینی به سه دسته کلی هیپوولمیک، یوولمیک و هایپرولمیک تقسیم‌بندی می‌شود. "
+        "در هیپوناترمی هیپوولمیک سنجش سدیم ادرار کلید تمایز علل دفع کلیوی از خارج‌کلیوی است. در هیپوناترمی یوولمیک شایع‌ترین علت، سندرم ترشح نامتناسب هورمون آنتی‌دیورتیک یا SIADH است. "
+        "پاتولوژی و تظاهرات بیماری‌های قشر آدرنال: "
+        "سندرم کان یا آلدوسترونیسم اولیه (Primary Aldosteronism) در اثر ترشح خودمختار، نامتناسب و مهارنشدنی هورمون آلدوسترون توسط آدنوم یک‌طرفه قشر فوق کلیه یا هایپرپلازی "
+        "دوطرفه کورتکس آدرنال ایجاد می‌شود. پاتوفیزیولوژی این اختلال شامل احتباس مزمن سدیم و اتساع حجم درون‌عروقی و هایپرتنشن شدید و اغلب مقاوم به درمان است، "
+        "در حالی که دفع بیش از حد پتاسیم منجر به هایپوکالمی، ضعف عضلانی، خستگی و کرامپ و آلکالوز متابولیک ناشی از دفع پروتون می‌گردد. برای غربالگری تشخیصی استاندارد، "
+        "سنجش نسبت غلظت آلدوسترون پلاسما به فعالیت رنین پلاسما یعنی PAC/PRA الزامی است و نسبت بالاتر از ۲۰ به همراه آلدوسترون بیش از ۱۵ نانوگرم بر دسی‌لیتر به عنوان نتیجه مثبت "
+        "و مشکوک تلقی می‌شود. پس از مثبت شدن تست غربالگری، تست‌های تاییدی مهاری نظیر انفوزیون سالین ایزوتونیک یا تست بارگیری خوراکی سدیم برای اثبات خودمختار بودن ترشح انجام می‌گیرد. "
+        "تصویربرداری انتخابی برای شناسایی ضایعه زمینه‌ای، سی‌تی اسکن آدرنال با مقاطع بسیار نازک است. برای درمان دارویی در هایپرپلازی دوطرفه یا قبل از جراحی، "
+        "داروی اسپیرونولاکتون با دوز ۲۵ تا ۵۰ میلی‌گرم روزانه به عنوان آنتاگونیست رقابتی گیرنده مینرالوکورتیکوئید تجویز می‌شود و داروی اپلرنون جایگزین اختصاصی بدون عوارض ژنیکوماستی است. "
+        "همچنین در تشخیص‌های افتراقی بیماری‌های ارثی توبول کلیوی، سندرم بارتر ناشی از موتاسیون در ناقل NKCC2 لوله هنله و سندرم گیتلمن ناشی از جهش در ترانسپورتر NCCT توبول دیستال باید مدنظر باشند. "
+        "مدیریت اورژانس، کنترااندیکاسیون‌های خطرناک و احتیاطات بارداری: "
+        "در بیماران با هیپوناترمی شدید و علامت‌دار حاد همراه با علائم تهدیدکننده حیات نظیر تشنج فعال، کاهش شدید سطح هوشیاری، کما یا ادم حاد مغزی، اقدام اورژانسی حیاتی "
+        "تجویز فوری سالین ۳ درصد هیپرتونیک به میزان ۱۰۰ سی‌سی بولوس وریدی ظرف ۱۰ دقیقه است تا سریعاً از فتق مغزی جلوگیری شود. اما یک هشدار مرگبار و نکته امتحانی کلیدی که "
+        "عدم رعایت آن به فاجعه منجر می‌شود این است که حداکثر سرعت اصلاح و تصحیح سدیم نباید از ۱۰ میلی‌اکی‌والان در ۲۴ ساعت فراتر برود؛ اصلاح بیش از حد سریع سدیم اکیداً ممنوع و کنترااندیکه قطعی است "
+        "زیرا منجر به سندرم دمیلیناسیون اسموتیک مغزی (ODS / Central Pontine Myelinolysis) برگشت‌ناپذیر، کوما و آسیب دائمی نورولوژیک می‌شود. همچنین در دوران حاملگی، "
+        "مصرف اسپیرونولاکتون به دلیل مهار گیرنده‌های آندروژن و خطر فمنیزاسیون جنین پسر مطلقاً کنترااندیکه بوده و باید داروی اپلرنون یا متیل‌دوپا به جای آن استفاده شود."
+    )
+
+    summary_data = {
+        "topic_title": "فیزیوپاتولوژی سدیم و آلدوسترون",
+        "topic_title_en": "Sodium and Aldosterone Pathophysiology",
+        "organ_system": "نفرولوژی و غدد درون‌ریز",
+        "modules": [
+            {
+                "type": "foundational_concept",
+                "name": "محور رنین-آنژیوتانسین-آلدوسترون (RAAS)",
+                "physiological_role": ["تنظیم فشار خون و هموستاز سدیم و پتاسیم"],
+                "feedback_cascade": [
+                    "کاهش پرفیوژن کلیه -> تحریک سلول‌های ژوکستاگلومرولار (JG cells) -> ترشح رنین",
+                    "تبدیل آنژیوتانسینوژن به آنژیوتانسین ۱ توسط رنین و سپس آنژیوتانسین ۲ با آنزیم ACE",
+                    "آنژیوتانسین ۲ از طریق گیرنده AT1 -> وازوکانستریکشن محیطی و ترشح آلدوسترون از قشر آدرنال",
+                    "آلدوسترون با فعال‌سازی کانال ENaC -> بازجذب سدیم و آب و دفع ادراری پتاسیم و پروتون"
+                ],
+                "baseline_tests": ["سنجش رنین و آلدوسترون سرم"],
+                "clinical_relevance": ["اساس پاتوفیزیولوژی هایپرتنشن رنوواسکولار و آلدوسترونیسم اولیه"],
+                "high_yield_pearls": ["آنژیوتانسین ۲ قوی‌ترین وازوکانستریتور آندوژن سیستمیک است."]
+            },
+            {
+                "type": "clinical_approach",
+                "name": "رویکرد تشخیصی به هیپوناترمی",
+                "initial_presentation": "سدیم سرم کمتر از ۱۳۵ میلی‌اکی‌والان",
+                "step_by_step_algorithm": [
+                    "گام ۱: اندازه‌گیری اسمولالیته سرم جهت رد سودوهیپوناترمی (هایپرلیپیدمی، هایپرپروتئینمی یا هایپرگلیسمی)",
+                    "گام ۲: ارزیابی بالینی حجم مایع خارج‌سلولی (ECF): تفکیک به هیپوولمیک، یوولمیک (SIADH) و هایپرولمیک",
+                    "گام ۳: سنجش سدیم ادرار برای افتراق دفع کلیوی از خارج‌کلیوی"
+                ],
+                "pivot_points": ["اسمولالیته سرم و سطح سدیم ادرار"],
+                "definitive_action": "تصحیح اتیولوژی زمینه‌ای و بازگرداندن اسمولالیته نرمال",
+                "emergency_management": {
+                    "condition": "هیپوناترمی علامت‌دار حاد (تشنج، کما یا علائم شدید مغزی)",
+                    "action": "تجویز فوری سالین ۳ درصد هیپرتونیک با دوز ۱۰۰ سی‌سی طی ۱۰ دقیقه",
+                    "target": "مهار علائم حاد نورولوژیک و جلوگیری از فتق مغزی"
+                },
+                "contraindications_and_warnings": [
+                    "هشدار مرگبار: سرعت اصلاح سدیم نباید از ۱۰ میلی‌اکی‌والان در ۲۴ ساعت بیشتر شود؛ اصلاح سریع به دلیل خطر سندرم دمیلیناسیون اسموتیک مغزی (ODS) و کوما اکیداً ممنوع است."
+                ],
+                "high_yield_pearls": ["اصلاح سدیم باید تدریجی و با پایش مداوم باشد."]
+            },
+            {
+                "type": "illness_script",
+                "name": "سندرم کان (آلدوسترونیسم اولیه)",
+                "definition_and_etiology": ["ترشح خودمختار آلدوسترون ناشی از آدنوم یک‌طرفه یا هایپرپلازی قشر آدرنال"],
+                "pathophysiology_cascade": [
+                    "افزایش آلدوسترون -> احتباس سدیم و اتساع حجم -> هایپرتنشن شدید",
+                    "دفع کلیوی پتاسیم و پروتون -> هایپوکالمی، ضعف عضلانی و آلکالوز متابولیک"
+                ],
+                "clinical_presentation": [
+                    {"sign": "هایپرتنشن مقاوم، هایپوکالمی و کرامپ", "mechanism": "احتباس سدیم و اتلاف ادراری پتاسیم"}
+                ],
+                "staging_and_classification": [
+                    {"stage": "غربالگری استاندارد", "criteria": "نسبت PAC/PRA بالاتر از ۲۰ همراه با آلدوسترون بیش از ۱۵ نانوگرم"},
+                    {"stage": "تست تاییدی مهاری", "criteria": "تست بارگیری سدیم یا سالین ایزوتونیک جهت اثبات خودمختاری"},
+                    {"stage": "تصویربرداری انتخابی", "criteria": "سی‌تی اسکن با کات نازک آدرنال"}
+                ],
+                "diagnostics": {
+                    "best_initial_test": "نسبت آلدوسترون به رنین (PAC/PRA)",
+                    "gold_standard": "تست تاییدی انفوزیون سالین و سی‌تی اسکن آدرنال"
+                },
+                "pharmacology_and_management": [
+                    {
+                        "drug_class": "اسپیرونولاکتون",
+                        "mechanism": "آنتاگونیست رقابتی گیرنده مینرالوکورتیکوئید با دوز ۲۵ تا ۵۰ میلی‌گرم روزانه",
+                        "indications": "هایپرپلازی دوطرفه کورتکس آدرنال یا پیش از جراحی",
+                        "contraindications": "هایپرکالمی و نارسایی کلیه",
+                        "exam_pearl": "درمان قطعی آدنوم یک‌طرفه جراحی لاپاروسکوپی است."
+                    },
+                    {
+                        "drug_class": "اپلرنون",
+                        "mechanism": "آنتاگونیست اختصاصی بدون اثرات فمنیزاسیون و ژنیکوماستی",
+                        "indications": "عدم تحمل اسپیرونولاکتون یا بیماران باردار",
+                        "contraindications": "هایپرکالمی",
+                        "exam_pearl": "عدم بروز عوارض آنتی‌آندروژنیک نسبت به اسپیرونولاکتون."
+                    }
+                ],
+                "special_populations_and_pregnancy": [
+                    "مصرف اسپیرونولاکتون در بارداری به علت عوارض فمنیزاسیون جنین پسر اکیداً ممنوع بوده و داروی اپلرنون تجویز می‌گردد."
+                ],
+                "differential_diagnosis": [
+                    {"disease": "سندرم بارتر", "distinguishing_feature": "موتاسیون در ترانسپورتر NKCC2 قوس لوله هنله"},
+                    {"disease": "سندرم گیتلمن", "distinguishing_feature": "جهش در ترانسپورتر NCCT توبول دیستال"}
+                ],
+                "contraindications_and_warnings": [
+                    "هشدار: مصرف اسپیرونولاکتون در حاملگی به دلیل مهار آندروژن جنین پسر کنترااندیکه قطعی است."
+                ],
+                "high_yield_pearls": [
+                    "پدیده فرار آلدوسترون (Aldosterone Escape) مانع از بروز ادم محیطی بارز در سندرم کان می‌شود."
+                ]
+            }
+        ]
+    }
+
+    # 1. Audit Coverage & Compression Validation
+    audit_rep = audit_coverage(source_lecture, summary_data)
+    assert audit_rep["verdict"] == "PASSED", f"Coverage audit failed: {audit_rep}"
+    assert audit_rep["scores"]["numerical_coverage_pct"] >= 90.0, f"Low numerical coverage: {audit_rep['scores']['numerical_coverage_pct']}"
+    assert audit_rep["scores"]["entity_recall_pct"] >= 90.0, f"Low entity recall: {audit_rep['scores']['entity_recall_pct']}"
+    assert audit_rep["scores"]["contraindications_omitted_count"] == 0, "Lethal contraindications dropped!"
+    assert audit_rep["scores"]["illness_script_compliant"], "Illness script integrity failed!"
+    assert not audit_rep["scores"]["verbatim_bloat_detected"], "Bloat detected in ultra-condensed summary!"
+    assert 0.20 <= audit_rep["scores"]["compression_ratio"] <= 0.65, f"Compression ratio out of range: {audit_rep['scores']['compression_ratio']}"
+
+    # 2. Global Synthesis Validation (Master Matrices & Checklist)
+    ensure_master_matrices(summary_data)
+    assert "last_minute_crash_sheet" in summary_data, "Crash sheet missing!"
+    assert len(summary_data["last_minute_crash_sheet"]["rows"]) == 3, "Crash sheet missing module rows!"
+    assert "master_pharmacology_matrix" in summary_data, "Master pharm matrix missing!"
+    assert len(summary_data["master_pharmacology_matrix"]["rows"]) == 2, "Pharm matrix missing drug rows!"
+    assert "morning_exam_checklist" in summary_data, "Morning checklist missing!"
+    assert len(summary_data["morning_exam_checklist"]) >= 4, "Morning checklist under-synthesized!"
+
+    # 3. Deliverables Generation & Parity
+    out_docx = "dist/diag_test_af_study_guide.docx"
+    out_md = "dist/diag_test_af_summary.md"
+    out_html = "dist/diag_test_af_view.html"
+    out_pdf = "dist/diag_test_af_print.pdf"
+    out_tsv = "dist/diag_test_af_anki.tsv"
+    out_apkg = "dist/diag_test_af_anki.apkg"
+
+    for p in [out_docx, out_md, out_html, out_pdf, out_tsv, out_apkg]:
+        if os.path.exists(p):
+            os.remove(p)
+
+    build_docx_summary(summary_data, out_docx)
+    build_markdown_summary(summary_data, out_md)
+    build_html_summary(summary_data, out_html)
+    build_pdf_summary(out_html, out_pdf, course_name="فیزیوپاتولوژی غدد و کلیه")
+    build_anki_tsv(summary_data, out_tsv)
+    build_anki_apkg(summary_data, out_apkg)
+
+    # Deliverable file assertions
+    assert os.path.exists(out_docx) and os.path.getsize(out_docx) > 5000, "DOCX generation failed!"
+    assert os.path.exists(out_md) and os.path.getsize(out_md) > 1000, "Markdown generation failed!"
+    assert os.path.exists(out_html) and os.path.getsize(out_html) > 1000, "HTML generation failed!"
+    assert os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 10000, "PDF generation failed!"
+    assert os.path.exists(out_tsv) and os.path.getsize(out_tsv) > 500, "Anki TSV generation failed!"
+    assert os.path.exists(out_apkg) and os.path.getsize(out_apkg) > 1000, "Anki APKG generation failed!"
+
+    # Content assertions
+    with open(out_md, "r", encoding="utf-8") as f_md:
+        md_text = f_md.read()
+    assert ("اقدامات اورژانس و احیای فوری" in md_text or "Emergency Resuscitation" in md_text), "Emergency protocol box missing in Markdown!"
+    assert "سالین ۳ درصد" in md_text, "3% Saline missing in Markdown!"
+    assert ("مرحله‌بندی" in md_text or "معیار" in md_text), "Diagnostic criteria missing in Markdown!"
+    assert ("ملاحظات" in md_text and "بارداری" in md_text), "Pregnancy callout missing in Markdown!"
+    assert ("کپسول طلایی شب امتحان" in md_text or "Cheat Sheet" in md_text), "Crash sheet missing in Markdown!"
+
+    with open(out_html, "r", encoding="utf-8") as f_html:
+        html_text = f_html.read()
+    assert "دانشگاه بق" in html_text, "Institution 'دانشگاه بق' missing in HTML header!"
+    assert "callout-emergency" in html_text, "Emergency callout CSS class missing in HTML!"
+
+    with open(out_tsv, "r", encoding="utf-8") as f_tsv:
+        tsv_lines = [l.strip() for l in f_tsv if l.strip()]
+    assert len(tsv_lines) >= 15, f"Expected >= 15 Anki cloze cards, got {len(tsv_lines)}"
+    assert all("{{c1::" in line for line in tsv_lines), "Not all Anki cards contain cloze deletions!"
+
+    print("[PASS] Bug AF Test Passed: Capstone compact, high-yield, comprehensive quad-pack verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1539,4 +1752,5 @@ if __name__ == "__main__":
     test_bug_ac_staging_classification_and_diagnostic_criteria_support()
     test_bug_ad_emergency_and_special_populations_support()
     test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
+    test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

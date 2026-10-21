@@ -1719,6 +1719,111 @@ def test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack():
 
     print("[PASS] Bug AF Test Passed: Capstone compact, high-yield, comprehensive quad-pack verified.")
 
+def test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline():
+    """Bug AG: Visual Diagram Engine (High-DPI Mermaid rendering) and Multimodal Visual Asset Ingestion."""
+    from build_summary_pack import (
+        render_mermaid_diagram_to_png,
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        get_or_synthesize_flashcards,
+        build_anki_tsv,
+        build_anki_apkg
+    )
+    from audit_summary_coverage import audit_coverage
+
+    # 1. Test High-DPI Mermaid rendering to PNG via Playwright
+    test_png = "dist/diag_test_ag_diagram.png"
+    if os.path.exists(test_png):
+        os.remove(test_png)
+
+    mermaid_code = """
+    graph TD
+        CRH["هیپوتالاموس: ترشح CRH"] --> ACTH["هیپوفیز قدامی: ترشح ACTH"]
+        ACTH --> Cortisol["کورتکس آدرنال: ترشح کورتیزول"]
+        Cortisol -.->|"فیدبک منفی"| CRH
+        Cortisol -.->|"فیدبک منفی"| ACTH
+    """
+    rendered = render_mermaid_diagram_to_png(mermaid_code, test_png, title="محور هیپوتالاموس-هیپوفیز-آدرنال")
+    assert rendered, "Failed to render Mermaid diagram to PNG via Playwright!"
+    assert os.path.exists(test_png) and os.path.getsize(test_png) > 1000, "Rendered PNG file missing or empty!"
+
+    # 2. Test Multi-Format Deliverables with Diagrams and Visual Atlas
+    data = {
+        "topic_title": "نئوپلاسم‌های هیپوفیز و غدد درون‌ریز",
+        "organ_system": "غدد درون‌ریز",
+        "modules": [
+            {
+                "name": "آدنوم هیپوفیز (Pituitary Adenoma)",
+                "diagram_image_path": test_png,
+                "diagram_title": "الگوریتم رویکرد به توده هیپوفیز",
+                "visual_atlas": [
+                    {
+                        "title": "گرافی MRI ساجیتال توده ماکروآدنوم هیپوفیز",
+                        "image_path": test_png,
+                        "clinical_findings": "توده سوپراسلار با قطر بالای ۱۰ میلی‌متر و فشار بر کیاسمای بینایی",
+                        "exam_pearl": "شایع‌ترین تظاهر فشاری، نقص میدان بینایی دوطرفه تمپورال (Bitemporal Hemianopsia) است."
+                    }
+                ],
+                "diagnostics": {
+                    "best_initial_test": "سنجش سطح سرمی پرولاکتین و MRI هیپوفیز با گادولینیوم",
+                    "gold_standard": "بررسی پاتولوژی پس از رزکسیون ترانس‌اسفنوئیدال (TSS)"
+                },
+                "high_yield_pearls": [
+                    "میکروآدنوم (<۱۰mm) در برابر ماکروآدنوم (>=۱۰mm) نیازمند ارزیابی چشمی و پریمتری است."
+                ]
+            }
+        ],
+        "visual_atlas": [
+            {
+                "title": "علامت پمبرتون (Pemberton Sign) در گواتر غوطه‌ور",
+                "image_path": test_png,
+                "clinical_findings": "برافروختگی و پرخونی صورت (Facial Plethora) پس از بالا بردن بازوها به مدت ۱ دقیقه",
+                "exam_pearl": "نشان‌دهنده انسداد توراسیک اینلت (Thoracic Inlet Obstruction) توسط گواتر رترواسترنال است."
+            }
+        ]
+    }
+
+    # 3. Test DOCX generation with diagrams and atlas
+    out_docx = "dist/diag_test_ag.docx"
+    build_docx_summary(data, out_docx)
+    assert os.path.exists(out_docx) and os.path.getsize(out_docx) > 5000, "DOCX study guide with diagrams and atlas failed!"
+
+    # 4. Test Markdown generation with diagrams and atlas
+    out_md = "dist/diag_test_ag.md"
+    build_markdown_summary(data, out_md)
+    with open(out_md, "r", encoding="utf-8") as f_md:
+        md_text = f_md.read()
+    assert "📸 اطلس تصویری و تحلیل اسلایدهای بالینی" in md_text, "Visual Atlas missing in Markdown!"
+    assert "گرافی MRI ساجیتال" in md_text, "MRI figure caption missing in Markdown!"
+    assert "علامت پمبرتون" in md_text, "Top-level visual atlas missing in Markdown!"
+
+    # 5. Test HTML generation with diagram styles and cards
+    out_html = "dist/diag_test_ag.html"
+    build_html_summary(data, out_html)
+    with open(out_html, "r", encoding="utf-8") as f_html:
+        html_text = f_html.read()
+    assert "diagram-card" in html_text, "diagram-card class missing in HTML!"
+    assert "figure-card" in html_text, "figure-card class missing in HTML!"
+    assert "mermaid" in html_text, "Mermaid script/support missing in HTML!"
+    assert "علامت پمبرتون" in html_text, "Pemberton figure missing in HTML!"
+
+    # 6. Test Anki Flashcard Synthesis from Visual Atlas
+    cards = get_or_synthesize_flashcards(data)
+    atlas_cards = [c for c in cards if "VisualAtlas" in c.get("tag", "")]
+    assert len(atlas_cards) >= 2, f"Expected at least 2 Visual Atlas Anki cards, got: {len(atlas_cards)}"
+    assert any("MRI" in c["text"] or "ماکروآدنوم" in c["text"] for c in atlas_cards), "MRI atlas card missing!"
+    assert any("پمبرتون" in c["text"] for c in atlas_cards), "Pemberton atlas card missing!"
+
+    # 7. Test Audit Reporting of Visual Atlas
+    src_text = "ماکروآدنوم هیپوفیز بالای ۱۰ میلی‌متر با درگیری کیاسمای بینایی. علامت پمبرتون در گواتر رترواسترنال."
+    audit_rep = audit_coverage(src_text, data)
+    assert "visual_atlas_audit" in audit_rep, "visual_atlas_audit missing from coverage report!"
+    assert audit_rep["visual_atlas_audit"]["total_figures"] >= 2, "Visual atlas audit failed to count figures!"
+    assert audit_rep["visual_atlas_audit"]["annotated_with_findings_or_pearls"] >= 2, "Visual atlas annotations not audited!"
+
+    print("[PASS] Bug AG Test Passed: Visual diagram rendering and multimodal visual atlas pipeline verified across DOCX, MD, HTML, Anki, and Audit.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -1753,4 +1858,5 @@ if __name__ == "__main__":
     test_bug_ad_emergency_and_special_populations_support()
     test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
     test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
+    test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

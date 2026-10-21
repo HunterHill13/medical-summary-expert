@@ -607,6 +607,21 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     # or if individual bullets contain verbatim paragraph dumps (>120 words).
     verbatim_bloat_detected = bool((src_words >= 300 and compression_ratio > 0.85) or has_bloated_bullet)
 
+    # 8. Visual Atlas & Clinical Slide Inspection Audit
+    visual_atlas_items = []
+    if summary_data.get("visual_atlas") and isinstance(summary_data["visual_atlas"], list):
+        visual_atlas_items.extend(summary_data["visual_atlas"])
+    if summary_data.get("clinical_figures") and isinstance(summary_data["clinical_figures"], list):
+        visual_atlas_items.extend(summary_data["clinical_figures"])
+    for mod in (summary_data.get("modules") or []):
+        if isinstance(mod, dict):
+            m_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+            if isinstance(m_figs, list):
+                visual_atlas_items.extend(m_figs)
+
+    valid_atlas_count = sum(1 for f in visual_atlas_items if isinstance(f, dict) and (f.get("image_path") or f.get("path") or f.get("src")))
+    atlas_with_pearls = sum(1 for f in visual_atlas_items if isinstance(f, dict) and (f.get("exam_pearl") or f.get("caption") or f.get("clinical_findings")))
+
     passed = (
         num_coverage_pct >= 80.0
         and entity_recall_pct >= 85.0
@@ -641,6 +656,11 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "compression_ratio": compression_ratio,
             "verbatim_bloat_detected": verbatim_bloat_detected,
             "high_yield_compressed": bool(0.10 <= compression_ratio <= 0.85)
+        },
+        "visual_atlas_audit": {
+            "total_figures": len(visual_atlas_items),
+            "valid_image_figures": valid_atlas_count,
+            "annotated_with_findings_or_pearls": atlas_with_pearls
         },
         "total_source_clinical_numbers": len(source_nums),
         "total_omitted_numbers_count": len(unique_omissions),

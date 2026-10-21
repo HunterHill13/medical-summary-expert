@@ -355,6 +355,196 @@ def add_figure_block(doc, image_path: str, caption: str):
         add_r(p_cap, f"🔍 تصویر آموزشی: {caption}", font_name=FONT_DUBAI, size_pt=9.5, italic=True,
               color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
 
+def add_diagram_picture_block(doc, image_path: str, title: str = "دیاگرام الگوریتم بالینی و مسیر پاتوفیزیولوژی"):
+    """Embeds a rendered High-DPI Mermaid diagram into Word with center alignment and clear caption."""
+    if not image_path or not os.path.exists(image_path):
+        return
+    p_img = doc.add_paragraph()
+    p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_img.paragraph_format.space_before = Pt(8)
+    p_img.paragraph_format.space_after = Pt(3)
+    run_img = p_img.add_run()
+    try:
+        run_img.add_picture(image_path, width=Inches(5.8))
+    except Exception as e:
+        print(f"[WARN] Could not embed diagram picture {image_path}: {e}")
+        return
+
+    if title:
+        p_cap = doc.add_paragraph()
+        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_cap.paragraph_format.space_before = Pt(2)
+        p_cap.paragraph_format.space_after = Pt(8)
+        add_r(p_cap, f"🧬 {title}", font_name=FONT_DUBAI, size_pt=9.5, bold=True,
+              color_rgb=(0x29, 0x80, 0xB9), is_rtl=True)
+
+def add_visual_atlas_section(doc, figures: List[Dict[str, Any]], title: str = "📸 اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد"):
+    """
+    Renders the dedicated Multimodal Visual Atlas in Word (.docx) with High-DPI pictures,
+    centered alignment, and structured diagnostic captioning (landmarks, findings, exam pearls).
+    """
+    if not figures or not isinstance(figures, list):
+        return
+    valid_figs = []
+    for f in figures:
+        if isinstance(f, dict):
+            f_p = f.get("image_path") or f.get("path") or f.get("src")
+            if f_p and os.path.exists(f_p):
+                valid_figs.append(f)
+    if not valid_figs:
+        return
+
+    p_hdr = doc.add_paragraph()
+    set_p_rtl(p_hdr, space_before_pt=16, space_after_pt=6)
+    add_r(p_hdr, title, font_name=FONT_DUBAI, size_pt=13.0, bold=True,
+          color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+
+    for fig in valid_figs:
+        f_p = fig.get("image_path") or fig.get("path") or fig.get("src")
+        f_title = fig.get("title", "تصویر اسلاید کلاسی")
+        f_caption = fig.get("caption") or fig.get("clinical_findings") or ""
+        f_pearl = fig.get("exam_pearl") or ""
+
+        # Centered Image
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.paragraph_format.space_before = Pt(6)
+        p_img.paragraph_format.space_after = Pt(2)
+        run_img = p_img.add_run()
+        try:
+            run_img.add_picture(f_p, width=Inches(4.8))
+        except Exception as e:
+            print(f"[WARN] Could not embed atlas image {f_p}: {e}")
+            continue
+
+        # Structured Caption
+        p_cap = doc.add_paragraph()
+        set_p_rtl(p_cap, space_before_pt=2, space_after_pt=8)
+        p_cap.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        add_r(p_cap, f"📷 {f_title}\n", font_name=FONT_DUBAI, size_pt=10.0, bold=True,
+              color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+        if f_caption:
+            add_r(p_cap, f"• تحلیل یافته‌های بالینی و رادیولوژیک: {f_caption}", font_name=FONT_DUBAI, size_pt=9.5,
+                  bold=False, color_rgb=COLOR_TEXT_CHARCOAL, is_rtl=True)
+        if f_pearl:
+            p_cap.add_run("\n")
+            add_r(p_cap, f"⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}", font_name=FONT_DUBAI, size_pt=9.5,
+                  bold=True, color_rgb=(0xD3, 0x54, 0x00), is_rtl=True)
+
+def render_mermaid_diagram_to_png(
+    mermaid_code: str,
+    output_png_path: str,
+    title: str = "دیاگرام الگوریتم بالینی",
+    min_width_px: int = 480,
+    output_svg_path: Optional[str] = None
+) -> bool:
+    """
+    Renders a Mermaid flowchart/diagram to a High-DPI transparent PNG image
+    using Playwright with a specialized clinical theme and Persian typography.
+    """
+    if not mermaid_code or not str(mermaid_code).strip():
+        return False
+
+    if os.path.exists(output_png_path) and os.path.getsize(output_png_path) > 1000:
+        return True
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_png_path)), exist_ok=True)
+
+    edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    exec_path = edge_exe if os.path.exists(edge_exe) else None
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({{
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {{
+                fontFamily: 'Dubai, Vazirmatn, Segoe UI, Tahoma, sans-serif',
+                primaryColor: '#EBF5FB',
+                primaryBorderColor: '#2980B9',
+                primaryTextColor: '#1A5276',
+                lineColor: '#2980B9',
+                secondaryColor: '#FEF9E7',
+                tertiaryColor: '#FDEDEC',
+                edgeLabelBackground: '#ffffff',
+                fontSize: '13px'
+            }}
+        }});
+    </script>
+    <style>
+        body {{
+            background: #ffffff;
+            margin: 0;
+            padding: 16px;
+            font-family: 'Dubai', 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+            direction: rtl;
+        }}
+        .card {{
+            border: 1.5px solid #2980B9;
+            border-radius: 10px;
+            padding: 16px 20px;
+            background: #FAFCFD;
+            box-shadow: 0 4px 12px rgba(41, 128, 185, 0.08);
+            display: inline-block;
+            min-width: {min_width_px}px;
+            text-align: center;
+        }}
+        .card-header {{
+            font-size: 14.5px;
+            font-weight: bold;
+            color: #1A5276;
+            margin-bottom: 14px;
+            border-bottom: 1.5px solid #AED6F1;
+            padding-bottom: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }}
+        .mermaid {{
+            display: flex;
+            justify-content: center;
+        }}
+        .mermaid svg {{
+            max-width: 100% !important;
+            height: auto !important;
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="card-header">🧬 {title}</div>
+        <div class="mermaid">
+{mermaid_code.strip()}
+        </div>
+    </div>
+</body>
+</html>"""
+
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(executable_path=exec_path, headless=True)
+            page = browser.new_page(device_scale_factor=2)
+            page.set_content(html_content)
+            page.wait_for_selector(".mermaid svg", timeout=12000)
+            card_el = page.locator(".card")
+            card_el.screenshot(path=output_png_path)
+            if output_svg_path:
+                svg_content = page.locator(".mermaid").inner_html()
+                os.makedirs(os.path.dirname(os.path.abspath(output_svg_path)), exist_ok=True)
+                with open(output_svg_path, "w", encoding="utf-8") as sf:
+                    sf.write(f'<div class="diagram-card"><div class="diagram-header">🧬 {title}</div>{svg_content}</div>')
+            browser.close()
+        return True
+    except Exception as ex:
+        print(f"[WARN] Mermaid diagram render fallback: {ex}")
+        return False
+
 def add_clinical_vignettes(doc, vignettes: List[Dict[str, Any]]):
     """Renders active recall case scenarios with choices, correct answers and pathophysiological rationale."""
     if not vignettes:
@@ -1122,10 +1312,28 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                         icon="📋"
                     )
 
-        # Embedded Figures (if any)
-        for fig in (mod.get("figures") or []):
-            if isinstance(fig, dict):
-                add_figure_block(doc, fig.get("path", ""), fig.get("caption", ""))
+        # Diagram Rendering (Playwright PNG embed - Dual-Target High-DPI Engine)
+        diag_png = mod.get("diagram_image_path") or mod.get("diagram_png")
+        m_code = mod.get("mermaid_code") or mod.get("flowchart_mermaid") or mod.get("pathophysiology_cascade_mermaid") or mod.get("algorithm_mermaid")
+        d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و مسیر پاتوفیزیولوژی {mod_name}"
+
+        if not diag_png and m_code:
+            m_hash = hashlib.md5(m_code.strip().encode("utf-8")).hexdigest()[:10]
+            candidate_png = os.path.join("dist", "diagrams", f"diag_{m_hash}.png")
+            if render_mermaid_diagram_to_png(m_code, candidate_png, title=d_title):
+                diag_png = candidate_png
+
+        if diag_png and os.path.exists(diag_png):
+            add_diagram_picture_block(doc, diag_png, title=d_title)
+
+        # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
+        atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+        if atlas_figs:
+            add_visual_atlas_section(doc, atlas_figs)
+        elif mod.get("figures"):
+            for fig in (mod.get("figures") or []):
+                if isinstance(fig, dict):
+                    add_figure_block(doc, fig.get("path", ""), fig.get("caption", ""))
 
         # Clinical Vignettes (Active Recall MCQs)
         if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
@@ -1181,6 +1389,13 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     # -----------------------------------------------------------------------
     if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
         add_morning_exam_checklist(doc, data["morning_exam_checklist"])
+
+    # -----------------------------------------------------------------------
+    # Multimodal Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد)
+    # -----------------------------------------------------------------------
+    top_atlas = data.get("visual_atlas") or data.get("clinical_figures")
+    if top_atlas and isinstance(top_atlas, list):
+        add_visual_atlas_section(doc, top_atlas)
 
     # Save Word Document
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -1542,6 +1757,35 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                     lines.append(f"*تحلیل فیزیوپاتولوژی:* {v['rationale']}\n")
                 lines.append("</details>\n")
 
+        # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
+        atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+        if atlas_figs:
+            lines.append(f"### 📸 اطلس تصویری و تحلیل اسلایدهای بالینی {m_name}\n")
+            for fig in atlas_figs:
+                if not isinstance(fig, dict):
+                    continue
+                f_title = fig.get("title", "تصویر اسلاید کلاسی")
+                f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+                f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+                f_pearl = fig.get("exam_pearl") or ""
+                lines.append(f"> **📷 {f_title}**")
+                if f_p:
+                    lines.append(f"> ![{f_title}]({f_p})")
+                if f_cap:
+                    lines.append(f"> - **• تحلیل یافته‌های بالینی و رادیولوژیک:** {f_cap}")
+                if f_pearl:
+                    lines.append(f"> - **⭐ نکته کلیدی استاد / تله امتحانی:** {f_pearl}")
+                lines.append("")
+        elif mod.get("figures"):
+            for fig in (mod.get("figures") or []):
+                if isinstance(fig, dict):
+                    f_p = fig.get("path", "")
+                    f_cap = fig.get("caption", "")
+                    if f_p:
+                        lines.append(f"![{f_cap}]({f_p})")
+                    if f_cap:
+                        lines.append(f"*{f_cap}*\n")
+
     # Track 4: Clinical Semiology & Physical Examination (سمیولوژی و معاینات بالینی)
     if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
         lines.append("## 🩺 سمیولوژی و معاینه بالینی (Track 4: Clinical Semiology & Physical Examination)\n")
@@ -1602,6 +1846,26 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
             lines.append(f"- [ ] **{idx}.** {item}")
         lines.append("")
+
+    # Multimodal Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد)
+    top_atlas = data.get("visual_atlas") or data.get("clinical_figures")
+    if top_atlas and isinstance(top_atlas, list):
+        lines.append("## 📸 اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد\n")
+        for fig in top_atlas:
+            if not isinstance(fig, dict):
+                continue
+            f_title = fig.get("title", "تصویر اسلاید کلاسی")
+            f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+            f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+            f_pearl = fig.get("exam_pearl") or ""
+            lines.append(f"> **📷 {f_title}**")
+            if f_p:
+                lines.append(f"> ![{f_title}]({f_p})")
+            if f_cap:
+                lines.append(f"> - **• تحلیل یافته‌های بالینی و رادیولوژیک:** {f_cap}")
+            if f_pearl:
+                lines.append(f"> - **⭐ نکته کلیدی استاد / تله امتحانی:** {f_pearl}")
+            lines.append("")
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
@@ -1807,6 +2071,26 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "tag": f"PhysioPath::{mod_name}::ClinicalRelevance"
                 })
 
+        # Synthesize from Module-level Visual Atlas (اطلس تصویری و اسلایدهای بالینی)
+        mod_atlas = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+        for fig in mod_atlas:
+            if isinstance(fig, dict):
+                f_title = str(fig.get("title") or "تصویر اسلاید کلاسی").strip()
+                f_cap = str(fig.get("caption") or fig.get("clinical_findings") or "").strip()
+                f_pearl = str(fig.get("exam_pearl") or "").strip()
+                if f_cap:
+                    cards.append({
+                        "text": f"در تحلیل اسلاید بالینی {f_title} ({mod_name})، یافته کلیدی عبارت است از {{{{c1::{f_cap}}}}}.",
+                        "extra": f"نکته تکمیلی / تله امتحانی: {f_pearl}" if f_pearl else f"تحلیل اطلس تصویری و اسلایدهای بالینی مبحث {mod_name}.",
+                        "tag": f"PhysioPath::{mod_name}::VisualAtlas"
+                    })
+                elif f_pearl:
+                    cards.append({
+                        "text": f"نکته کلیدی استاد در اسلاید بالینی {f_title} ({mod_name}): {{{{c1::{f_pearl}}}}}",
+                        "extra": f"نکته دامی آزمون در اطلس تصویری مبحث {mod_name}.",
+                        "tag": f"PhysioPath::{mod_name}::VisualAtlas"
+                    })
+
     # Synthesize from Top-Level Clinical Semiology (Track 4)
     topic_name = data.get("topic_title", "General")
     for sem in (data.get("clinical_semiology") or []):
@@ -1819,6 +2103,26 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "extra": f"روش و اهمیت بالینی سمیولوژی: {tech} ← {sig}",
                 "tag": f"PhysioPath::{topic_name}::Semiology"
             })
+
+    # Synthesize from Top-Level Multimodal Visual Atlas (اطلس تصویری تدریس استاد)
+    top_atlas = data.get("visual_atlas") or data.get("clinical_figures") or []
+    for fig in top_atlas:
+        if isinstance(fig, dict):
+            f_title = str(fig.get("title") or "تصویر اسلاید کلاسی").strip()
+            f_cap = str(fig.get("caption") or fig.get("clinical_findings") or "").strip()
+            f_pearl = str(fig.get("exam_pearl") or "").strip()
+            if f_cap:
+                cards.append({
+                    "text": f"در اطلس تصویری و اسلایدهای تدریس استاد ({f_title})، یافته بالینی/رادیولوژیک کلیدی عبارت است از {{{{c1::{f_cap}}}}}.",
+                    "extra": f"نکته تکمیلی / تله امتحانی: {f_pearl}" if f_pearl else f"تحلیل اطلس تصویری دوره {topic_name}.",
+                    "tag": f"PhysioPath::{topic_name}::VisualAtlas"
+                })
+            elif f_pearl:
+                cards.append({
+                    "text": f"نکته طلایی استاد در اسلاید بالینی {f_title}: {{{{c1::{f_pearl}}}}}",
+                    "extra": f"نکته تشخیصی اطلس تصویری دوره {topic_name}.",
+                    "tag": f"PhysioPath::{topic_name}::VisualAtlas"
+                })
     return cards
 
 
@@ -2144,7 +2448,80 @@ tr:nth-child(even) { background-color: #FDFEFE; }
     font-weight: bold;
     margin-left: 6px;
 }
+.diagram-card {
+    margin: 16px 0;
+    padding: 14px;
+    background: #FDFEFE;
+    border: 1px solid #BDC3C7;
+    border-radius: 6px;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.diagram-header {
+    font-weight: bold;
+    color: #1A5276;
+    margin-bottom: 10px;
+    font-size: 11pt;
+}
+.diagram-img {
+    max-width: 95%;
+    height: auto;
+    border-radius: 4px;
+    margin: 0 auto;
+    display: block;
+}
+.figure-card {
+    margin: 14px 0;
+    padding: 12px;
+    background: #FDFEFE;
+    border: 1px solid #D5D8DC;
+    border-right: 4px solid #78281F;
+    border-radius: 4px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.figure-header {
+    font-weight: bold;
+    color: #78281F;
+    font-size: 11pt;
+    margin-bottom: 8px;
+}
+.figure-img {
+    max-width: 85%;
+    height: auto;
+    border-radius: 4px;
+    display: block;
+    margin: 0 auto 10px auto;
+    border: 1px solid #E5E7E9;
+}
+.figure-caption {
+    font-size: 9.5pt;
+    color: #2C3E50;
+    line-height: 1.6;
+    margin-bottom: 4px;
+}
+.figure-pearl {
+    font-size: 9.5pt;
+    color: #D35400;
+    font-weight: bold;
+    line-height: 1.6;
+    background: #FEF9E7;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border-right: 3px solid #D35400;
+}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        if (window.mermaid) {
+            mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+        }
+    });
+</script>
 </head>
 <body>
 <div class="container">
@@ -2464,6 +2841,41 @@ tr:nth-child(even) { background-color: #FDFEFE; }
                     html_parts.append(f'<details style="margin-top: 8px; cursor: pointer;"><summary style="font-weight: bold; color: #0E6251;">مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</summary><div style="padding: 8px 12px; background: #FAF9F6; margin-top: 4px; border-right: 3px solid #0E6251;"><b>✓ {corr}</b><br><i>تحلیل مکانیسمی: {rat}</i></div></details>')
                     html_parts.append('</div></div>')
 
+        # Embedded Diagrams (Mermaid / Rendered High-DPI PNG)
+        d_img = mod.get("diagram_image_path") or mod.get("diagram_png_path")
+        d_code = mod.get("mermaid_code") or mod.get("mermaid_diagram") or (mod.get("diagram") if isinstance(mod.get("diagram"), str) else None)
+        d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و پاتوفیزیولوژی {m_name}"
+        if d_img or d_code:
+            html_parts.append('<div class="diagram-card">')
+            html_parts.append(f'<div class="diagram-header">🧬 {d_title}</div>')
+            if d_img and os.path.exists(d_img):
+                html_parts.append(f'<img class="diagram-img" src="{d_img}" alt="{d_title}" />')
+            elif d_code:
+                clean_mermaid = clean_mermaid_code(d_code)
+                html_parts.append(f'<div class="mermaid">{clean_mermaid}</div>')
+            html_parts.append('</div>')
+
+        # Module-level Multimodal Visual Atlas (اطلس تصویری و اسلایدهای بالینی)
+        mod_atlas = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+        if mod_atlas:
+            html_parts.append(f'<div class="section-title">📸 اطلس تصویری و اسلایدهای بالینی {m_name}</div>')
+            for fig in mod_atlas:
+                if not isinstance(fig, dict):
+                    continue
+                f_title = fig.get("title", "تصویر اسلاید کلاسی")
+                f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+                f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+                f_pearl = fig.get("exam_pearl") or ""
+                html_parts.append('<div class="figure-card">')
+                html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
+                if f_p:
+                    html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
+                if f_cap:
+                    html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
+                if f_pearl:
+                    html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}</div>')
+                html_parts.append('</div>')
+
     # Top-Level Track 4: Clinical Semiology
     if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
         html_parts.append('<h2 style="color: #0E6251; border-bottom: 2px solid #16A085; padding-bottom: 6px; margin-top: 30px;">🩺 سمیولوژی و معاینه بالینی (Track 4: Clinical Semiology & Physical Examination)</h2>')
@@ -2549,6 +2961,27 @@ tr:nth-child(even) { background-color: #FDFEFE; }
         html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
             html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {item}</span></div>')
+
+    # Multimodal Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد)
+    top_atlas = data.get("visual_atlas") or data.get("clinical_figures")
+    if top_atlas and isinstance(top_atlas, list):
+        html_parts.append('<h2 style="color: #78281F; border-bottom: 2px solid #78281F; padding-bottom: 6px; margin-top: 30px;">📸 اطلس تصویری و تحلیل اسلایدهای بالینی تدریس استاد</h2>')
+        for fig in top_atlas:
+            if not isinstance(fig, dict):
+                continue
+            f_title = fig.get("title", "تصویر اسلاید کلاسی")
+            f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+            f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+            f_pearl = fig.get("exam_pearl") or ""
+            html_parts.append('<div class="figure-card">')
+            html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
+            if f_p:
+                html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
+            if f_cap:
+                html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
+            if f_pearl:
+                html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}</div>')
+            html_parts.append('</div>')
 
     html_parts.append('</div></body></html>')
     full_html = "\n".join(html_parts)

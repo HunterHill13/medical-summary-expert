@@ -150,6 +150,17 @@ def parse_docx(file_path: str, extract_images: bool = True, img_out_dir: str = "
                     img_data = rel.target_part.blob
                 except Exception:
                     continue
+                # Filter out tiny decorative icons, bullet markers, and spacer graphics (< 3KB = 3072 bytes)
+                if len(img_data) < 3072:
+                    continue
+                try:
+                    import io
+                    from PIL import Image
+                    im = Image.open(io.BytesIO(img_data))
+                    if im.width < 80 or im.height < 80:
+                        continue
+                except Exception:
+                    pass
                 ext = rel.target_ref.split(".")[-1].lower() if "." in rel.target_ref else "png"
                 if len(ext) > 5 or "/" in ext or "\\" in ext:
                     ext = "png"

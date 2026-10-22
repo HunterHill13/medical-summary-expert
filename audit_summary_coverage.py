@@ -559,6 +559,95 @@ def audit_markdown_alert_continuity(md_content: str) -> List[str]:
     return broken_lines
 
 
+def audit_concept_depth(norm_source: str, summary_data: Dict[str, Any], compression_ratio: float, src_words: int) -> Dict[str, Any]:
+    """
+    Evaluates whether the summary preserves adequate analytical depth and multi-line pathophysiology
+    or was aggressively truncated into dry single-word stubs.
+    Checks:
+    1. Average rows/bullets per major topic.
+    2. Flags major clinical topics present in source that have fewer than 3 analytical rows in summary.
+    3. Checks for extreme over-compression (compression_ratio < 0.08 on >=500 word source).
+    """
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    modules = summary_data.get("modules") or []
+
+    total_table_rows = sum(len(s.get("rows", [])) for s in sections if isinstance(s, dict))
+    avg_rows_per_section = round(total_table_rows / max(1, len(sections)), 2) if sections else 0.0
+
+    # Key high-yield clinical entities that warrant dedicated depth if present in source
+    major_candidate_keywords = [
+        ("CGMS", ["cgms", "cgm", "پایش مداوم قند", "tir", "time in range"]),
+        ("Diabetic_Nephropathy", ["نفروپاتی دیابتی", "کیملستیل", "kimmelstiel", "میکروآلبومینوری"]),
+        ("Diabetic_Retinopathy", ["رتینوپاتی", "npdr", "pdr", "ادم ماکولا"]),
+        ("Diabetic_Foot", ["زخم پای دیابتی", "شارکو", "نوروپاتی محیطی"]),
+        ("Somogyi_Dawn", ["داون", "سوموجی", "dawn", "somogyi"]),
+        ("Hypoglycemia_Protocols", ["هیپوگلیسمی", "rule of 15", "ویپل", "whipple"]),
+        ("Adrenal_Crisis", ["کرایزیس آدرنال", "بحران آدرنال", "شوک آدرنال"]),
+        ("Cushing_Diagnostics", ["دگزامتازون", "کوشینگ", "تست مهار"]),
+        ("Thyroid_Storm", ["طوفان تیروئیدی", "کریس تیروئید", "burch-wartofsky"]),
+        ("Myxedema_Coma", ["کمای میکزدم", "میکزدم"]),
+        ("Pheochromocytoma", ["فئوکروموسیتوم", "متانفرین", "آلفا بلوکر"]),
+        ("Primary_Aldosteronism", ["آلدوسترونیسم", "کان", "arr", "pac/pra"]),
+    ]
+
+    under_explained = []
+    norm_source_lower = norm_source.lower()
+    for topic_label, kws in major_candidate_keywords:
+        in_source = sum(norm_source_lower.count(kw) for kw in kws) >= 2 or (src_words >= 300 and any(kw in norm_source_lower for kw in kws))
+        if in_source:
+            topic_rows_count = 0
+            for sec in sections:
+                if isinstance(sec, dict):
+                    sec_title = str(sec.get("title") or sec.get("section_title") or "").lower()
+                    if any(kw in sec_title for kw in kws):
+                        topic_rows_count += len(sec.get("rows", []))
+                    else:
+                        for row in sec.get("rows", []):
+                            row_txt = " ".join(str(c) for c in row).lower()
+                            if any(kw in row_txt for kw in kws):
+                                topic_rows_count += 1
+            for mod in modules:
+                if isinstance(mod, dict):
+                    m_name = str(mod.get("name") or "").lower()
+                    if any(kw in m_name for kw in kws):
+                        topic_rows_count += 3
+
+            if topic_rows_count < 3:
+                under_explained.append({
+                    "topic": topic_label,
+                    "rows_or_bullets_found": topic_rows_count,
+                    "minimum_expected": 3,
+                    "status": "UNDER_EXPLAINED"
+                })
+
+    is_aggressively_truncated = bool(src_words >= 500 and compression_ratio < 0.08)
+    concept_depth_score = 100.0
+    if is_aggressively_truncated:
+        concept_depth_score -= 30.0
+    if under_explained:
+        concept_depth_score -= min(40.0, len(under_explained) * 10.0)
+    if sections and avg_rows_per_section < 2.0 and src_words >= 500:
+        concept_depth_score -= 15.0
+
+    concept_depth_score = max(0.0, round(concept_depth_score, 1))
+
+    if is_aggressively_truncated:
+        status = "AGGRESSIVELY_TRUNCATED"
+    elif under_explained or (src_words >= 500 and concept_depth_score < 75.0):
+        status = "UNDER_EXPLAINED"
+    else:
+        status = "OPTIMAL_DEPTH"
+
+    return {
+        "concept_depth_score": concept_depth_score,
+        "status": status,
+        "total_table_rows": total_table_rows,
+        "avg_rows_per_section": avg_rows_per_section,
+        "under_explained_topics": under_explained,
+        "is_aggressively_truncated": is_aggressively_truncated
+    }
+
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -700,6 +789,8 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     valid_atlas_count = sum(1 for f in visual_atlas_items if isinstance(f, dict) and (f.get("image_path") or f.get("path") or f.get("src")))
     atlas_with_pearls = sum(1 for f in visual_atlas_items if isinstance(f, dict) and (f.get("exam_pearl") or f.get("caption") or f.get("clinical_findings")))
 
+    concept_depth_report = audit_concept_depth(norm_source, summary_data, compression_ratio, src_words)
+
     passed = (
         num_coverage_pct >= 80.0
         and entity_recall_pct >= 85.0
@@ -707,10 +798,18 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         and len(omitted_warnings) == 0
         and illness_script_report["illness_script_compliant"]
         and not verbatim_bloat_detected
+        and (concept_depth_report["status"] != "AGGRESSIVELY_TRUNCATED")
     )
 
     if not passed:
-        verdict = "WARNING_VERBATIM_BLOAT_DETECTED" if (verbatim_bloat_detected and num_coverage_pct >= 80.0) else "WARNING_OMISSIONS_DETECTED"
+        if verbatim_bloat_detected and num_coverage_pct >= 80.0:
+            verdict = "WARNING_VERBATIM_BLOAT_DETECTED"
+        elif concept_depth_report["status"] == "AGGRESSIVELY_TRUNCATED":
+            verdict = "WARNING_AGGRESSIVELY_TRUNCATED"
+        elif concept_depth_report["status"] == "UNDER_EXPLAINED" and src_words >= 500:
+            verdict = "WARNING_UNDER_EXPLAINED"
+        else:
+            verdict = "WARNING_OMISSIONS_DETECTED"
     else:
         verdict = "PASSED"
 
@@ -726,8 +825,11 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "illness_script_compliant": illness_script_report["illness_script_compliant"],
             "pharmacology_skew_detected": illness_script_report["pharmacology_skew_detected"],
             "compression_ratio": compression_ratio,
-            "verbatim_bloat_detected": verbatim_bloat_detected
+            "verbatim_bloat_detected": verbatim_bloat_detected,
+            "concept_depth_score": concept_depth_report["concept_depth_score"],
+            "concept_depth_status": concept_depth_report["status"]
         },
+        "concept_retention_audit": concept_depth_report,
         "compression_audit": {
             "source_word_count": src_words,
             "summary_word_count": sum_words,

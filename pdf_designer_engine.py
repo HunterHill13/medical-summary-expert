@@ -505,8 +505,8 @@ class MedicalPDFDesigner:
             final_writer.add_page(base_p)
 
         os.makedirs(os.path.dirname(os.path.abspath(self.output_pdf_path)), exist_ok=True)
-        with open(self.output_pdf_path, "wb") as f:
-            final_writer.write(f)
+        from build_summary_pack import safe_write_pdf
+        written_path = safe_write_pdf(self.output_pdf_path, lambda f: final_writer.write(f))
 
-        print(f"[OK] Publication-Grade PDF Generated: {self.output_pdf_path} ({total_pages} pages)")
-        return self.output_pdf_path
+        print(f"[OK] Publication-Grade PDF Generated: {written_path} ({total_pages} pages)")
+        return written_path

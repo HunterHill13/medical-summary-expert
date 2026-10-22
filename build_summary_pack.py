@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import re
+import html
 import argparse
 import hashlib
 import io
@@ -270,6 +271,76 @@ def render_formula_html(raw_f_code: str, title: str = "") -> str:
         """
 
 
+def sanitize_anki_html(text: str) -> str:
+    """
+    Escapes standalone comparison operators (<, >) into HTML entities (&lt;, &gt;)
+    to prevent GenAnki UserWarnings and broken card rendering,
+    while strictly preserving valid HTML tags (<br>, <b>, <strong>, <span>, etc.)
+    and Cloze deletions ({{c1::...}}).
+    """
+    if not text:
+        return ""
+    valid_tag_pattern = re.compile(r'(</?(?:b|strong|i|em|u|br|span|div|hr|sub|sup)(?:\s+[^<>]*)?>)', re.IGNORECASE)
+    parts = valid_tag_pattern.split(str(text))
+    out = []
+    for part in parts:
+        if valid_tag_pattern.match(part):
+            out.append(part)
+        else:
+            p_esc = part.replace('&lt;', '<').replace('&gt;', '>')
+            p_esc = p_esc.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            p_esc = re.sub(r'&amp;(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);', r'&\1;', p_esc)
+            out.append(p_esc)
+    return "".join(out)
+
+
+def apply_table_xml_safety(table, is_multi_row_tabular: bool = True):
+    """
+    Applies publication-grade XML properties to Word tables:
+    1. Sets w:bidiVisual on tblPr so table columns read right-to-left.
+    2. Sets w:cantSplit on EVERY row to prevent awkward page boundary splits.
+    3. If is_multi_row_tabular is True, sets w:tblHeader on row 0 so the table header
+       repeats cleanly across page breaks on multi-page tables.
+    """
+    tblPr = table._tbl.tblPr
+    if not tblPr.xpath('./w:bidiVisual'):
+        tblPr.append(parse_xml(r'<w:bidiVisual ' + nsdecls('w') + ' w:val="1"/>'))
+
+    for idx, row in enumerate(table.rows):
+        trPr = row._tr.get_or_add_trPr()
+        if not trPr.xpath('./w:cantSplit'):
+            trPr.append(parse_xml(r'<w:cantSplit ' + nsdecls('w') + '/>'))
+        if is_multi_row_tabular and idx == 0 and len(table.rows) > 1:
+            if not trPr.xpath('./w:tblHeader'):
+                trPr.append(parse_xml(r'<w:tblHeader ' + nsdecls('w') + '/>'))
+
+
+def safe_write_pdf(output_path: str, write_fn_or_bytes) -> str:
+    """
+    Safely writes PDF output with Windows Exclusive Lock fallback handling.
+    If output_path is locked by Acrobat Reader or Edge browser, writes to an _Updated.pdf
+    fallback path instead of crashing with PermissionError [Errno 13].
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    target_path = output_path
+    for attempt in range(10):
+        try:
+            if callable(write_fn_or_bytes):
+                with open(target_path, "wb") as f_out:
+                    write_fn_or_bytes(f_out)
+            else:
+                with open(target_path, "wb") as f_out:
+                    f_out.write(write_fn_or_bytes)
+            if attempt > 0:
+                print(f"[WARN] Target PDF was locked. Saved successfully to fallback: {target_path}")
+            return target_path
+        except PermissionError:
+            base, ext = os.path.splitext(output_path)
+            target_path = f"{base}_Updated_{attempt+1}{ext}" if attempt > 0 else f"{base}_Updated{ext}"
+            print(f"[WARN] Target PDF '{output_path}' is locked by another application. Trying fallback: {target_path}")
+    return output_path
+
+
 def add_formula_card(doc, raw_f_code: str, title: str = ""):
     """Renders a styled formula card in Word (.docx) with LTR typography and variable explanation."""
     if not raw_f_code:
@@ -278,10 +349,7 @@ def add_formula_card(doc, raw_f_code: str, title: str = ""):
     table = doc.add_table(rows=2, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-
-    # Force table RTL
-    tblPr = table._tbl.tblPr
-    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+    apply_table_xml_safety(table, is_multi_row_tabular=False)
 
     # Header
     h_cell = table.cell(0, 0)
@@ -526,10 +594,7 @@ def add_callout_box(doc, title: str, content_items: List[str],
     table = doc.add_table(rows=2, cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-
-    # Force table RTL
-    tblPr = table._tbl.tblPr
-    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+    apply_table_xml_safety(table, is_multi_row_tabular=False)
 
     # Header Row
     header_cell = table.cell(0, 0)
@@ -592,10 +657,7 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
     table = doc.add_table(rows=len(valid_rows) + 1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-
-    # Force table RTL
-    tblPr = table._tbl.tblPr
-    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+    apply_table_xml_safety(table, is_multi_row_tabular=True)
 
     # Header Row
     trPr0 = table.rows[0]._tr.get_or_add_trPr()
@@ -679,10 +741,7 @@ def add_comparison_table(doc, title: str, headers: List[str], rows: List[List[st
     table = doc.add_table(rows=len(valid_rows) + 1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-
-    # Force table RTL
-    tblPr = table._tbl.tblPr
-    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+    apply_table_xml_safety(table, is_multi_row_tabular=True)
 
     # Header Row
     for col_idx, h_text in enumerate(headers):
@@ -984,8 +1043,7 @@ def add_clinical_vignettes(doc, vignettes: List[Dict[str, Any]]):
     for idx, v in enumerate(vignettes, 1):
         table = doc.add_table(rows=2, cols=1)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        tblPr = table._tbl.tblPr
-        tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+        apply_table_xml_safety(table, is_multi_row_tabular=False)
 
         # Header
         h_cell = table.cell(0, 0)
@@ -1081,8 +1139,7 @@ def add_morning_exam_checklist(doc, checklist_items: List[str]):
     table = doc.add_table(rows=len(valid_items), cols=1)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    tblPr = table._tbl.tblPr
-    tblPr.append(parse_xml(r'<w:bidiVisual {} w:val="1"/>'.format(nsdecls('w'))))
+    apply_table_xml_safety(table, is_multi_row_tabular=False)
 
     for idx, item in enumerate(valid_items):
         cell = table.cell(idx, 0)
@@ -2735,13 +2792,14 @@ def build_anki_tsv(data: Dict[str, Any], output_path: str):
     # Header line for Anki import mapping
     # Field 1: Text (Prompt/Cloze), Field 2: Extra, Field 3: Tags
     for card in cards:
-        text = str(card.get("text", "")).strip()
+        text = str(card.get("text") or card.get("question") or card.get("front") or "").strip()
         if not text:
             continue
         if "{{c" not in text:
             text = f"{{{{c1::{text}}}}}"
-        text_clean = text.replace("\t", " ").replace("\n", "<br>")
-        extra = str(card.get("extra", "")).replace("\t", " ").replace("\n", "<br>")
+        text_clean = sanitize_anki_html(text).replace("\t", " ").replace("\n", "<br>")
+        extra_val = card.get("extra") or card.get("answer") or card.get("back") or ""
+        extra = sanitize_anki_html(str(extra_val)).replace("\t", " ").replace("\n", "<br>")
         tag = str(card.get("tag", "PhysioPath::General")).replace(" ", "_").replace("\t", "")
         tsv_lines.append(f"{text_clean}\t{extra}\t{tag}")
 
@@ -2793,13 +2851,15 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
     deck = genanki.Deck(deck_id, deck_name)
 
     for c in cards:
-        text = str(c.get("text", "")).strip()
+        text = str(c.get("text") or c.get("question") or c.get("front") or "").strip()
         if not text:
             continue
         # Ensure cloze syntax exists so Anki creates reviewable cards
         if "{{c" not in text:
             text = f"{{{{c1::{text}}}}}"
-        extra = str(c.get("extra", ""))
+        text = sanitize_anki_html(text)
+        extra_val = c.get("extra") or c.get("answer") or c.get("back") or ""
+        extra = sanitize_anki_html(str(extra_val))
         tags = [str(c.get("tag", "PhysioPath")).replace(" ", "_")]
         # Deterministic GUID anchored strictly to normalized prompt text
         norm_prompt = " ".join(text.strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")).replace('\u200c', ' ').split())
@@ -3802,15 +3862,13 @@ def stamp_persian_page_numbers(pdf_bytes: bytes, output_path: str, course_name: 
             writer.add_page(base_page)
 
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        with open(output_path, "wb") as f_out:
-            writer.write(f_out)
-        return True
+        final_written_path = safe_write_pdf(output_path, lambda f_out: writer.write(f_out))
+        return final_written_path
     except Exception as e:
         print(f"[WARN] Persian BiDi page stamping skipped ({e}); writing PDF directly.")
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        with open(output_path, "wb") as f_out:
-            f_out.write(pdf_bytes)
-        return False
+        final_written_path = safe_write_pdf(output_path, pdf_bytes)
+        return final_written_path
 
 
 def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path: str,
@@ -3896,9 +3954,12 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
         )
         browser.close()
 
+    final_pdf_path = output_pdf_path
     if raw_pdf_bytes:
-        stamp_persian_page_numbers(raw_pdf_bytes, output_pdf_path, course_name=c_name, chapter_title=topic_title, institution=inst_name)
-        print(f"[OK] PDF Study Guide generated successfully: {output_pdf_path}")
+        res = stamp_persian_page_numbers(raw_pdf_bytes, output_pdf_path, course_name=c_name, chapter_title=topic_title, institution=inst_name)
+        if res and isinstance(res, str):
+            final_pdf_path = res
+        print(f"[OK] PDF Study Guide generated successfully: {final_pdf_path}")
 
     if cleanup_temp_html and os.path.exists(html_path):
         try:
@@ -3906,7 +3967,7 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
         except Exception:
             pass
 
-    return output_pdf_path
+    return final_pdf_path
 
 
 # ---------------------------------------------------------------------------

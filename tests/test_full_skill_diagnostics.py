@@ -26,12 +26,16 @@ from build_summary_pack import (
     build_markdown_summary,
     build_anki_tsv,
     build_anki_apkg,
-    add_comparison_table
+    add_comparison_table,
+    sanitize_anki_html,
+    safe_write_pdf,
+    apply_table_xml_safety
 )
 from audit_summary_coverage import (
     extract_clinical_numbers,
     normalize_medical_text,
-    audit_coverage
+    audit_coverage,
+    audit_concept_depth
 )
 
 def test_bug_a_apkg_synthesis_when_empty():
@@ -2234,6 +2238,182 @@ def test_bug_aj_chronological_sequence_and_strict_rtl_compliance():
 
     print("[PASS] Bug AJ Test Passed: Chronological sequence preservation and universal RTL BiDi typography verified.")
 
+def test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates():
+    """
+    Bug AK:
+    1. GenAnki HTML escaping: Standalone < and > (e.g. < 54 mg/dL and > 180 mg/dL) must be converted
+       to &lt; and &gt; to eliminate GenAnki UserWarning while preserving cloze tags {{c1::...}} and valid HTML.
+    2. Universal Word table XML properties: All rows must have w:cantSplit and row 0 must have w:tblHeader.
+    3. Windows PDF lock fallback: safe_write_pdf must gracefully save to _Updated.pdf when encountering PermissionError.
+    4. Concept depth audit: audit_concept_depth must flag UNDER_EXPLAINED when major subtopics have <3 analytical rows.
+    """
+    import warnings
+
+    # 1. GenAnki HTML Escaping & Zero Warnings
+    test_text = "قند ناشتا < 100 mg/dL نرمال و > 126 mg/dL دیابت است. کات‌آف: {{c1::eGFR < 30 mL/min}} و <b>تاکید</b><br>"
+    sanitized = sanitize_anki_html(test_text)
+    assert "&lt; 100" in sanitized, f"Expected &lt; 100, got {sanitized}"
+    assert "&gt; 126" in sanitized, f"Expected &gt; 126, got {sanitized}"
+    assert "{{c1::eGFR &lt; 30 mL/min}}" in sanitized, f"Cloze deletion corrupted: {sanitized}"
+    assert "<b>تاکید</b>" in sanitized, f"Valid HTML bold tag was corrupted: {sanitized}"
+    assert "<br>" in sanitized, f"Valid HTML br tag was corrupted: {sanitized}"
+
+    anki_data = {
+        "topic_title": "دیابت و شاخص‌های قند",
+        "anki_flashcards": [
+            {
+                "question": "معیار هیپوگلیسمی بالینی شدید سطح گلوکز {{c1::< 54 mg/dL}} است و تارگت قند بعد غذا {{c2::< 180 mg/dL}} می‌باشد.",
+                "answer": "سطوح قند خون هدف در دیابت",
+                "tag": "Endocrinology"
+            },
+            {
+                "question": "در ارزیابی اسمولالیته، مقادیر < 300 mOsm/kg و Na > 145 meq/L نشان‌دهنده چیست؟",
+                "answer": "{{c1::دیابت بی‌مزه}}",
+                "tag": "Nephrology"
+            }
+        ]
+    }
+    out_tsv = "dist/diag_test_ak.tsv"
+    out_apkg = "dist/diag_test_ak.apkg"
+    if os.path.exists(out_tsv):
+        os.remove(out_tsv)
+    if os.path.exists(out_apkg):
+        os.remove(out_apkg)
+
+    with warnings.catch_warnings(record=True) as captured_warnings:
+        warnings.simplefilter("always")
+        build_anki_tsv(anki_data, out_tsv)
+        build_anki_apkg(anki_data, out_apkg)
+
+    # Assert no UserWarning was raised by genanki
+    genanki_warnings = [w for w in captured_warnings if issubclass(w.category, UserWarning) and "HTML" in str(w.message)]
+    assert len(genanki_warnings) == 0, f"GenAnki raised HTML warnings: {[str(w.message) for w in genanki_warnings]}"
+    assert os.path.exists(out_tsv) and os.path.getsize(out_tsv) > 0, "TSV was not generated!"
+    assert os.path.exists(out_apkg) and os.path.getsize(out_apkg) > 0, "APKG was not generated!"
+
+    # 2. Word Table XML Properties (w:cantSplit & w:tblHeader & w:bidiVisual)
+    doc_data = {
+        "topic_title": "مباحث جامع متابولیک",
+        "topic_title_en": "Comprehensive Metabolic Summary",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_cgms",
+                "section_title": "جدول اختصاصی پایش مداوم قند (CGMS)",
+                "headers": ["شاخص CGMS", "تارگت هدف", "تفسیر بالینی و پاتوفیزیولوژی"],
+                "rows": [
+                    ["TIR (Time in Range)", "بیش از ۷۰٪ (۷۰-۱۸۰ mg/dL)", "کاهش بارز ریسک رتینوپاتی و میکرووسکولار"],
+                    ["TBR (Time Below Range)", "کمتر از ۴٪ (< ۷۰ mg/dL)", "پیشگیری از هایپوگلیسمی حاد و حوادث قلبی"],
+                    ["TAR (Time Above Range)", "کمتر از ۲۵٪ (> ۱۸۰ mg/dL)", "کاهش گلوکوتوکسیسیتی و پیشگیری از DKA"]
+                ]
+            }
+        ],
+        "modules": [
+            {
+                "type": "illness_script",
+                "name": "نفروپاتی دیابتی و پاتولوژی کیملستیل-ویلسون",
+                "definition_and_etiology": ["شایع‌ترین علت ESRD در دنیا"],
+                "pathophysiology_cascade": ["هایپرگلیسمی -> گلیکاسیون پیشرفته (AGEs) -> افزایش فشار هیدرواستاتیک گلومرول -> اسکلروز ندولار"],
+                "clinical_presentation": [{"sign": "پروتئینوری پیشرونده", "mechanism": "از بین رفتن بارهای منفی پودوسیت‌ها"}],
+                "diagnostics": {"best_initial_test": "نسبت آلبومین به کراتینین ادرار (UACR)", "gold_standard": "بیوپسی کلیه (Kimmelstiel-Wilson nodules)"},
+                "pharmacology_and_management": [{"drug_class": "مهارکننده‌های ACE / ARB", "mechanism": "وازودیلاتاسیون آرتریول وابران و کاهش فشار intraglomerular", "exam_pearl": "در بارداری اکیداً ممنوع است."}],
+                "high_yield_pearls": ["میکروآلبومینوری (۳۰-۳۰۰ میلی‌گرم) اولین نشانه اولیه است."]
+            }
+        ]
+    }
+    out_docx = "dist/diag_test_ak.docx"
+    build_docx_summary(doc_data, out_docx)
+    assert os.path.exists(out_docx), "Word summary not generated!"
+    doc = docx.Document(out_docx)
+    assert len(doc.tables) >= 2, f"Expected at least 2 tables, found {len(doc.tables)}"
+
+    for i, t in enumerate(doc.tables):
+        tbl_xml = t._tbl.xml
+        assert "bidiVisual" in tbl_xml, f"Table {i} missing w:bidiVisual!"
+        for r_idx, row in enumerate(t.rows):
+            tr_xml = row._tr.xml
+            assert "cantSplit" in tr_xml, f"Table {i} row {r_idx} missing w:cantSplit!"
+
+    # Tabular data tables (e.g. Table 0: sec_cgms with 3 headers) must have w:tblHeader on row 0
+    assert "tblHeader" in doc.tables[0].rows[0]._tr.xml, "Tabular data table row 0 missing w:tblHeader!"
+
+    # 3. Windows PDF Lock Fallback
+    import stat
+    target_pdf = os.path.abspath("dist/diag_locked_simulation.pdf")
+    os.makedirs("dist", exist_ok=True)
+    with open(target_pdf, "wb") as f_init:
+        f_init.write(b"%PDF-1.4 dummy")
+    # Make file read-only to trigger Windows PermissionError [Errno 13]
+    os.chmod(target_pdf, stat.S_IREAD)
+    saved_path = None
+    try:
+        saved_path = safe_write_pdf(target_pdf, b"%PDF-1.4 fallback success")
+        assert "_Updated.pdf" in saved_path, f"Expected _Updated.pdf fallback, got {saved_path}"
+        assert os.path.exists(saved_path), f"Fallback PDF was not written: {saved_path}"
+        with open(saved_path, "rb") as f_check:
+            assert b"fallback success" in f_check.read()
+    finally:
+        os.chmod(target_pdf, stat.S_IWRITE)
+        if os.path.exists(target_pdf):
+            try:
+                os.remove(target_pdf)
+            except Exception:
+                pass
+        if saved_path and os.path.exists(saved_path):
+            try:
+                os.remove(saved_path)
+            except Exception:
+                pass
+
+    # 4. Concept Depth & Subtopic Atomicity Audit
+    source_sample = (
+        "پایش مداوم قند خون (CGMS) نقش کلیدی در کنترل دیابت دارد. شاخص‌های اصلی شامل TIR یا Time in Range بالای ۷۰ درصد "
+        "و TBR یا Time Below Range زیر ۴ درصد است. همچنین در نفروپاتی دیابتی، وجود ندول‌های کیملستیل-ویلسون (Kimmelstiel-Wilson) "
+        "پاتوقنونومیک بوده و اولین علامت میکروآلبومینوری است. داروهای ACEi و ARB داروی انتخابی هستند. "
+    ) * 10  # ~500 words
+
+    # Stub summary with under-explained CGMS (only 1 row and no module)
+    stub_summary = {
+        "sections": [
+            {
+                "section_title": "متابولیسم و دیابت",
+                "rows": [["دیابت", "انسولین", "قند بالا"]]
+            }
+        ]
+    }
+    stub_depth = audit_concept_depth(source_sample, stub_summary, compression_ratio=0.05, src_words=550)
+    assert stub_depth["is_aggressively_truncated"] is True, "Expected aggressively truncated status"
+    assert stub_depth["status"] in ("UNDER_EXPLAINED", "AGGRESSIVELY_TRUNCATED")
+    under_topics = [u["topic"] for u in stub_depth["under_explained_topics"]]
+    assert "CGMS" in under_topics or "Diabetic_Nephropathy" in under_topics, f"Expected CGMS or Nephropathy flagged, got {under_topics}"
+
+    # Rich summary with dedicated subtopics (>=3 rows each)
+    rich_summary = {
+        "sections": [
+            {
+                "section_title": "پایش مداوم قند خون (CGMS)",
+                "rows": [
+                    ["TIR", "> 70%", "تارگت اصلی و کاهش عوارض میکروواسکولار"],
+                    ["TBR", "< 4%", "پیشگیری از هایپوگلیسمی بالینی"],
+                    ["TAR", "< 25%", "مهار هایپرگلیسمی و افت ترشح کتون"]
+                ]
+            },
+            {
+                "section_title": "نفروپاتی دیابتی و پاتولوژی کیملستیل-ویلسون",
+                "rows": [
+                    ["میکروآلبومینوری", "۳۰-۳۰۰ mg", "اولین علامت اختلال عملکرد سد فیلتراسیون گلومرولی"],
+                    ["ندول کیملستیل-ویلسون", "پاتوقنونومیک", "اسکلروز مزانشیال ندولار در بیوپسی کلیه"],
+                    ["درمان دارویی", "ACEi / ARB", "وازودیلاتاسیون آرتریول وابران و مهار پیشرفت پروتئینوری"]
+                ]
+            }
+        ]
+    }
+    rich_depth = audit_concept_depth(source_sample, rich_summary, compression_ratio=0.20, src_words=550)
+    assert rich_depth["status"] == "OPTIMAL_DEPTH", f"Expected OPTIMAL_DEPTH, got {rich_depth['status']} (score: {rich_depth['concept_depth_score']})"
+    assert len(rich_depth["under_explained_topics"]) == 0, f"Expected 0 under-explained topics, got {rich_depth['under_explained_topics']}"
+
+    print("[PASS] Bug AK Test Passed: GenAnki HTML escaping, universal Word cantSplit/tblHeader, PDF lock fallback, and concept depth audit verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -2272,4 +2452,5 @@ if __name__ == "__main__":
     test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
     test_bug_ai_table_first_hybrid_teal_architecture()
     test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
+    test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

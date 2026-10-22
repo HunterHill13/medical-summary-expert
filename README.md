@@ -1,21 +1,21 @@
-# 🩺 Medical Summary Expert (v3.9.1)
+# 🩺 Medical Summary Expert (v3.9.2)
 ## Publication-Grade Medical Lecture Notes & Study Guide Summarization Engine
 
 [🇮🇷 راهنمای فارسی](#-راهنمای-جامع-فارسی) | [🇬🇧 English Documentation](#-english-overview)
 
-[![Tests](https://img.shields.io/badge/Tests-36%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
-[![Version](https://img.shields.io/badge/Version-3.9.1-teal?style=for-the-badge)](SKILL.md)
+[![Tests](https://img.shields.io/badge/Tests-37%20Passed%20(100%25)-success?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_full_skill_diagnostics.py)
+[![Version](https://img.shields.io/badge/Version-3.9.2-teal?style=for-the-badge)](SKILL.md)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Deliverable](https://img.shields.io/badge/Deliverable-Quad--Pack%20(Word%20|%20PDF%20|%20HTML%20|%20MD%20|%20Anki)-purple?style=for-the-badge)](dist/)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Google%20Antigravity-Compatible-blueviolet?style=for-the-badge)](https://antigravity.google)
 
-A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, preserves exact **Chronological Sequence of Topics & Teaching Flow (v3.9.1)**, enforces universal **Strict RTL Directionality & BiDi Typography (v3.9.1)**, balances medical content via the **Table-First Hybrid Architecture** with **6 Context-Aware Table Archetypes**, highlights critical points via **In-Cell Badges** (`🔴 تله امتحانی`, `💎 استاندارد طلایی`, `⚠️ خطای رایج`), renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, synthesizes atomic Anki cards via the **Table-Row Cloze Engine**, and outputs the synchronized **Quad-Pack**:
+A publication-grade, automated medical knowledge summarization and high-yield study guide generator tailored for medical students in **Physiopathology (فیزیوپاتولوژی)** and clinical rotations. It ingests complex multi-format handouts (`.docx`, `.pdf`, `.md`, `.txt`), enforces a strict **Zero-Omission & Anti-Bloat Verification Gate**, preserves exact **Chronological Sequence of Topics & Teaching Flow (v3.9.1)**, enforces universal **Strict RTL Directionality & BiDi Typography (v3.9.1)**, mandates **Subtopic Atomicity & Dedicated Tables (v3.9.2 - Rule 15)**, preserves **Rich Pathophysiology & Multi-line Bullets (v3.9.2)**, eliminates GenAnki invalid HTML warnings (**v3.9.2 - Rule 16**), guarantees Word table XML safety (`w:cantSplit`, `w:tblHeader`, `w:bidiVisual`), provides graceful **Windows Exclusive PDF Lock Fallback (`_Updated.pdf`)**, balances medical content via the **Table-First Hybrid Architecture** with **6 Context-Aware Table Archetypes**, highlights critical points via **In-Cell Badges** (`🔴 تله امتحانی`, `💎 استاندارد طلایی`, `⚠️ خطای رایج`), renders high-DPI clinical diagrams adhering to the **Golden Aspect Ratio Legibility Gate**, isolates BiDi math formulas, synthesizes atomic Anki cards via the **Table-Row Cloze Engine**, and outputs the synchronized **Quad-Pack**:
 1. **Microsoft Word Study Guide (`.docx`)**: Custom RTL typography, Dubai font, Teal Medical palette (`#007A87`), repeating table headers across page breaks (`tblHeader`), anti-row split enforcement (`cantSplit`), table RTL visual orientation (`<w:bidiVisual w:val="1"/>`), subtle zebra striping (`#F0FDFA`), true Word bold runs from markdown (`run.bold = True`), native formula cards, High-DPI transparent diagram PNG rendering (`Inches(5.8)`), dedicated Multimodal Approach Atlas section (`Inches(4.8)` centered), color-coded callouts (emergency, physiology, contraindications, special populations), comparative tables, and Master Pharmacology Matrix.
-2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom teal medical headers (`#007A87`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, and Persian BiDi page stamping (`صفحه X از Y`).
+2. **Direct Publication-Grade PDF (`.pdf`)**: Native HTML-to-PDF rendering via Playwright using system Edge/Chrome, custom teal medical headers (`#007A87`) featuring institution branding (**دانشگاه بق**), complete browser artifact suppression, Windows PDF exclusive-lock fallback (`_Updated.pdf`), and Persian BiDi page stamping (`صفحه X از Y`).
 3. **Interactive Standalone HTML (`.html`)**: Mobile-ready responsive study dashboard with Mermaid.js integration, strict RTL tables (`<table dir="rtl">`), native `.formula-card` and `.figure-card` CSS, KaTeX auto-rendering, A4 print CSS, in-cell badge styling, collapsible clinical vignettes (`<details>`), and interactive matrices.
 4. **Formatted Markdown (`.md`)**: GitHub/Obsidian-compatible Mermaid flowcharts, sequential section order matching lecture slides, continuous blockquote alerts (`> ` prefix on all sub-lines), Multimodal Visual Atlas callout blocks, Track 4 Clinical Semiology tables, and escaped table formatting with `<br>` multi-line cells.
-5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), deterministic prompt-hash GUIDs, auto-synthesized table-row cloze cards (`::TableMatrix`), visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
+5. **Anki Spaced Repetition Decks (`.tsv` & native `.apkg`)**: Wozniak's 20 Rules compliant, atomic cloze cards (`model_type=CLOZE`), sanitized HTML inequalities (`&lt;`, `&gt;`), deterministic prompt-hash GUIDs, auto-synthesized table-row cloze cards (`::TableMatrix`), visual atlas cards (`::VisualAtlas`), and emergency, staging, special populations, semiology, surgery, and complication cards.
 
 ---
 
@@ -28,7 +28,7 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 
 ---
 
-## 📋 اصول نُه‌گانه تلخیص، انسجام و انضباط ساختاری (High-Yield Editorial Directives)
+## 📋 اصول ده‌گانه تلخیص، انسجام و انضباط ساختاری (High-Yield Editorial Directives)
 
 1. **پرهیز مطلق از مقدمه‌چینی، توضیح درباره روند کار، نتیجه‌گیری، نظر شخصی، تکرار مطالب و حشو:** از تعارفات کلامی و توضیحات فرامتنی خودداری شود.
 2. **استخراج انحصاری عصاره علمی و نکات آزمونی:** فقط نکات تست‌خیز و قابل آزمون استخراج گردند.
@@ -36,17 +36,18 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 4. **حفظ منظم و فوق‌فشرده ساختارهای بالینی:** علل، عوامل خطر، پاتوفیزیولوژی، علائم، آزمایش‌ها، تشخیص، درمان، عوارض، پیش‌آگهی، استیجینگ و افتراق‌ها در فشرده‌ترین قالب حفظ شوند.
 5. **حفظ روابط علت و معلولی و زنجیره پاتوفیزیولوژی:** توجیه مکانیسمی و منطق رخداد علائم حفظ شود تا خلاصه فقط فهرستی خشک از کلمات نباشد.
 6. **پرهیز از بولت‌سازی افراطی و تجمیع مطالب مرتبط:** مطالبی که به یکدیگر مرتبط هستند در یک بولت یا پاراگراف منسجم تجمیع شوند.
-7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا (قانون تلخیص فوق‌متراکم - ضد رونویسی):** ضریب فشردگی متراکم (۰.۱۵ تا ۰.۵۰ حجم متن) با منع اکید کپی کردن پاراگراف‌های طولانی (>۱۲۰ کلمه).
+7. **خروجی یکدست، منسجم، کم‌حجم و پُرمحتوا (قانون تلخیص متراکم عمیق - نه خشک و تک‌کلمه‌ای!):** فشردگی به معنای حذف پاتوفیزیولوژی یا تبدیل جدول به کلمات خشک تک‌خطی نیست! اطلاعات درون سلول‌ها باید شامل روابط علت و معلولی، کات‌آف‌های عددی، پیامد بالینی و مرواریدهای آزمونی به صورت بولت‌های چندخطی تمیز (`•`) باشد.
 8. **حفظ دقیق توالی زمانی و سرفصل‌های جزوه (Strict Chronological Sequence):** ترتیب تمام بخش‌ها، جداول و بیماری‌ها در تمامی خروجی‌ها (Word, PDF, HTML, Markdown) باید **دقیقاً و مو‌به‌مو منطبق بر روند تدریس استاد و توالی اسلایدهای جزوه اصلی** باشد؛ هرگونه جابه‌جایی یا پس‌وپیش کردن مباحث اکیداً ممنوع است.
 9. **جهت‌داری راست‌به‌چپ مطلق و انضباط BiDi (Strict RTL Typography):** تمامی صفحات، جداول (`<table dir="rtl">`، `<w:bidiVisual w:val="1"/>`)، پاراگراف‌ها (`<w:bidi w:val="1"/>`) و سلول‌ها صددرصد راست‌به‌چپ بوده و عبارات انگلیسی و فرمول‌ها با ایزولاسیون کامل LTR رندر می‌شوند تا از پرش متنی جلوگیری گردد.
+10. **تفکیک ساب‌تاپیک‌ها و منع ادغام موضوعات بالینی (Subtopic Atomicity & Dedicated Tables):** هر عنوان ماژور بالینی و هر ساب‌تاپیک مستقل، باید جدول اختصاصی خود را داشته باشد و نباید در یک سطر ناخوانای جدول مجاور ادغام یا فشرده گردد.
 
 ---
 
-## 🌟 Key Innovations & Architectural Pillars (v3.9.1)
+## 🌟 Key Innovations & Architectural Pillars (v3.9.2)
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│             MEDICAL SUMMARY EXPERT PIPELINE (v3.9.1)                   │
+│             MEDICAL SUMMARY EXPERT PIPELINE (v3.9.2)                   │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. INGESTION & ZERO-OMISSION PARSING                                   │
 │    - OOXML Deep Traversal: Word Textboxes, Table-Cell Shapes & SDT     │
@@ -98,6 +99,16 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 * **Header & Artifact Suppression:** Custom burgundy header (`border-bottom: 1.5px solid #78281F`) featuring chapter title, course name, and **«دانشگاه بق»** institution branding. Browser default URLs, dates, and timestamps are suppressed.
 * **Persian BiDi Stamping (`صفحه X از Y`):** Utilizes `pypdf` + `reportlab` + `arabic-reshaper` + `python-bidi` with Windows Tahoma font to stamp bidirectional Persian page numbers at the footer without character reversal or font disconnection.
 
+### 5. 📑 Subtopic Atomicity & Dedicated Tables (v3.9.2 - Rule 15)
+* **Dedicated Thematic Tables (`SUBTOPIC_ATOMICITY_GATE`):** Prohibits compressing independent major clinical subtopics (e.g. CGMS, Diabetic Nephropathy & Kimmelstiel-Wilson, Retinopathy NPDR/PDR, Diabetic Foot & Charcot joint, Somogyi vs Dawn, Klinefelter, Kallmann, Gynecomastia & TRT) into single rows of general tables.
+* **Rich Multi-Line Pathophysiology:** High-yield compression retains rich multi-line bullets (`•`) detailing causal mechanisms, numeric thresholds, and clinical pearls rather than dry single-word keywords.
+* **Concept Depth Audit (`audit_concept_depth`):** Automatically flags summaries that aggressively truncate major topics (`< 0.08` ratio on >=500 words) or provide fewer than 3 analytical rows/bullets for core entities (`UNDER_EXPLAINED`).
+
+### 6. 🛡️ Universal Table XML Safety, GenAnki Sanitization & PDF Lock Resilience (Rule 16)
+* **Universal Word Table XML Tags:** Enforces `w:bidiVisual` on table properties, `w:cantSplit` across every row of every table, and `w:tblHeader` on header row 0 of all multi-row tables.
+* **GenAnki HTML Sanitization:** Converts standalone `<` and `>` into `&lt;` and `&gt;` while preserving valid HTML formatting (`<b>`, `<br>`, `<span>`) and cloze deletions (`{{c1::...}}`), eliminating GenAnki `UserWarning: Field contained invalid HTML tags`.
+* **Windows PDF Lock Fallback:** Gracefully handles `PermissionError [Errno 13]` when a target PDF is open in Adobe Acrobat or Edge browser by saving to `_Updated.pdf`.
+
 ---
 
 ## 📁 Repository Structure
@@ -107,11 +118,11 @@ A publication-grade, automated medical knowledge summarization and high-yield st
 ├── parse_input_lecture.py      # DOCX & PDF ingestion engine (tables, shapes, SDT, images, OCR)
 ├── build_summary_pack.py       # Quad-pack compiler (DOCX, Playwright PDF, HTML, MD, Anki TSV/APKG)
 ├── pdf_designer_engine.py      # Standalone dual-pass PDF engine with vector borders and A4 geometry
-├── audit_summary_coverage.py   # Clinical NLP audit gate (dynamic syndromes, cutoffs, warnings, anti-bloat)
-├── SKILL.md                    # Antigravity skill specification and guidelines (v3.6.1)
+├── audit_summary_coverage.py   # Clinical NLP audit gate (dynamic syndromes, cutoffs, warnings, anti-bloat, concept depth)
+├── SKILL.md                    # Antigravity skill specification and guidelines (v3.9.2)
 ├── sample_summary.json         # Standard structured JSON data
 ├── tests/                      # Comprehensive automated stress-test suite
-│   ├── test_full_skill_diagnostics.py   # 31-test diagnostic suite (Bug A to Bug AE)
+│   ├── test_full_skill_diagnostics.py   # 37-test diagnostic suite (Bug A to Bug AK)
 │   ├── test_omission_bugs.py            # Word table & textbox preservation test
 │   ├── test_pdf_ingestion.py            # PyMuPDF table and scanned page test
 │   └── test_digit_and_guid_bugs.py      # Persian digit normalization & Anki GUID test

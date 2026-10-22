@@ -648,6 +648,176 @@ def audit_concept_depth(norm_source: str, summary_data: Dict[str, Any], compress
     }
 
 
+def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rule 17 (TELEGRAPHIC_SYNTAX_AND_CELL_COMPRESSION_GATE):
+    Audits table cells for narrative prose bloat vs. concise telegraphic syntax.
+    Enforces:
+    - Maximum word limit per cell: ideally <= 25-30 words.
+    - Flags cells with > 35 words that lack telegraphic indicators (bold keywords '**', bullets '•', or directional arrows '->' / '→').
+    - Flags average words per cell > 28.0 when at least 6 cells exist.
+    """
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    modules = summary_data.get("modules") or []
+
+    all_cells = []
+    # Collect from sections
+    for sec in sections:
+        if isinstance(sec, dict):
+            for row in (sec.get("rows") or []):
+                if isinstance(row, (list, tuple)):
+                    for cell in row:
+                        if cell and str(cell).strip():
+                            all_cells.append(str(cell).strip())
+
+    # Collect from module-level tables
+    for mod in modules:
+        if isinstance(mod, dict):
+            for tbl in (mod.get("tables") or []):
+                if isinstance(tbl, dict):
+                    for row in (tbl.get("rows") or []):
+                        if isinstance(row, (list, tuple)):
+                            for cell in row:
+                                if cell and str(cell).strip():
+                                    all_cells.append(str(cell).strip())
+
+    if not all_cells:
+        return {
+            "cell_bloat_detected": False,
+            "avg_words_per_cell": 0.0,
+            "total_cells_audited": 0,
+            "inflated_cells_count": 0,
+            "inflated_cells": [],
+            "status": "NO_TABLE_CELLS"
+        }
+
+    inflated_cells = []
+    word_counts = []
+    for c in all_cells:
+        w_cnt = len(c.split())
+        word_counts.append(w_cnt)
+        has_telegraphic = ("**" in c) or ("•" in c) or ("->" in c) or ("→" in c) or ("\n" in c)
+        if (w_cnt > 35 and not has_telegraphic) or w_cnt > 55:
+            inflated_cells.append({
+                "preview": c[:80] + ("..." if len(c) > 80 else ""),
+                "word_count": w_cnt,
+                "has_telegraphic_markers": has_telegraphic
+            })
+
+    avg_words = round(sum(word_counts) / max(1, len(word_counts)), 1)
+    cell_bloat_detected = bool((len(all_cells) >= 6 and avg_words > 28.0) or len(inflated_cells) >= 1)
+
+    return {
+        "cell_bloat_detected": cell_bloat_detected,
+        "avg_words_per_cell": avg_words,
+        "total_cells_audited": len(all_cells),
+        "inflated_cells_count": len(inflated_cells),
+        "inflated_cells": inflated_cells[:5],
+        "status": "WARNING_CELL_BLOAT" if cell_bloat_detected else "OPTIMAL_TELEGRAPHIC_CELLS"
+    }
+
+
+def audit_cross_layer_duplication(summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rule 18 (CROSS_LAYER_DEDUPLICATION_GATE):
+    Verifies that topics and diseases thoroughly presented in thematic tables (sections)
+    are not duplicated verbatim as repetitive long prose paragraphs in modules or master matrices.
+    """
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    modules = summary_data.get("modules") or []
+
+    if not sections or not modules:
+        return {
+            "cross_layer_duplication_detected": False,
+            "duplicated_entities_count": 0,
+            "duplicated_entities": [],
+            "status": "PASS_NO_OVERLAP"
+        }
+
+    table_entities = {}
+    for sec in sections:
+        if isinstance(sec, dict):
+            sec_title = sec.get("title") or sec.get("section_title") or ""
+            for row in (sec.get("rows") or []):
+                if isinstance(row, (list, tuple)) and row:
+                    col0_text = str(row[0]).strip().lower()
+                    clean_name = re.sub(r'[*•\(\)\[\]]', ' ', col0_text).strip()
+                    row_full_text = " ".join(str(c) for c in row).lower()
+                    if len(clean_name) >= 3:
+                        table_entities[clean_name] = {
+                            "sec_title": sec_title,
+                            "row_text": row_full_text
+                        }
+
+    duplicates = []
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        m_name = str(mod.get("name") or "").lower().strip()
+        clean_m_name = re.sub(r'[*•\(\)\[\]]', ' ', m_name).strip()
+
+        for t_name, t_info in table_entities.items():
+            words_m = set(clean_m_name.split())
+            words_t = set(t_name.split())
+            if words_m and words_t and (words_m.issubset(words_t) or words_t.issubset(words_m) or len(words_m & words_t) >= 2):
+                mod_body_parts = []
+                for k in ["definition_and_etiology", "clinical_presentation", "pathophysiology_cascade"]:
+                    val = mod.get(k)
+                    if isinstance(val, list):
+                        mod_body_parts.extend(str(x) for x in val)
+                    elif isinstance(val, str):
+                        mod_body_parts.append(val)
+                mod_body = " ".join(mod_body_parts).lower()
+
+                mod_words = set(mod_body.split())
+                table_words = set(t_info["row_text"].split())
+                overlap = mod_words & table_words
+                if len(mod_words) >= 8 and len(overlap) / max(1, len(mod_words)) >= 0.60:
+                    duplicates.append({
+                        "entity": m_name,
+                        "section": t_info["sec_title"],
+                        "overlap_pct": round(len(overlap) / max(1, len(mod_words)) * 100, 1),
+                        "module_word_count": len(mod_words)
+                    })
+
+    duplication_detected = len(duplicates) >= 1
+    return {
+        "cross_layer_duplication_detected": duplication_detected,
+        "duplicated_entities_count": len(duplicates),
+        "duplicated_entities": duplicates,
+        "status": "WARNING_CROSS_LAYER_DUPLICATION" if duplication_detected else "PASS_DEDUPLICATED"
+    }
+
+
+def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rule 19 (PAGE_BUDGET_ENFORCEMENT_GATE):
+    Enforces that a standard single-session summary fits within a 6 to 8 page A4 budget
+    (approximately 1,800 to 2,800 words, hard threshold at 3,800 words).
+    """
+    if summary_data.get("is_multi_chapter") or summary_data.get("is_master_bundle"):
+        return {
+            "page_budget_exceeded": False,
+            "estimated_a4_pages": 0,
+            "total_words": 0,
+            "status": "MULTI_CHAPTER_EXEMPT"
+        }
+
+    raw_text = json.dumps(summary_data, ensure_ascii=False)
+    words = len(re.findall(r'\b\w+\b', raw_text))
+    est_pages = round(words / 320.0, 1)
+
+    budget_exceeded = bool(words > 3800)
+    return {
+        "page_budget_exceeded": budget_exceeded,
+        "total_words": words,
+        "estimated_pages": est_pages,
+        "estimated_a4_pages": est_pages,
+        "max_recommended_words": 3200,
+        "status": "BUDGET_EXCEEDED" if budget_exceeded else "PASS_PAGE_BUDGET"
+    }
+
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -790,6 +960,9 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     atlas_with_pearls = sum(1 for f in visual_atlas_items if isinstance(f, dict) and (f.get("exam_pearl") or f.get("caption") or f.get("clinical_findings")))
 
     concept_depth_report = audit_concept_depth(norm_source, summary_data, compression_ratio, src_words)
+    cell_bloat_report = audit_table_cell_bloat(summary_data)
+    dedup_report = audit_cross_layer_duplication(summary_data)
+    page_budget_report = audit_page_budget(summary_data)
 
     passed = (
         num_coverage_pct >= 80.0
@@ -799,11 +972,17 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         and illness_script_report["illness_script_compliant"]
         and not verbatim_bloat_detected
         and (concept_depth_report["status"] != "AGGRESSIVELY_TRUNCATED")
+        and not cell_bloat_report["cell_bloat_detected"]
+        and not dedup_report["cross_layer_duplication_detected"]
     )
 
     if not passed:
         if verbatim_bloat_detected and num_coverage_pct >= 80.0:
             verdict = "WARNING_VERBATIM_BLOAT_DETECTED"
+        elif cell_bloat_report["cell_bloat_detected"]:
+            verdict = "WARNING_TABLE_CELL_PARAGRAPH_INFLATION"
+        elif dedup_report["cross_layer_duplication_detected"]:
+            verdict = "WARNING_CROSS_LAYER_DUPLICATION"
         elif concept_depth_report["status"] == "AGGRESSIVELY_TRUNCATED":
             verdict = "WARNING_AGGRESSIVELY_TRUNCATED"
         elif concept_depth_report["status"] == "UNDER_EXPLAINED" and src_words >= 500:
@@ -827,8 +1006,14 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             "compression_ratio": compression_ratio,
             "verbatim_bloat_detected": verbatim_bloat_detected,
             "concept_depth_score": concept_depth_report["concept_depth_score"],
-            "concept_depth_status": concept_depth_report["status"]
+            "concept_depth_status": concept_depth_report["status"],
+            "cell_bloat_detected": cell_bloat_report["cell_bloat_detected"],
+            "cross_layer_duplication_detected": dedup_report["cross_layer_duplication_detected"],
+            "page_budget_exceeded": page_budget_report["page_budget_exceeded"]
         },
+        "cell_bloat_audit": cell_bloat_report,
+        "deduplication_audit": dedup_report,
+        "page_budget_audit": page_budget_report,
         "concept_retention_audit": concept_depth_report,
         "compression_audit": {
             "source_word_count": src_words,

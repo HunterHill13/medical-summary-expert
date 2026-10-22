@@ -2414,6 +2414,177 @@ def test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates():
 
     print("[PASS] Bug AK Test Passed: GenAnki HTML escaping, universal Word cantSplit/tblHeader, PDF lock fallback, and concept depth audit verified.")
 
+
+def test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates():
+    """
+    Test Bug AL:
+    1. audit_table_cell_bloat (Rule 17): flags cells with > 35 words lacking telegraphic markers, passes telegraphic cells.
+    2. audit_cross_layer_duplication (Rule 18): detects high cross-layer duplication between sections and modules.
+    3. audit_page_budget (Rule 19): estimates A4 pages from word count, flags budget exceedance (> 3,800 words).
+    4. BATCH_PROMPT_TEMPLATE in run_summary_pipeline.py: verifies sections schema, telegraphic syntax, cell word cap (25-30), and cross-layer deduplication.
+    5. build_summary_pack: verifies ensure_list string immunity, COLOR_TEAL_BORDER definition, and cross-layer deduplication rendering in Word, Markdown, and HTML.
+    """
+    from audit_summary_coverage import (
+        audit_table_cell_bloat,
+        audit_cross_layer_duplication,
+        audit_page_budget
+    )
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+    from build_summary_pack import (
+        ensure_list,
+        COLOR_TEAL_BORDER,
+        COLOR_TEAL_BG,
+        extract_covered_section_entities,
+        is_module_covered_in_sections,
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary
+    )
+
+    # 1. Test audit_table_cell_bloat
+    bloated_summary = {
+        "sections": [
+            {
+                "title": "دیابت و سندرم متابولیک",
+                "headers": ["مبحث", "تظاهرات"],
+                "rows": [
+                    [
+                        "سندرم متابولیک",
+                        "این بیماری یک سندرم پیچیده است که در آن بیمار دچار افزایش مقاومت به انسولین می‌شود و تری‌گلیسرید بیمار بالا می‌رود و فشار خون او افزایش می‌یابد و چاقی شکمی شدید رخ می‌دهد که برای درمان آن باید داروهای متعددی تجویز گردد و ورزش مداوم روزانه نیز به بیمار توصیه شود."
+                    ]
+                ]
+            }
+        ]
+    }
+    bloat_res = audit_table_cell_bloat(bloated_summary)
+    assert bloat_res["status"] == "WARNING_CELL_BLOAT", f"Expected WARNING_CELL_BLOAT, got {bloat_res['status']}"
+    assert len(bloat_res["inflated_cells"]) >= 1, "Should detect at least 1 bloated cell"
+
+    telegraphic_summary = {
+        "sections": [
+            {
+                "title": "دیابت و سندرم متابولیک",
+                "headers": ["مبحث", "تظاهرات"],
+                "rows": [
+                    [
+                        "سندرم متابولیک",
+                        "• **مقاومت به انسولین:** TG ≥ ۱۵۰ mg/dL -> افزایش ریسک CVD\n• **BP:** ≥ ۱۳۰/۸۵ mmHg -> تارگت کنترل"
+                    ]
+                ]
+            }
+        ]
+    }
+    tele_res = audit_table_cell_bloat(telegraphic_summary)
+    assert tele_res["status"] == "OPTIMAL_TELEGRAPHIC_CELLS", f"Expected OPTIMAL_TELEGRAPHIC_CELLS, got {tele_res['status']}"
+
+    # 2. Test audit_cross_layer_duplication
+    dup_summary = {
+        "sections": [
+            {
+                "title": "سندرم ترنر (Turner Syndrome)",
+                "headers": ["بیماری", "کاریوتایپ", "تظاهرات"],
+                "rows": [
+                    ["سندرم ترنر", "45,XO", "قد کوتاه گردن پره‌ای آمنوره اولیه کوآرکتاسیون آئورت نارسایی تخمدان"]
+                ]
+            }
+        ],
+        "modules": [
+            {
+                "name": "سندرم ترنر",
+                "name_en": "Turner Syndrome",
+                "definition_and_etiology": ["قد کوتاه گردن پره‌ای آمنوره اولیه کوآرکتاسیون آئورت نارسایی تخمدان"]
+            }
+        ]
+    }
+    dup_res = audit_cross_layer_duplication(dup_summary)
+    assert dup_res["status"] == "WARNING_CROSS_LAYER_DUPLICATION", f"Expected WARNING_CROSS_LAYER_DUPLICATION, got {dup_res['status']}"
+
+    # 3. Test audit_page_budget
+    huge_summary = {
+        "modules": [
+            {"name": f"بیماری شماره {i}", "definition_and_etiology": ["شرح بالینی مفصل بیماری و پاتولوژی " * 100]}
+            for i in range(10)
+        ]
+    }
+    budget_res = audit_page_budget(huge_summary)
+    assert budget_res["status"] == "BUDGET_EXCEEDED", f"Expected BUDGET_EXCEEDED, got {budget_res['status']}"
+    assert budget_res["estimated_pages"] > 8.0, "Huge summary should exceed 8 pages"
+
+    # 4. Test BATCH_PROMPT_TEMPLATE in run_summary_pipeline.py
+    assert "sections" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must contain 'sections' schema"
+    assert "headers" in BATCH_PROMPT_TEMPLATE and "rows" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must contain table headers and rows"
+    assert "TELEGRAPHIC" in BATCH_PROMPT_TEMPLATE.upper() or "تلگرافی" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify telegraphic syntax"
+    assert any(num in BATCH_PROMPT_TEMPLATE for num in ["25", "30", "۲۵", "۳۰"]), "BATCH_PROMPT_TEMPLATE must specify 25-30 word cap per cell"
+    assert "flowchart" in BATCH_PROMPT_TEMPLATE.lower() or "فلوچارت" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify flowcharts for dynamic processes"
+
+    # 5. Test build_summary_pack resilience and deduplication
+    assert COLOR_TEAL_BORDER == "0D9488", "COLOR_TEAL_BORDER must be defined as 0D9488"
+    assert COLOR_TEAL_BG == "F0FDFA", "COLOR_TEAL_BG must be defined as F0FDFA"
+
+    # String immunity in ensure_list (prevents character-by-character iteration)
+    raw_str = "سونوگرافی و CT اسکن"
+    ensured = ensure_list(raw_str)
+    assert isinstance(ensured, list) and len(ensured) == 1 and ensured[0] == raw_str, "ensure_list must not split string into characters!"
+
+    # Entity detection
+    covered = extract_covered_section_entities(dup_summary)
+    assert is_module_covered_in_sections(dup_summary["modules"][0], covered), "Should detect Turner syndrome module as covered in sections!"
+
+    # Multi-format compile check
+    os.makedirs("dist", exist_ok=True)
+    out_docx = "dist/diag_test_al.docx"
+    out_md = "dist/diag_test_al.md"
+    out_html = "dist/diag_test_al.html"
+
+    full_test_data = {
+        "topic_title": "مباحث ژنتیک و غدد تولید مثل",
+        "topic_title_en": "Reproductive Genetics & Endocrinology",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "title": "سندرم ترنر (Turner Syndrome)",
+                "headers": ["شاخص بالینی", "یافته", "پیامد بالینی"],
+                "rows": [
+                    ["کاریوتایپ", "45,XO", "• **نارسایی گنادی:** آمنوره اولیه -> ناباروری"],
+                    ["قلبی-عروقی", "کوآرکتاسیون آئورت", "• **دایسکشن آئورت:** غربالگری با اکوکاردیوگرافی"]
+                ]
+            }
+        ],
+        "modules": [
+            {
+                "name": "سندرم ترنر",
+                "name_en": "Turner Syndrome",
+                "definition_and_etiology": ["این تعریف تکراری نباید در خروجی رندر شود زیرا در جدول بالا پوشش داده شده است."],
+                "clinical_presentation": [{"sign": "قد کوتاه", "mechanism": "هاپلوینسافیشنسی ژن SHOX"}],
+                "diagnostics": {"best_initial_test": "کاریوتایپ خون محیطی", "gold_standard": "آنالیز سایتوژنتیک"},
+                "clinical_semiology": [{"maneuver_or_sign": "گردن پره‌ای (Webbed neck)", "clinical_significance": "بقایای لنف‌ادم جنینی"}],
+                "high_yield_pearls": ["مهم‌ترین علت مرگ در بزرگسالی دایسکشن آئورت است."],
+                "instructor_exam_alerts": ["استاد بر شروع هورمون رشد پیش از بسته شدن اپی‌فیز تأکید کردند."],
+                "emergency_management": ["درد قفسه سینه حاد -> شک فوری به دایسکشن آئورت -> سی‌تی آنژیو فوری"]
+            }
+        ]
+    }
+    build_docx_summary(full_test_data, out_docx)
+    assert os.path.exists(out_docx) and os.path.getsize(out_docx) > 5000, "DOCX generation failed for test AL!"
+
+    build_markdown_summary(full_test_data, out_md)
+    assert os.path.exists(out_md), "Markdown generation failed for test AL!"
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "ارجاع به جدول تماتیک" in md_text, "Markdown must contain cross-layer deduplication notice!"
+    assert "تعریف، اتیولوژی و عوامل خطر" not in md_text, "Repeated definition section must be suppressed in Markdown!"
+    assert "دایسکشن آئورت" in md_text, "Emergency / pearls must be retained in Markdown!"
+
+    build_html_summary(full_test_data, out_html)
+    assert os.path.exists(out_html), "HTML generation failed for test AL!"
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "ارجاع به جدول تماتیک" in html_text, "HTML must contain cross-layer deduplication notice!"
+    assert "تعریف، اتیولوژی و عوامل خطر" not in html_text, "Repeated definition section must be suppressed in HTML!"
+
+    print("[PASS] Bug AL Test Passed: Telegraphic syntax, cross-layer deduplication, page budget, and batch prompt gates verified.")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -2453,4 +2624,5 @@ if __name__ == "__main__":
     test_bug_ai_table_first_hybrid_teal_architecture()
     test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
     test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
+    test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

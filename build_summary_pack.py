@@ -17,7 +17,7 @@ import html
 import argparse
 import hashlib
 import io
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Set
 
 # Force UTF-8 encoding in stdout/stderr
 if sys.stdout.encoding != 'utf-8':
@@ -54,6 +54,8 @@ COLOR_BLUE_BORDER       = "38BDF8"            # Sky Blue Border
 COLOR_BLUE_BG           = "F0F9FF"            # Sky Blue Fill
 COLOR_SEMIOLOGY_TEAL    = "0D9488"            # Teal for Clinical Semiology
 COLOR_SEMIOLOGY_BG      = "F0FDFA"            # Light Teal Fill
+COLOR_TEAL_BORDER       = "0D9488"            # Teal Border for Staging & Criteria Callouts
+COLOR_TEAL_BG           = "F0FDFA"            # Light Teal Fill for Staging & Criteria Callouts
 COLOR_CHECKLIST_NAVY    = "0369A1"            # Navy for Morning-of-Exam Capsule
 COLOR_CHECKLIST_BG      = "FEFDE8"            # Warm Amber Tint for Morning Checklist
 
@@ -170,6 +172,25 @@ def format_inline_markdown(text: str) -> str:
     )
 
     return s
+
+
+def ensure_list(val: Any) -> list:
+    """
+    Safely converts any value to a list of items.
+    If val is already a list, returns it. If None or empty, returns [].
+    If val is a string, wraps it in [val] instead of character-iterating over it.
+    Prevents the catastrophic String Iteration Bug in medical pipelines.
+    """
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return val
+    if isinstance(val, (tuple, set)):
+        return list(val)
+    if isinstance(val, str):
+        s = val.strip()
+        return [s] if s else []
+    return [val]
 
 
 def format_cell_html(text: str) -> str:
@@ -686,7 +707,7 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
         safe_row = r_data[:len(headers)] if isinstance(r_data, (list, tuple)) else [str(r_data)]
         for col_idx, cell_value in enumerate(safe_row):
             cell = table.cell(row_idx + 1, col_idx)
-            set_cell_margins(cell, top=100, bottom=100, left=120, right=120)
+            set_cell_margins(cell, top=70, bottom=70, left=90, right=90)
             if bg_fill != "FFFFFF":
                 set_cell_shading(cell, bg_fill)
             cell._tc.get_or_add_tcPr().append(parse_xml(
@@ -697,7 +718,7 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
             p_first = cell.paragraphs[0]
             for l_idx, line in enumerate(lines):
                 p = p_first if l_idx == 0 else cell.add_paragraph()
-                set_p_rtl(p, space_before_pt=1, space_after_pt=2)
+                set_p_rtl(p, space_before_pt=0.5, space_after_pt=1.5)
                 l = line.strip()
                 if not l:
                     continue
@@ -1205,35 +1226,97 @@ def format_emergency_items(emerg_items: Any) -> List[str]:
 # Core Summary Document Compilation Engine
 # ---------------------------------------------------------------------------
 
+def extract_covered_section_entities(data: Dict[str, Any]) -> Set[str]:
+    """
+    Extracts all entity and disease names covered in thematic tables (sections)
+    to prevent cross-layer triplication across sections, modules, and matrices.
+    """
+    covered = set()
+    for sec in (data.get("sections") or data.get("thematic_sections") or []):
+        if not isinstance(sec, dict):
+            continue
+        title = sec.get("title") or sec.get("section_title") or ""
+        if title:
+            clean_title = re.sub(r"[^\w\s]", " ", title, flags=re.UNICODE).lower()
+            for token in clean_title.split():
+                if len(token) >= 3 and token not in {"جدول", "تماتیک", "بررسی", "مقایسه", "جامع", "سندرم", "بخش", "رویکرد"}:
+                    covered.add(token)
+            covered.add(title.strip().lower())
+        for row in (sec.get("rows") or []):
+            if isinstance(row, (list, tuple)) and row:
+                first_cell = str(row[0]).strip().lower()
+                clean_cell = re.sub(r"[^\w\s]", " ", first_cell, flags=re.UNICODE).lower()
+                for token in clean_cell.split():
+                    if len(token) >= 3 and token not in {"جدول", "تماتیک", "بررسی", "مقایسه", "جامع", "سندرم", "بخش", "رویکرد"}:
+                        covered.add(token)
+                covered.add(first_cell)
+    return covered
+
+
+def is_module_covered_in_sections(mod: Dict[str, Any], covered_entities: Set[str]) -> bool:
+    """
+    Returns True if the module's primary clinical subject is already covered in a thematic table.
+    """
+    if not covered_entities:
+        return False
+    name = (mod.get("name") or "").strip().lower()
+    name_en = (mod.get("name_en") or "").strip().lower()
+    if not name and not name_en:
+        return False
+
+    if name in covered_entities or name_en in covered_entities:
+        return True
+
+    clean_name = re.sub(r"[^\w\s]", " ", name, flags=re.UNICODE).lower()
+    for token in clean_name.split():
+        if len(token) >= 3 and token not in {"جدول", "تماتیک", "بررسی", "مقایسه", "جامع", "سندرم", "بخش", "رویکرد"} and token in covered_entities:
+            return True
+
+    if name_en:
+        clean_en = re.sub(r"[^\w\s]", " ", name_en).lower()
+        for token in clean_en.split():
+            if len(token) >= 4 and token in covered_entities:
+                return True
+
+    return False
+
+
 def ensure_master_matrices(data: Dict[str, Any]):
     """
     Ensures both master_pharmacology_matrix and last_minute_crash_sheet
     are synthesized if missing, ensuring 100% content parity across Word and Markdown.
+    Skips duplicate pharmacology matrix if already comprehensively covered in thematic sections.
     """
     modules = data.get("modules") or []
 
     # 1. Master Pharmacology Matrix
     if not data.get("master_pharmacology_matrix"):
-        all_pharm_rows = []
-        for mod in modules:
-            if not isinstance(mod, dict):
-                continue
-            m_name = mod.get("name", "")
-            for drug in (mod.get("pharmacology_and_management") or []):
-                if not isinstance(drug, dict):
+        sections = data.get("sections") or data.get("thematic_sections") or []
+        has_pharma_section = any(
+            any(k in (sec.get("title") or "") for k in ["دارو", "فارماکولوژی", "درمان دارویی", "Pharmacology"])
+            for sec in sections if isinstance(sec, dict)
+        )
+        if not has_pharma_section:
+            all_pharm_rows = []
+            for mod in modules:
+                if not isinstance(mod, dict):
                     continue
-                d_class = drug.get("drug_class", "-") or "-"
-                d_mech = drug.get("mechanism_of_action") or drug.get("mechanism") or "-"
-                d_ind = drug.get("indications", "-") or "-"
-                d_contra = drug.get("contraindications", "-") or "-"
-                d_pearl = drug.get("exam_pearl") or drug.get("pearl") or "-"
-                all_pharm_rows.append([m_name, d_class, d_mech, d_ind, d_contra, d_pearl])
-        if len(all_pharm_rows) >= 2:
-            data["master_pharmacology_matrix"] = {
-                "title": "ماتریس جامع مقایسه داروشناسی بالینی (Master Pharmacology Matrix)",
-                "headers": ["مبحث / بیماری", "دسته دارویی و نمونه‌ها", "مکانیسم اثر سلولی", "اندیکاسیون دقیق", "کنترااندیکاسیون / عوارض مرگبار", "نکته کلیدی استاد / دام آزمون"],
-                "rows": all_pharm_rows
-            }
+                m_name = mod.get("name", "")
+                for drug in (mod.get("pharmacology_and_management") or []):
+                    if not isinstance(drug, dict):
+                        continue
+                    d_class = drug.get("drug_class", "-") or "-"
+                    d_mech = drug.get("mechanism_of_action") or drug.get("mechanism") or "-"
+                    d_ind = drug.get("indications", "-") or "-"
+                    d_contra = drug.get("contraindications", "-") or "-"
+                    d_pearl = drug.get("exam_pearl") or drug.get("pearl") or "-"
+                    all_pharm_rows.append([m_name, d_class, d_mech, d_ind, d_contra, d_pearl])
+            if len(all_pharm_rows) >= 2:
+                data["master_pharmacology_matrix"] = {
+                    "title": "ماتریس جامع مقایسه داروشناسی بالینی (Master Pharmacology Matrix)",
+                    "headers": ["مبحث / بیماری", "دسته دارویی و نمونه‌ها", "مکانیسم اثر سلولی", "اندیکاسیون دقیق", "کنترااندیکاسیون / عوارض مرگبار", "نکته کلیدی استاد / دام آزمون"],
+                    "rows": all_pharm_rows
+                }
 
     # 2. Last-Minute Crash Sheet
     if not data.get("last_minute_crash_sheet") and len(modules) >= 1:
@@ -1319,7 +1402,7 @@ def ensure_master_matrices(data: Dict[str, Any]):
             if not isinstance(mod, dict):
                 continue
             m_name = mod.get("name", "")
-            for a in (mod.get("instructor_exam_alerts") or []):
+            for a in ensure_list(mod.get("instructor_exam_alerts")):
                 if a and str(a).strip():
                     bullets.append(f"تأکید مستقیم استاد ({m_name}): {str(a).strip()}")
         # Priority 2: Absolute Contraindications & Lethal Withholds
@@ -1327,7 +1410,7 @@ def ensure_master_matrices(data: Dict[str, Any]):
             if not isinstance(mod, dict):
                 continue
             m_name = mod.get("name", "")
-            for c in (mod.get("contraindications_and_warnings") or []):
+            for c in ensure_list(mod.get("contraindications_and_warnings")):
                 if c and str(c).strip():
                     bullets.append(f"ممنوعیت مرگبار ({m_name}): {str(c).strip()}")
         # Priority 3: Diagnostic Gold Standards & Staging Systems
@@ -1351,13 +1434,13 @@ def ensure_master_matrices(data: Dict[str, Any]):
             if not isinstance(mod, dict):
                 continue
             m_name = mod.get("name", "")
-            for p in (mod.get("high_yield_pearls") or []):
+            for p in ensure_list(mod.get("high_yield_pearls")):
                 if p and str(p).strip():
                     bullets.append(f"نکته های‌یلد ({m_name}): {str(p).strip()}")
-            for pv in (mod.get("pivot_points") or mod.get("high_yield_decision_points") or []):
+            for pv in ensure_list(mod.get("pivot_points") or mod.get("high_yield_decision_points")):
                 if pv and str(pv).strip():
                     bullets.append(f"نقطه انشعاب بالینی ({m_name}): {str(pv).strip()}")
-            for cr in (mod.get("clinical_relevance") or []):
+            for cr in ensure_list(mod.get("clinical_relevance")):
                 if cr and str(cr).strip():
                     bullets.append(f"اهمیت بالینی پایه ({m_name}): {str(cr).strip()}")
         # Priority 5: Surgical Indications & Severe Complications
@@ -1462,6 +1545,7 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
 
     # Iterate over modules/diseases in the data
     modules = data.get("modules", [])
+    covered_entities = extract_covered_section_entities(data)
     for mod_idx, mod in enumerate(modules, 1):
         mod_name = mod.get("name", f"مبحث شماره {mod_idx}")
         mod_name_en = mod.get("name_en", "")
@@ -1477,6 +1561,7 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
             mod_type == "clinical_approach"
             or bool(mod.get("step_by_step_algorithm"))
         )
+        is_covered = is_module_covered_in_sections(mod, covered_entities)
 
         # Heading 1 (Module Title)
         p_h1 = doc.add_paragraph()
@@ -1492,6 +1577,14 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
             add_r(p_h1, f"  ({mod_name_en})", font_name=FONT_DUBAI, size_pt=12.0, bold=True,
                   color_rgb=COLOR_SECONDARY_TEAL, is_rtl=False)
 
+        # Cross-Layer Deduplication Notice (v3.9.3)
+        if is_covered:
+            p_cov = doc.add_paragraph()
+            set_p_rtl(p_cov, space_before_pt=3, space_after_pt=5)
+            add_r(p_cov, "⚡ ارجاع به جدول تماتیک: ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            add_bidi_text(p_cov, "جزئیات تشخیصی، کات‌آف‌ها، تظاهرات و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.",
+                          font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_MUTED_GRAY)
+
         # Module-level Thematic Tables (v3.9.0 Table-First Hybrid)
         if mod.get("tables") and isinstance(mod["tables"], list):
             for t_item in mod["tables"]:
@@ -1501,10 +1594,12 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
             t_item = mod["thematic_table"]
             add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
 
+        if is_covered:
+            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
         # -------------------------------------------------------------------
         # Archetype 1: Foundational Physiology & Regulatory Loops
         # -------------------------------------------------------------------
-        if is_foundation:
+        elif is_foundation:
             roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
             if roles:
                 p_sub = doc.add_paragraph()
@@ -1701,14 +1796,15 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                           font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
                     add_bidi_text(p_gold, str(gold_std), font_name=FONT_DUBAI, size_pt=10.5)
 
-                if diag.get("key_labs") and isinstance(diag["key_labs"], list):
-                    for lab in diag["key_labs"]:
-                        if lab and str(lab).strip():
-                            p_lab = doc.add_paragraph()
-                            set_p_rtl(p_lab, space_before_pt=1, space_after_pt=2)
-                            add_r(p_lab, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True,
-                                  color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
-                            add_bidi_text(p_lab, str(lab), font_name=FONT_DUBAI, size_pt=10.5)
+                raw_labs = diag.get("key_labs") or []
+                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
+                for lab in labs_list:
+                    if lab and str(lab).strip():
+                        p_lab = doc.add_paragraph()
+                        set_p_rtl(p_lab, space_before_pt=1, space_after_pt=2)
+                        add_r(p_lab, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True,
+                              color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
+                        add_bidi_text(p_lab, str(lab), font_name=FONT_DUBAI, size_pt=10.5)
 
             # 5. Comprehensive Management: Medical, Surgical & Non-Pharmacological
             has_pharma = bool(mod.get("pharmacology_and_management"))
@@ -1775,6 +1871,17 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
                 headers = diff.get("headers", ["بیماری / سندروم", "علائم مشترک", "نقطه تمایز کلیدی (Pivot Feature)", "تست تشخیصی قطعی"])
                 rows = diff.get("rows", [])
                 add_comparison_table(doc, title=f"تشخیص افتراقی‌های مهم {mod_name}", headers=headers, rows=rows)
+
+        # Retain Differential Diagnosis Table for covered modules if present
+        if is_covered and mod.get("differential_table") and isinstance(mod["differential_table"], dict):
+            diff = mod["differential_table"]
+            headers = diff.get("headers", ["بیماری / سندروم", "علائم مشترک", "نقطه تمایز کلیدی (Pivot Feature)", "تست تشخیصی قطعی"])
+            rows = diff.get("rows", [])
+            add_comparison_table(doc, title=f"تشخیص افتراقی‌های مهم {mod_name}", headers=headers, rows=rows)
+
+        # Track 4: Clinical Semiology & Physical Examination (always rendered for clinical maneuvers)
+        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            add_semiology_box(doc, mod["clinical_semiology"])
 
         # High-Yield Pearls & Traps Box
         if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
@@ -2042,6 +2149,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 c_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
                 add_markdown_alert(lines, "WARNING", "هشدار اورژانسی و بالینی", c_list, icon="🚨")
 
+    covered_entities = extract_covered_section_entities(data)
     for mod in (data.get("modules") or []):
         if not isinstance(mod, dict):
             continue
@@ -2059,6 +2167,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
             mod_type == "clinical_approach"
             or bool(mod.get("step_by_step_algorithm"))
         )
+        is_covered = is_module_covered_in_sections(mod, covered_entities)
 
         type_badge = ""
         if is_foundation:
@@ -2068,8 +2177,14 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
 
         lines.append(f"## ■ {m_name}{type_badge} ({m_name_en})\n")
 
+        # Cross-Layer Deduplication Notice (v3.9.3)
+        if is_covered:
+            lines.append("> [!NOTE]\n> **⚡ ارجاع به جدول تماتیک:** جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.\n")
+
+        if is_covered:
+            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
         # Archetype 1: Foundational Physiology & Regulatory Loops
-        if is_foundation:
+        elif is_foundation:
             roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
             if roles:
                 lines.append("### ۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)")
@@ -2209,7 +2324,9 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 gold_std = diag.get("gold_standard")
                 if gold_std and str(gold_std).strip() and str(gold_std).lower() not in {"null", "none", "ذکر نشده"}:
                     lines.append(f"- ⭐ **استاندارد طلایی (Gold Standard):** {gold_std}")
-                for lab in (diag.get("key_labs") or []):
+                raw_labs = diag.get("key_labs") or []
+                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
+                for lab in labs_list:
                     if lab and str(lab).strip():
                         lines.append(f"- • {lab}")
                 lines.append("")
@@ -2287,6 +2404,26 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
             lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
             for row in dt.get("rows", []):
                 lines.append(format_md_table_row(row))
+            lines.append("")
+
+        # Clinical Semiology & Physical Examination (retained for covered modules)
+        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            lines.append("### 🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)")
+            for sem in mod["clinical_semiology"]:
+                if not isinstance(sem, dict):
+                    continue
+                man = sem.get("maneuver_or_sign", "")
+                tech = sem.get("technique", "")
+                sig = sem.get("clinical_significance", "")
+                pearl = sem.get("exam_pearl", "")
+                desc = f"- 🩺 **{man}:** "
+                if tech:
+                    desc += f"روش انجام ← {tech}"
+                if sig:
+                    desc += f" | اهمیت بالینی ← {sig}"
+                if pearl:
+                    desc += f" *(نکته آزمون: {pearl})*"
+                lines.append(desc)
             lines.append("")
 
         # High Yield Pearls
@@ -2557,7 +2694,7 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "tag": f"PhysioPath::{mod_name}::Diagnostics"
                 })
         # Synthesize from Pearls
-        for pearl in (mod.get("high_yield_pearls") or []):
+        for pearl in ensure_list(mod.get("high_yield_pearls")):
             if pearl and str(pearl).strip():
                 pearl_str = str(pearl).strip()
                 cards.append({
@@ -2567,7 +2704,7 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
 
         # Synthesize from Contraindications & Warnings
-        for warn in (mod.get("contraindications_and_warnings") or []):
+        for warn in ensure_list(mod.get("contraindications_and_warnings")):
             if warn and str(warn).strip():
                 warn_str = str(warn).strip()
                 cards.append({
@@ -2577,7 +2714,7 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
 
         # Synthesize from Instructor Alerts
-        for alert in (mod.get("instructor_exam_alerts") or []):
+        for alert in ensure_list(mod.get("instructor_exam_alerts")):
             if alert and str(alert).strip():
                 alert_str = str(alert).strip()
                 cards.append({
@@ -3309,6 +3446,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                     html_parts.append(f'<div>• {format_inline_markdown(str(c_item))}</div>')
                 html_parts.append('</div></div>')
 
+    covered_entities = extract_covered_section_entities(data)
     for mod_idx, mod in enumerate((data.get("modules") or []), 1):
         if not isinstance(mod, dict):
             continue
@@ -3326,6 +3464,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             mod_type == "clinical_approach"
             or bool(mod.get("step_by_step_algorithm"))
         )
+        is_covered = is_module_covered_in_sections(mod, covered_entities)
 
         type_badge = ""
         if is_foundation:
@@ -3335,8 +3474,14 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
         en_tag = f" ({m_name_en})" if m_name_en else ""
         html_parts.append(f'<div class="module-header">■ {m_name}{type_badge}{en_tag}</div>')
 
+        # Cross-Layer Deduplication Notice (v3.9.3)
+        if is_covered:
+            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">⚡ ارجاع به جدول تماتیک</div><div class="callout-body">جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.</div></div>')
+
+        if is_covered:
+            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
         # Archetype 1: Foundational Physiology & Regulatory Loops
-        if is_foundation:
+        elif is_foundation:
             roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
             if roles:
                 html_parts.append('<div class="section-title">۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)</div><ul>')
@@ -3452,7 +3597,9 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                 gold = diag.get("gold_standard")
                 if gold and str(gold).strip() and str(gold).lower() not in {"null", "none", "ذکر نشده"}:
                     html_parts.append(f'<li><span class="badge-gold">استاندارد طلایی</span> {gold}</li>')
-                for lab in (diag.get("key_labs") or []):
+                raw_labs = diag.get("key_labs") or []
+                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
+                for lab in labs_list:
                     if lab and str(lab).strip():
                         html_parts.append(f'<li>• {lab}</li>')
                 html_parts.append('</ul>')
@@ -3526,6 +3673,25 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                         html_parts.append(f'<td>{cell}</td>')
                     html_parts.append('</tr>')
                 html_parts.append('</tbody></table>')
+
+        # Clinical Semiology & Physical Examination (retained for covered modules)
+        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
+            for sem in mod["clinical_semiology"]:
+                if isinstance(sem, dict):
+                    man = sem.get("maneuver_or_sign", "")
+                    tech = sem.get("technique", "")
+                    sig = sem.get("clinical_significance", "")
+                    pearl = sem.get("exam_pearl", "")
+                    line = f"<b>🩺 {man}:</b> "
+                    if tech:
+                        line += f"روش انجام ← {tech}"
+                    if sig:
+                        line += f" | اهمیت بالینی ← {sig}"
+                    if pearl:
+                        line += f" <i>(نکته: {pearl})</i>"
+                    html_parts.append(f'<div>{line}</div>')
+            html_parts.append('</div></div>')
 
         # High Yield Pearls
         if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):

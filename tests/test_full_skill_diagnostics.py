@@ -2586,6 +2586,169 @@ def test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates():
     print("[PASS] Bug AL Test Passed: Telegraphic syntax, cross-layer deduplication, page budget, and batch prompt gates verified.")
 
 
+def test_bug_am_semantic_binding_and_cutoff_integrity_gates():
+    """Bug AM: Local Context Binding, Clinical Cutoff Isolation, Instructor Emphasis, and Scanned Page Gates."""
+    from audit_summary_coverage import (
+        audit_coverage,
+        audit_table_cell_bloat,
+        audit_scanned_pages,
+        extract_summary_local_blocks
+    )
+
+    # 1. Local Context Binding: Detect unbound contraindication where drug & warning appear in separated rows
+    source_lecture_1 = (
+        "در مبحث فارماکولوژی قلب:\n"
+        "استفاده از وراپامیل در بیماران با نارسایی قلبی و کسر تخلیه پایین اکیدا ممنوع است زیرا باعث دکامپانسیون قلبی می شود.\n"
+        "همچنین متفورمین داروی خط اول دیابت نوع دو است."
+    )
+
+    # Unbound summary: mentions verapamil in row 1 with NO warning, and mentions prohibition for metformin in row 2
+    unbound_summary = {
+        "topic_title": "فارماکولوژی قلب و غدد",
+        "sections": [
+            {
+                "title": "جدول مقایسه داروها",
+                "headers": ["نام دارو", "مکانیسم", "نکات بالینی"],
+                "rows": [
+                    ["وراپامیل (Verapamil)", "مهارکننده کانال کلسیم", "کنترل ریتم در تاکی‌کاردی فوق بطنی"],
+                    ["متفورمین (Metformin)", "مهار گلوکونئوژنز", "در نارسایی حاد کلیه اکیدا ممنوع است"]
+                ]
+            }
+        ]
+    }
+    report_unbound = audit_coverage(source_lecture_1, unbound_summary)
+    assert len(report_unbound["omitted_contraindications"]) >= 1, "Local Context Binding must flag unbound warning when drug and prohibition are separated!"
+
+    # Bound summary: verapamil and prohibition co-occur within the same table row
+    bound_summary = {
+        "topic_title": "فارماکولوژی قلب و غدد",
+        "sections": [
+            {
+                "title": "جدول مقایسه داروها",
+                "headers": ["نام دارو", "مکانیسم", "نکات بالینی"],
+                "rows": [
+                    ["وراپامیل (Verapamil)", "مهارکننده کانال کلسیم", "• **منع مصرف:** در نارسایی قلبی با کسر تخلیه پایین اکیدا ممنوع"],
+                    ["متفورمین (Metformin)", "مهار گلوکونئوژنز", "در نارسایی حاد کلیه اکیدا ممنوع است"]
+                ]
+            }
+        ]
+    }
+    report_bound = audit_coverage(source_lecture_1, bound_summary)
+    assert len(report_bound["omitted_contraindications"]) == 0, "Local Context Binding must pass when drug and prohibition co-occur in the same row!"
+
+    # 2. Instructor Emphasis Zero-Omission Gate
+    source_lecture_2 = (
+        "در زمینه تیروئید:\n"
+        "استاد تأکید کردند که دوز شروع لووتیروکسین در سالمندان و بیماران قلبی حتما باید ۱۲.۵ میکروگرم باشد.\n"
+        "دوز معمول بزرگسالان ۱.۶ میکروگرم بر کیلوگرم روزانه است."
+    )
+    # Summary that drops instructor alert
+    summary_without_emphasis = {
+        "topic_title": "هیپوتیروئیدی",
+        "sections": [
+            {
+                "title": "درمان هیپوتیروئیدی",
+                "headers": ["دارو", "دوز استاندارد"],
+                "rows": [
+                    ["لووتیروکسین (Levothyroxine)", "۱.۶ میکروگرم بر کیلوگرم روزانه"]
+                ]
+            }
+        ]
+    }
+    report_emp_omitted = audit_coverage(source_lecture_2, summary_without_emphasis)
+    assert len(report_emp_omitted["omitted_instructor_emphasis"]) >= 1, "Must detect omitted instructor emphasis!"
+    assert report_emp_omitted["verdict"] == "WARNING_INSTRUCTOR_EMPHASIS_OMITTED", f"Expected WARNING_INSTRUCTOR_EMPHASIS_OMITTED, got {report_emp_omitted['verdict']}"
+    assert not report_emp_omitted["scores"]["instructor_emphasis_omitted_count"] == 0
+
+    # Summary that includes instructor alert
+    summary_with_emphasis = {
+        "topic_title": "هیپوتیروئیدی",
+        "sections": [
+            {
+                "title": "درمان هیپوتیروئیدی",
+                "headers": ["دارو", "دوز استاندارد", "نکات استاد و آزمون"],
+                "rows": [
+                    ["لووتیروکسین (Levothyroxine)", "۱.۶ میکروگرم بر کیلوگرم روزانه و دوز ۱۲.۵ میکروگرم در سالمندان", "• **تأکید استاد:** شروع با دوز ۱۲.۵ میکروگرم در سالمندان و قلبی"]
+                ]
+            }
+        ],
+        "modules": [
+            {
+                "name": "هیپوتیروئیدی",
+                "definition_and_etiology": ["کمبود هورمون تیروئید"],
+                "diagnostics": {"best_initial_test": "اندازه‌گیری TSH"},
+                "instructor_exam_alerts": ["استاد بر شروع دوز ۱۲.۵ میکروگرم در سالمندان تأکید کردند"]
+            }
+        ]
+    }
+    report_emp_passed = audit_coverage(source_lecture_2, summary_with_emphasis)
+    assert len(report_emp_passed["omitted_instructor_emphasis"]) == 0, "Instructor emphasis must pass when retained!"
+
+    # 3. Clinical Cutoff Separation from General Numbers
+    source_lecture_3 = (
+        "معیارهای دیابت:\n"
+        "قند خون ناشتا بالای ۱۲۶ میلی گرم در دسی لیتر یا HbA1c بالای ۶.۵ درصد تشخیص دیابت است.\n"
+        "در این مطالعه ۲۰ نفر از ۵۰ بیمار شرکت کردند."
+    )
+    # Summary that preserves general numbers (20, 50) but drops clinical cutoff (126, 6.5)
+    summary_dropping_cutoffs = {
+        "topic_title": "دیابت قندی",
+        "sections": [
+            {
+                "title": "تشخیص دیابت",
+                "headers": ["تست", "تعداد نمونه"],
+                "rows": [
+                    ["قند خون ناشتا و هموگلوبین گلیکوزیله", "۲۰ نفر از ۵۰ بیمار شرکت کردند"]
+                ]
+            }
+        ],
+        "modules": [
+            {
+                "name": "دیابت قندی",
+                "definition_and_etiology": ["اختلال متابولیسم گلوکز"],
+                "diagnostics": {"best_initial_test": "FBS و HbA1c"}
+            }
+        ]
+    }
+    report_cutoff_omitted = audit_coverage(source_lecture_3, summary_dropping_cutoffs)
+    assert report_cutoff_omitted["scores"]["clinical_cutoff_coverage_pct"] < 95.0, "Dropping vital cutoffs must fail cutoff coverage threshold!"
+    assert report_cutoff_omitted["verdict"] == "WARNING_CLINICAL_CUTOFF_OMITTED", f"Expected WARNING_CLINICAL_CUTOFF_OMITTED, got {report_cutoff_omitted['verdict']}"
+    assert report_cutoff_omitted["scores"]["omitted_clinical_cutoffs_count"] >= 1
+
+    # 4. Flexible Cell Word Bounds for Multi-Criteria / Exception Cells
+    dense_cell_data = {
+        "sections": [
+            {
+                "title": "غربالگری و استثنائات بالینی",
+                "headers": ["بیماری", "معیارهای تشخیصی و استثنائات"],
+                "rows": [
+                    [
+                        "نارسایی احتقانی قلب (HFrEF)",
+                        "• **معیار اولیه:** کسر تخلیه زیر ۴۰ درصد به همراه علائم احتقان ریوی\n"
+                        "• **استثنائات دارویی:** تجویز بتابلوکر در دکامپانسیون حاد ممنوع است مگر اینکه بیمار پس از دیورتیک به وضعیت پایداری همودینامیک و یوولمی کامل برسد.\n"
+                        "• **هدف درمانی:** حفظ فشار بالای ۹۰ میلی‌متر جیوه."
+                    ]
+                ]
+            }
+        ]
+    }
+    cell_bloat_res = audit_table_cell_bloat(dense_cell_data)
+    assert not cell_bloat_res["cell_bloat_detected"], "Dense clinical cell with sub-bullets and exceptions up to 55 words must NOT trigger bloat penalty!"
+
+    # 5. Scanned Page Inspection Advisory Detection
+    source_with_scanned = (
+        "مقدمه و بررسی بیماران:\n"
+        "[🚨 SCANNED_PAGE_REQUIRING_MULTIMODAL_INSPECTION: extracted_images/scanned_page_4.png (صفحه 4)]\n"
+        "متن ادامه جزوه در صفحه ۵..."
+    )
+    scanned_audit = audit_scanned_pages(source_with_scanned, {})
+    assert scanned_audit["unextracted_scanned_pages_count"] == 1, "Must detect 1 unextracted scanned page!"
+    assert scanned_audit["status"] == "ADVISORY_SCANNED_PAGES_PRESENT"
+    assert scanned_audit["scanned_pages"][0]["page"] == 4
+
+    print("[PASS] Bug AM Test Passed: Local Context Binding, Clinical Cutoff Isolation, Instructor Emphasis, and Scanned Page Gates verified.")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -2626,4 +2789,5 @@ if __name__ == "__main__":
     test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
     test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
     test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
+    test_bug_am_semantic_binding_and_cutoff_integrity_gates()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

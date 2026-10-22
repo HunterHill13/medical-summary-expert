@@ -195,11 +195,15 @@ EMPHASIS_KEYWORDS = [
 
 def extract_warnings_and_contraindications(text: str) -> List[str]:
     """Finds sentences containing absolute contraindications, lethal withholds, or washout warnings."""
-    sentences = re.split(r'(?:(?<!\d)\.|\.(?!\d))|[\n\?!;؛]', text)
+    sentences = re.split(r'(?:(?<!\d)\.|\.(?!\d))|[\n\?!;؛:]', text)
     results = []
+    TITLE_PREFIXES = ("مبحث", "فصل", "بخش", "مدیریت اورژانس", "جدول", "اسلاید", "عنوان")
     for sent in sentences:
         s_clean = sent.strip()
-        if len(s_clean) > 15 and any(kw in s_clean for kw in WARNING_KEYWORDS):
+        if len(s_clean) > 20 and any(kw in s_clean for kw in WARNING_KEYWORDS):
+            # Exclude standalone section/slide titles that lack a clinical directive verb
+            if any(s_clean.startswith(p) for p in TITLE_PREFIXES) and not any(v in s_clean for v in ["است", "می‌شود", "می شود", "نباید", "شود", "دارد", "گردد"]):
+                continue
             results.append(s_clean)
     return results
 
@@ -654,8 +658,10 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     Audits table cells for narrative prose bloat vs. concise telegraphic syntax.
     Enforces:
     - Maximum word limit per cell: ideally <= 25-30 words.
-    - Flags cells with > 35 words that lack telegraphic indicators (bold keywords '**', bullets '•', or directional arrows '->' / '→').
-    - Flags average words per cell > 28.0 when at least 6 cells exist.
+    - Flexible bound (up to 50-55 words) for cells with structured sub-bullets ('•', '**', '\n')
+      or clinical exceptions/criteria ('مگر اینکه', 'به جز', 'در صورت', 'استثنا', 'شرط').
+    - Flags cells with > 35 words lacking telegraphic or exception markers.
+    - Flags average words per cell > 35.0 (with sub-bullets) or > 28.0 (plain cells) when at least 6 cells exist.
     """
     sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
     modules = summary_data.get("modules") or []
@@ -693,19 +699,28 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
 
     inflated_cells = []
     word_counts = []
+    EXCEPTION_MARKERS = ["مگر اینکه", "به استثنای", "استثنا", "در صورت", "به جز", "شرط", "معیار", "except", "unless", "criteria", "stage", "grade"]
+
     for c in all_cells:
         w_cnt = len(c.split())
         word_counts.append(w_cnt)
         has_telegraphic = ("**" in c) or ("•" in c) or ("->" in c) or ("→" in c) or ("\n" in c)
-        if (w_cnt > 35 and not has_telegraphic) or w_cnt > 55:
+        has_exceptions_or_criteria = any(kw in c for kw in EXCEPTION_MARKERS)
+
+        # Flexible bound: allow multi-criteria/exception cells up to 55 words without penalty
+        cell_word_limit = 55 if (has_telegraphic or has_exceptions_or_criteria) else 35
+        if w_cnt > cell_word_limit:
             inflated_cells.append({
                 "preview": c[:80] + ("..." if len(c) > 80 else ""),
                 "word_count": w_cnt,
-                "has_telegraphic_markers": has_telegraphic
+                "has_telegraphic_markers": has_telegraphic,
+                "has_exceptions_or_criteria": has_exceptions_or_criteria
             })
 
     avg_words = round(sum(word_counts) / max(1, len(word_counts)), 1)
-    cell_bloat_detected = bool((len(all_cells) >= 6 and avg_words > 28.0) or len(inflated_cells) >= 1)
+    has_sub_bullets = any("•" in c or "\n" in c for c in all_cells)
+    avg_threshold = 35.0 if has_sub_bullets else 28.0
+    cell_bloat_detected = bool((len(all_cells) >= 6 and avg_words > avg_threshold) or len(inflated_cells) >= 1)
 
     return {
         "cell_bloat_detected": cell_bloat_detected,
@@ -816,6 +831,129 @@ def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def extract_summary_local_blocks(summary_data: Dict[str, Any]) -> List[str]:
+    """
+    Extracts atomic local semantic blocks from summary data (table rows, callouts, alerts,
+    pearls, contraindications, and sliding-window text segments).
+    Used for Local Context Binding to guarantee that warnings, contraindications,
+    and instructor pearls bind closely to the relevant drug/disease context.
+    """
+    blocks = []
+
+    # 1. Table rows from sections or thematic_sections
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    for sec in sections:
+        if isinstance(sec, dict):
+            sec_title = sec.get("title") or sec.get("section_title") or ""
+            for row in (sec.get("rows") or []):
+                if isinstance(row, (list, tuple)):
+                    row_txt = " | ".join(str(c) for c in row if c)
+                    blocks.append(f"{sec_title} : {row_txt}".strip())
+                    for c in row:
+                        c_str = str(c).strip()
+                        if len(c_str.split()) >= 3:
+                            blocks.append(c_str)
+
+    # 2. Module level fields: tables, pearls, warnings, semiology, pharmacology
+    modules = summary_data.get("modules") or []
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        m_name = mod.get("name") or mod.get("name_en") or ""
+
+        # Module tables
+        for tbl in (mod.get("tables") or []):
+            if isinstance(tbl, dict):
+                t_title = tbl.get("title") or ""
+                for row in (tbl.get("rows") or []):
+                    if isinstance(row, (list, tuple)):
+                        row_txt = " | ".join(str(c) for c in row if c)
+                        blocks.append(f"{m_name} : {t_title} : {row_txt}".strip())
+                        for c in row:
+                            c_str = str(c).strip()
+                            if len(c_str.split()) >= 3:
+                                blocks.append(c_str)
+
+        # Callout and high-yield list fields
+        CALLOUT_KEYS = [
+            "contraindications_and_warnings", "exam_traps", "instructor_exam_alerts",
+            "high_yield_pearls", "pearls", "clinical_pearls", "emergency_management",
+            "key_takeaways", "takeaways", "differential_diagnosis_pivots", "subtle_distinctions",
+            "complications_and_prognosis", "pharmacology_and_management", "clinical_semiology"
+        ]
+        for k in CALLOUT_KEYS:
+            val = mod.get(k)
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        blocks.append(f"{m_name} : {item}".strip())
+                    elif isinstance(item, dict):
+                        dict_txt = " ".join(str(v) for v in item.values() if v)
+                        blocks.append(f"{m_name} : {dict_txt}".strip())
+            elif isinstance(val, str):
+                blocks.append(f"{m_name} : {val}".strip())
+            elif isinstance(val, dict):
+                dict_txt = " ".join(str(v) for v in val.values() if v)
+                blocks.append(f"{m_name} : {dict_txt}".strip())
+
+        # Narrative fields: definition, clinical presentation, etc.
+        NARRATIVE_KEYS = ["definition_and_etiology", "clinical_presentation", "pathophysiology_cascade", "flowchart_steps"]
+        for k in NARRATIVE_KEYS:
+            val = mod.get(k)
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        s_str = item.strip()
+                        if len(s_str.split()) > 35:
+                            # Break long narrative text into local sliding window chunks
+                            words_list = s_str.split()
+                            for i in range(0, len(words_list), 15):
+                                chunk = " ".join(words_list[i:i + 35])
+                                if len(chunk.split()) >= 4:
+                                    blocks.append(f"{m_name} : {chunk}".strip())
+                        else:
+                            blocks.append(f"{m_name} : {s_str}".strip())
+            elif isinstance(val, str):
+                s_str = val.strip()
+                if len(s_str.split()) > 35:
+                    words_list = s_str.split()
+                    for i in range(0, len(words_list), 15):
+                        chunk = " ".join(words_list[i:i + 35])
+                        if len(chunk.split()) >= 4:
+                            blocks.append(f"{m_name} : {chunk}".strip())
+                else:
+                    blocks.append(f"{m_name} : {s_str}".strip())
+
+    return blocks
+
+
+def audit_scanned_pages(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rule 20 (SCANNED_PAGE_MULTIMODAL_INSPECTION_GATE):
+    Detects unextracted raster/scanned PDF pages in source text that require multimodal vision inspection.
+    """
+    marker_pattern = re.compile(r'\[🚨 SCANNED_PAGE_REQUIRING_MULTIMODAL_INSPECTION:\s*(?P<path>[^\]]+?)\s*\(صفحه\s*(?P<page>\d+)\)\]')
+    matches = list(marker_pattern.finditer(source_text))
+    scanned_pages = []
+    for m in matches:
+        scanned_pages.append({
+            "page": int(m.group("page")),
+            "image_path": m.group("path").strip(),
+            "status": "UNEXTRACTED_SCANNED_PAGE"
+        })
+
+    has_unextracted = len(scanned_pages) > 0
+    return {
+        "unextracted_scanned_pages_count": len(scanned_pages),
+        "scanned_pages": scanned_pages,
+        "status": "ADVISORY_SCANNED_PAGES_PRESENT" if has_unextracted else "NO_SCANNED_PAGES",
+        "advisory": (
+            f"توجه: تعداد {len(scanned_pages)} صفحه اسکن‌شده بدون متن‌برداری شناسایی شد. "
+            "جهت تضمین پوشش ۱۰۰٪، بازبینی با مدل چندوجهی (Multimodal Vision) توصیه می‌شود."
+        ) if has_unextracted else "تمامی صفحات دارای لایه متنی برداری یا OCR شده هستند."
+    }
+
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -826,17 +964,24 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     source_entities = extract_drug_and_disease_entities(norm_source)
     summary_entities = extract_drug_and_disease_entities(norm_summary_text)
 
-    # 1. Numerical & Cutoff Audit (Exact numeric boundary matching)
+    # 1. Numerical & Cutoff Audit (Exact numeric boundary matching & Cutoff Isolation)
+    source_cutoffs = [item for item in source_nums if bool(item.get("unit")) or bool(item.get("prefix"))]
     matched_nums = []
     omitted_nums = []
+    matched_cutoffs = []
+    omitted_cutoffs = []
 
     for item in source_nums:
         val = item["value"]
         # Match number strictly bounded by non-digits and non-decimal points
         if re.search(rf'(?<![\d\.])' + re.escape(val) + r'(?![\d\.])', norm_summary_text):
             matched_nums.append(item)
+            if item in source_cutoffs:
+                matched_cutoffs.append(item)
         else:
             omitted_nums.append(item)
+            if item in source_cutoffs:
+                omitted_cutoffs.append(item)
 
     unique_omissions = {}
     for om in omitted_nums:
@@ -844,7 +989,14 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         if tok not in unique_omissions:
             unique_omissions[tok] = om
 
+    unique_omitted_cutoffs = {}
+    for om in omitted_cutoffs:
+        tok = om["token"]
+        if tok not in unique_omitted_cutoffs:
+            unique_omitted_cutoffs[tok] = om
+
     num_coverage_pct = round((len(matched_nums) / len(source_nums) * 100), 1) if source_nums else 100.0
+    cutoff_coverage_pct = round((len(matched_cutoffs) / len(source_cutoffs) * 100), 1) if source_cutoffs else 100.0
 
     # 2. Entity Recall Audit
     missing_entities = [e for e in source_entities if e.lower() not in norm_summary_text.lower()]
@@ -888,38 +1040,73 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
 
     all_bifurcations_valid = all(b["is_compliant"] for b in bifurcation_status) if bifurcation_status else True
 
-    # 4. Warnings & Contraindications Audit
+    # 4. Warnings & Contraindications Audit (Local Context Binding)
     source_warnings = extract_warnings_and_contraindications(norm_source)
     omitted_warnings = []
-    has_warning_signal = any(sig in norm_summary_text.lower() for sig in WARNING_SIGNALS)
+    local_blocks = extract_summary_local_blocks(summary_data)
+    norm_local_blocks = [normalize_medical_text(b).lower() for b in local_blocks]
 
     for w in source_warnings:
         # Extract substantive words (excluding stop words and warning keywords)
         w_words = [
-            wrd for wrd in re.findall(r'\b[A-Za-zآ-ی‌]{4,}\b', w)
+            wrd for wrd in re.findall(r'\b[A-Za-zآ-ی‌]{3,}\b', w)
             if wrd not in PERSIAN_COMMON_STOPWORDS and not any(kw in wrd for kw in WARNING_KEYWORDS)
         ]
-        # At least one distinctive word must appear, and summary must contain a warning signal
-        distinctive_match = any(wrd in norm_summary_text for wrd in w_words) if w_words else False
-        if not (distinctive_match and has_warning_signal):
+        if not w_words:
+            continue
+
+        w_entities = extract_drug_and_disease_entities(w)
+        first_subject = w_words[0].lower() if w_words else ""
+
+        # Local Context Binding Check:
+        # Drug / Clinical Subject + Warning Signal must co-occur within the SAME local block (table row, callout, or pearl)
+        bound_locally = False
+        for block in norm_local_blocks:
+            has_warning_signal = any(sig.lower() in block for sig in WARNING_SIGNALS)
+            if not has_warning_signal:
+                continue
+
+            has_entity_match = bool(w_entities and any(e.lower() in block for e in w_entities))
+            has_subject_match = bool(first_subject and first_subject in block)
+            # Check secondary subject if first word was an anatomy/context term
+            has_substantive_lead = bool(len(w_words) >= 2 and any(wrd.lower() in block for wrd in w_words[:2] if wrd.lower() not in {"بیماران", "بیمار", "نارسایی", "شدید", "خفیف"}))
+
+            if has_entity_match or has_subject_match or has_substantive_lead:
+                bound_locally = True
+                break
+
+        if not bound_locally:
             omitted_warnings.append(w)
 
-    # 5. Instructor Emphasis Audit
+    # 5. Instructor Emphasis Audit (Zero-Omission Mandatory Gate)
     source_emphasis = extract_instructor_emphasis(norm_source)
     omitted_emphasis = []
+    UNIT_WORDS = {'میکروگرم', 'میلی‌گرم', 'میلیگرم', 'گرم', 'درصد', 'ساعت', 'روزانه', 'هفتگی', 'میلی‌لیتر', 'لیتر', 'روزه', 'ساله', 'ماهه'}
+    ROUTINE_VERBS = {'کردند', 'باشد', 'شدند', 'گفتند', 'فرمولند', 'فرمودند', 'شروع', 'انجام', 'دارند', 'است'}
+
     for emp in source_emphasis:
+        emp_nums = [item['value'] for item in extract_clinical_numbers(emp)]
+        num_preserved = any(re.search(rf'(?<![\d\.])' + re.escape(n) + r'(?![\d\.])', norm_summary_text) for n in emp_nums) if emp_nums else False
         emp_words = [
-            wrd for wrd in re.findall(r'\b[A-Za-zآ-ی‌]{4,}\b', emp)
-            if wrd not in PERSIAN_COMMON_STOPWORDS and not any(kw in wrd for kw in EMPHASIS_KEYWORDS)
+            w for w in re.findall(r'\b[A-Za-zآ-ی‌]{4,}\b', emp)
+            if w not in PERSIAN_COMMON_STOPWORDS and not any(kw in w for kw in EMPHASIS_KEYWORDS) and w not in ROUTINE_VERBS and w not in UNIT_WORDS
         ]
-        preserved = any(wrd in norm_summary_text for wrd in emp_words) if emp_words else False
+        has_alert_block = any(kw in norm_summary_text for kw in ['استاد', 'امتحان', '⭐', 'نکته امتحانی'])
+        matched_distinctive = sum(1 for w in emp_words if w in norm_summary_text)
+
+        # If emphasis contains specific clinical numbers/cutoffs, that number MUST be preserved!
+        if emp_nums:
+            preserved = num_preserved and (matched_distinctive >= 1)
+        else:
+            preserved = (matched_distinctive >= 2) or (has_alert_block and matched_distinctive >= 1)
+
         if not preserved:
             omitted_emphasis.append(emp)
 
     # 6. Anti-Pharmacology-Skew & Illness Script Integrity Audit
     illness_script_report = audit_illness_script_integrity(norm_source, summary_data)
 
-    # 7. High-Yield Compression & Anti-Bloat Audit
+    # 7. High-Yield Compression & Anti-Bloat Audit (Adaptive Compression for Short/Dense Sources)
     src_words = len(re.findall(r'\b\w+\b', norm_source))
     sum_words = len(re.findall(r'\b\w+\b', norm_summary_text))
     compression_ratio = round(sum_words / src_words, 2) if src_words > 0 else 0.0
@@ -937,9 +1124,10 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
             elif isinstance(val, str) and len(re.findall(r'\b\w+\b', val)) > 150:
                 has_bloated_bullet = True
 
-    # A true medical revision summary must compress verbose explanations into high-yield pearls
-    # Bloat is flagged if source is substantial (>=300 words) but summary exceeds 85% of source volume,
-    # or if individual bullets contain verbatim paragraph dumps (>120 words).
+    # Adaptive Compression & Anti-Bloat:
+    # 1. For short snippets (src_words < 300): compression ratio is not enforced; only flag individual verbatim bullet dumps (>120 words).
+    # 2. For substantial handouts (src_words >= 300): allow high retention (up to 0.85) for dense sources without bloat penalty;
+    #    flag verbatim bloat only if summary exceeds 85% of source volume (> 0.85) or contains bloated bullets (>120 words).
     verbatim_bloat_detected = bool((src_words >= 300 and compression_ratio > 0.85) or has_bloated_bullet)
 
     # 8. Visual Atlas & Clinical Slide Inspection Audit
@@ -961,12 +1149,18 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     cell_bloat_report = audit_table_cell_bloat(summary_data)
     dedup_report = audit_cross_layer_duplication(summary_data)
     page_budget_report = audit_page_budget(summary_data)
+    scanned_page_report = audit_scanned_pages(source_text, summary_data)
+
+    # Enforce Cutoff Integrity: cutoff_coverage >= 95.0% and zero-omission if <= 10 cutoffs
+    cutoff_passed = (cutoff_coverage_pct >= 95.0) if len(source_cutoffs) > 10 else (len(unique_omitted_cutoffs) == 0)
 
     passed = (
         num_coverage_pct >= 80.0
+        and cutoff_passed
         and entity_recall_pct >= 85.0
         and all_bifurcations_valid
         and len(omitted_warnings) == 0
+        and len(omitted_emphasis) == 0
         and illness_script_report["illness_script_compliant"]
         and not verbatim_bloat_detected
         and (concept_depth_report["status"] != "AGGRESSIVELY_TRUNCATED")
@@ -975,7 +1169,11 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     )
 
     if not passed:
-        if verbatim_bloat_detected and num_coverage_pct >= 80.0:
+        if len(omitted_emphasis) > 0:
+            verdict = "WARNING_INSTRUCTOR_EMPHASIS_OMITTED"
+        elif not cutoff_passed:
+            verdict = "WARNING_CLINICAL_CUTOFF_OMITTED"
+        elif verbatim_bloat_detected and num_coverage_pct >= 80.0:
             verdict = "WARNING_VERBATIM_BLOAT_DETECTED"
         elif cell_bloat_report["cell_bloat_detected"]:
             verdict = "WARNING_TABLE_CELL_PARAGRAPH_INFLATION"
@@ -994,6 +1192,9 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "verdict": verdict,
         "scores": {
             "numerical_coverage_pct": num_coverage_pct,
+            "clinical_cutoff_coverage_pct": cutoff_coverage_pct,
+            "total_clinical_cutoffs": len(source_cutoffs),
+            "omitted_clinical_cutoffs_count": len(unique_omitted_cutoffs),
             "entity_recall_pct": entity_recall_pct,
             "diagnostic_bifurcation_compliant": all_bifurcations_valid,
             "contraindications_omitted_count": len(omitted_warnings),
@@ -1013,12 +1214,13 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "deduplication_audit": dedup_report,
         "page_budget_audit": page_budget_report,
         "concept_retention_audit": concept_depth_report,
+        "scanned_page_audit": scanned_page_report,
         "compression_audit": {
             "source_word_count": src_words,
             "summary_word_count": sum_words,
             "compression_ratio": compression_ratio,
             "verbatim_bloat_detected": verbatim_bloat_detected,
-            "high_yield_compressed": bool(0.10 <= compression_ratio <= 0.85)
+            "high_yield_compressed": bool(0.10 <= compression_ratio <= (1.15 if src_words < 1500 else 0.85))
         },
         "visual_atlas_audit": {
             "total_figures": len(visual_atlas_items),
@@ -1032,6 +1234,7 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "total_source_clinical_numbers": len(source_nums),
         "total_omitted_numbers_count": len(unique_omissions),
         "omitted_clinical_numbers": list(unique_omissions.values()),
+        "omitted_clinical_cutoffs": list(unique_omitted_cutoffs.values()),
         "omitted_contraindications": omitted_warnings,
         "omitted_instructor_emphasis": omitted_emphasis,
         "missing_entities": missing_entities,

@@ -328,7 +328,7 @@ def parse_pdf(file_path: str, extract_images: bool = True, img_out_dir: str = "e
                     ordered_text_blocks.append(f"\n[جدول صفحه {page_idx}]\n{md_tbl}\n")
                     table_rects.append(tab.bbox)
 
-        # 2. Check for scanned / raster-only pages
+        # 2. Check for scanned / raster-only pages (Multi-Tier Ingestion)
         page_text = page.get_text("text").strip()
         page_images = page.get_images(full=True)
         if len(page_text.split()) < 15 and len(page_images) > 0:
@@ -337,14 +337,40 @@ def parse_pdf(file_path: str, extract_images: bool = True, img_out_dir: str = "e
             scanned_filename = f"scanned_page_{page_idx}.png"
             scanned_path = os.path.join(img_out_dir, scanned_filename)
             pix.save(scanned_path)
-            elements.append({
-                "type": "scanned_page",
-                "page": page_idx,
-                "image_path": scanned_path,
-                "section": current_heading,
-                "warning": f"صفحه {page_idx} به صورت اسکن/تصویر بدون متن برداری استخراج شد."
-            })
-            ordered_text_blocks.append(f"\n[تصویر کامل صفحه اسکن‌شده {page_idx}: {scanned_path}]\n")
+
+            # Tier 1: Attempt native PyMuPDF OCR if Tesseract/OCR engine is available
+            ocr_text = ""
+            try:
+                tp = page.get_textpage_ocr(flags=0, dpi=150, language='fas+eng')
+                ocr_text = page.get_text(textpage=tp).strip()
+            except Exception:
+                try:
+                    tp = page.get_textpage_ocr(flags=0, dpi=150)
+                    ocr_text = page.get_text(textpage=tp).strip()
+                except Exception:
+                    ocr_text = ""
+
+            if len(ocr_text.split()) >= 15:
+                elements.append({
+                    "type": "scanned_page_ocr",
+                    "page": page_idx,
+                    "image_path": scanned_path,
+                    "ocr_text": ocr_text,
+                    "section": current_heading
+                })
+                ordered_text_blocks.append(f"\n[متن استخراج‌شده با OCR از صفحه {page_idx}]:\n{ocr_text}\n")
+            else:
+                # Tier 2: Explicit Multimodal Inspection Marker
+                marker = f"[🚨 SCANNED_PAGE_REQUIRING_MULTIMODAL_INSPECTION: {scanned_path} (صفحه {page_idx})]"
+                elements.append({
+                    "type": "scanned_page",
+                    "page": page_idx,
+                    "image_path": scanned_path,
+                    "section": current_heading,
+                    "requires_multimodal_inspection": True,
+                    "warning": f"صفحه {page_idx} به صورت اسکن/تصویر بدون متن برداری استخراج شد و نیاز به بازبینی چندوجهی دارد."
+                })
+                ordered_text_blocks.append(f"\n{marker}\n")
 
         # 3. Extract text blocks
         blocks = page.get_text("blocks")

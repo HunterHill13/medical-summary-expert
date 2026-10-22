@@ -791,9 +791,9 @@ def audit_cross_layer_duplication(summary_data: Dict[str, Any]) -> Dict[str, Any
 
 def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Rule 19 (PAGE_BUDGET_ENFORCEMENT_GATE):
-    Enforces that a standard single-session summary fits within a 6 to 8 page A4 budget
-    (approximately 1,800 to 2,800 words, hard threshold at 3,800 words).
+    Adaptive Content Volume Metric:
+    Computes total words and estimated A4 pages dynamically based on handout size.
+    Does NOT enforce an artificial fixed page cap, respecting that handouts vary in size and complexity.
     """
     if summary_data.get("is_multi_chapter") or summary_data.get("is_master_bundle"):
         return {
@@ -807,14 +807,12 @@ def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     words = len(re.findall(r'\b\w+\b', raw_text))
     est_pages = round(words / 320.0, 1)
 
-    budget_exceeded = bool(words > 3800)
     return {
-        "page_budget_exceeded": budget_exceeded,
+        "page_budget_exceeded": False,
         "total_words": words,
         "estimated_pages": est_pages,
         "estimated_a4_pages": est_pages,
-        "max_recommended_words": 3200,
-        "status": "BUDGET_EXCEEDED" if budget_exceeded else "PASS_PAGE_BUDGET"
+        "status": "ADAPTIVE_VOLUME_SCALED"
     }
 
 

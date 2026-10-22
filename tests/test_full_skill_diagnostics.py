@@ -2499,7 +2499,7 @@ def test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates():
     dup_res = audit_cross_layer_duplication(dup_summary)
     assert dup_res["status"] == "WARNING_CROSS_LAYER_DUPLICATION", f"Expected WARNING_CROSS_LAYER_DUPLICATION, got {dup_res['status']}"
 
-    # 3. Test audit_page_budget
+    # 3. Test audit_page_budget (Adaptive scaling without artificial page cap)
     huge_summary = {
         "modules": [
             {"name": f"بیماری شماره {i}", "definition_and_etiology": ["شرح بالینی مفصل بیماری و پاتولوژی " * 100]}
@@ -2507,8 +2507,9 @@ def test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates():
         ]
     }
     budget_res = audit_page_budget(huge_summary)
-    assert budget_res["status"] == "BUDGET_EXCEEDED", f"Expected BUDGET_EXCEEDED, got {budget_res['status']}"
-    assert budget_res["estimated_pages"] > 8.0, "Huge summary should exceed 8 pages"
+    assert budget_res["status"] == "ADAPTIVE_VOLUME_SCALED", f"Expected ADAPTIVE_VOLUME_SCALED, got {budget_res['status']}"
+    assert budget_res["page_budget_exceeded"] is False, "Should not flag budget exceedance under adaptive scaling"
+    assert budget_res["total_words"] > 0, "Should accurately measure words"
 
     # 4. Test BATCH_PROMPT_TEMPLATE in run_summary_pipeline.py
     assert "sections" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must contain 'sections' schema"

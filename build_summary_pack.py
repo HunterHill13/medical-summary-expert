@@ -62,6 +62,7 @@ COLOR_CHECKLIST_BG      = "FEFDE8"            # Warm Amber Tint for Morning Chec
 # Legacy compatibility aliases
 COLOR_PRIMARY_BURGUNDY  = COLOR_PRIMARY_TEAL
 COLOR_SECONDARY_TEAL    = COLOR_SECONDARY_CYAN
+COLOR_TEXT_DARK         = COLOR_TEXT_CHARCOAL
 
 FONT_DUBAI = "Dubai"
 
@@ -1464,6 +1465,631 @@ def ensure_master_matrices(data: Dict[str, Any]):
             data["morning_exam_checklist"] = bullets[:30]
 
 
+
+def to_fa_digits(val: Any) -> str:
+    """Converts ASCII digits to Persian digits."""
+    return str(val).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
+
+def extract_chronological_flow(data: Dict[str, Any], chapter_badge: str = "") -> List[Dict[str, Any]]:
+    """
+    Extracts and pairs sections and modules into a strictly chronological list of topic items.
+    Enforces exact chronological sequence of the lecture and prevents the table/pearl segregation
+    defect where all tables appear first and all modules second.
+    """
+    if "topics" in data and isinstance(data["topics"], list):
+        flow = []
+        for t in data["topics"]:
+            t_copy = dict(t)
+            t_copy["chapter_badge"] = chapter_badge
+            flow.append(t_copy)
+        return flow
+
+    raw_sections = data.get("sections") or data.get("thematic_sections") or []
+    sections = [s for s in raw_sections if isinstance(s, dict)]
+    raw_modules = data.get("modules") or []
+    modules = [m for m in raw_modules if isinstance(m, dict)]
+
+    if not sections and not modules:
+        return []
+    if not sections:
+        return [{"type": "module_only", "module": m, "chapter_badge": chapter_badge} for m in modules]
+    if not modules:
+        return [{"type": "section_only", "section": s, "chapter_badge": chapter_badge} for s in sections]
+
+    matched_modules = set()
+    flow = []
+
+    def normalize_name(s: str) -> str:
+        s = re.sub(r'[*_#•\(\)\[\]]', ' ', str(s))
+        s = re.sub(r'بخش\s*\d+\s*:\s*', '', s)
+        s = re.sub(r'سندروم\s+', 'سندرم ', s)
+        s = s.replace('\u200c', '')
+        return s.strip().lower()
+
+    # Pass 1: Try exact or semantic match between section and module
+    for sec_idx, sec in enumerate(sections):
+        sec_title = sec.get("title") or sec.get("section_title") or ""
+        norm_sec = normalize_name(sec_title)
+
+        best_mod_idx = None
+        # Explicit ID or Ref
+        for m_idx, mod in enumerate(modules):
+            if m_idx in matched_modules:
+                continue
+            if sec.get("section_id") and sec.get("section_id") == mod.get("section_id"):
+                best_mod_idx = m_idx
+                break
+            if sec.get("module_ref") and sec.get("module_ref") == mod.get("name"):
+                best_mod_idx = m_idx
+                break
+
+        # Title / Name containment
+        if best_mod_idx is None:
+            for m_idx, mod in enumerate(modules):
+                if m_idx in matched_modules:
+                    continue
+                m_name = normalize_name(mod.get("name", ""))
+                m_name_en = mod.get("name_en", "").lower().strip()
+                if m_name and (m_name in norm_sec or norm_sec in m_name):
+                    best_mod_idx = m_idx
+                    break
+                if m_name_en and (m_name_en in norm_sec.lower() or m_name_en in sec_title.lower()):
+                    best_mod_idx = m_idx
+                    break
+
+        # Check row cells content
+        if best_mod_idx is None:
+            for m_idx, mod in enumerate(modules):
+                if m_idx in matched_modules:
+                    continue
+                m_name = normalize_name(mod.get("name", ""))
+                if m_name and any(m_name in normalize_name(str(cell)) for r in sec.get("rows", []) for cell in (r if isinstance(r, list) else [r])):
+                    best_mod_idx = m_idx
+                    break
+
+        # Positional alignment fallback if counts match
+        if best_mod_idx is None and len(sections) == len(modules):
+            if sec_idx not in matched_modules:
+                best_mod_idx = sec_idx
+
+        if best_mod_idx is not None:
+            matched_modules.add(best_mod_idx)
+            flow.append({
+                "type": "topic",
+                "section": sec,
+                "module": modules[best_mod_idx],
+                "chapter_badge": chapter_badge
+            })
+        else:
+            flow.append({
+                "type": "section_only",
+                "section": sec,
+                "chapter_badge": chapter_badge
+            })
+
+    # Append remaining modules
+    for m_idx, mod in enumerate(modules):
+        if m_idx not in matched_modules:
+            flow.append({
+                "type": "module_only",
+                "module": mod,
+                "chapter_badge": chapter_badge
+            })
+
+    return flow
+
+
+def render_docx_table_of_contents(doc, chapters: List[Dict[str, Any]], title: str = "📑 فهرست فصول و مباحث درسنامه جامع"):
+    """Renders an exam-grade Table of Contents table at the top of multi-handout Word documents."""
+    p_toc_head = doc.add_paragraph()
+    set_p_rtl(p_toc_head, space_before_pt=12, space_after_pt=6)
+    add_r(p_toc_head, title, font_name=FONT_DUBAI, size_pt=14.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+
+    headers = ["شماره جزوه", "عنوان جزوه و فایل منبع", "سرفصل‌ها و مباحث کلیدی"]
+    rows = []
+    for idx, ch in enumerate(chapters, 1):
+        ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {idx}"
+        src = ch.get("source_file") or ch.get("file_name") or ""
+        src_text = f"\n📄 فایل منبع: {src}" if src else ""
+        col2 = f"• **{ch_title}**{src_text}"
+        topics = []
+        for sec in (ch.get("sections") or ch.get("thematic_sections") or []):
+            t_name = sec.get("title") or sec.get("section_title") or ""
+            if t_name and t_name not in topics:
+                topics.append(t_name)
+        for mod in (ch.get("modules") or []):
+            m_name = mod.get("name", "")
+            if m_name and not any(m_name in t for t in topics):
+                topics.append(m_name)
+        if not topics:
+            topics = ["مباحث جامع بالینی"]
+        col3 = "\n".join([f"• {t}" for t in topics[:6]])
+        rows.append([f"📚 جزوه {to_fa_digits(idx)}]", col2, col3])
+
+    add_thematic_table(doc, headers=headers, rows=rows)
+    p_sp = doc.add_paragraph()
+    set_p_rtl(p_sp, space_before_pt=0, space_after_pt=8)
+
+
+def render_docx_section_block(doc, sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = ""):
+    """Renders a single thematic section (table, flowchart, callouts) into Word."""
+    if not isinstance(sec, dict):
+        return
+    raw_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
+    if chapter_badge and chapter_badge not in raw_title:
+        sec_title = f"{chapter_badge} {raw_title}"
+    else:
+        sec_title = raw_title
+    sec_headers = sec.get("headers") or []
+    sec_rows = sec.get("rows") or []
+
+    p_sec = doc.add_paragraph()
+    set_p_rtl(p_sec, space_before_pt=14, space_after_pt=4)
+    add_r(p_sec, f"■ {sec_title}", font_name=FONT_DUBAI, size_pt=13.0, bold=True,
+          color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+
+    if sec_headers and sec_rows:
+        add_thematic_table(doc, headers=sec_headers, rows=sec_rows)
+
+    sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+    if sec_flowchart:
+        m_hash = hashlib.md5(sec_flowchart.strip().encode("utf-8")).hexdigest()[:10]
+        candidate_png = os.path.join("dist", "diagrams", f"diag_sec_{m_hash}.png")
+        if render_mermaid_diagram_to_png(sec_flowchart, candidate_png, title=f"الگوریتم {sec_title}"):
+            add_diagram_picture_block(doc, candidate_png, title=f"الگوریتم بالینی {sec_title}")
+
+    sec_callouts = sec.get("callouts") or []
+    if sec_callouts:
+        callout_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
+        add_callout_box(
+            doc,
+            title="🚨 هشدار اورژانسی و خطای بالینی",
+            content_items=callout_list,
+            border_color="C0392B",
+            header_bg="FDEDEC",
+            body_bg="FFFFFF",
+            icon="🚨"
+        )
+
+
+def render_docx_module_block(doc, mod: Dict[str, Any], mod_idx: int = 1, covered_entities: Optional[Set[str]] = None, chapter_badge: str = ""):
+    """Renders a single high-yield module/illness script into Word."""
+    if not isinstance(mod, dict):
+        return
+    covered_entities = covered_entities or set()
+    raw_mod_name = mod.get("name", f"مبحث شماره {mod_idx}")
+    if chapter_badge and chapter_badge not in raw_mod_name:
+        mod_name = f"{chapter_badge} {raw_mod_name}"
+    else:
+        mod_name = raw_mod_name
+    mod_name_en = mod.get("name_en", "")
+    mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
+    is_foundation = (
+        mod_type == "foundational_concept"
+        or bool(mod.get("feedback_cascade"))
+        or bool(mod.get("regulatory_mechanisms_and_feedback"))
+        or bool(mod.get("physiological_role"))
+        or bool(mod.get("anatomical_physiological_basis"))
+    )
+    is_approach = (
+        mod_type == "clinical_approach"
+        or bool(mod.get("step_by_step_algorithm"))
+    )
+    is_covered = is_module_covered_in_sections(mod, covered_entities)
+
+    # Heading 1 (Module Title)
+    p_h1 = doc.add_paragraph()
+    set_p_rtl(p_h1, space_before_pt=14, space_after_pt=6)
+    type_badge = ""
+    if is_foundation:
+        type_badge = " [مفاهیم و فیزیولوژی پایه]"
+    elif is_approach:
+        type_badge = " [رویکرد و الگوریتم تشخیصی]"
+    add_r(p_h1, f"■ {mod_name}{type_badge}", font_name=FONT_DUBAI, size_pt=13.5, bold=True,
+          color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+    if mod_name_en:
+        add_r(p_h1, f"  ({mod_name_en})", font_name=FONT_DUBAI, size_pt=12.0, bold=True,
+              color_rgb=COLOR_SECONDARY_TEAL, is_rtl=False)
+
+    # Cross-Layer Deduplication Notice (v3.9.3)
+    if is_covered:
+        p_cov = doc.add_paragraph()
+        set_p_rtl(p_cov, space_before_pt=3, space_after_pt=5)
+        add_r(p_cov, "⚡ ارجاع به جدول تماتیک: ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+        add_bidi_text(p_cov, "جزئیات تشخیصی، کات‌آف‌ها، تظاهرات و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.",
+                      font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_MUTED_GRAY)
+
+    # Module-level Thematic Tables (v3.9.0 Table-First Hybrid)
+    if mod.get("tables") and isinstance(mod["tables"], list):
+        for t_item in mod["tables"]:
+            if isinstance(t_item, dict):
+                add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
+    elif mod.get("thematic_table") and isinstance(mod["thematic_table"], dict):
+        t_item = mod["thematic_table"]
+        add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
+
+    if is_covered:
+        pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
+    # -------------------------------------------------------------------
+    # Archetype 1: Foundational Physiology & Regulatory Loops
+    # -------------------------------------------------------------------
+    elif is_foundation:
+        roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
+        if roles:
+            p_rh = doc.add_paragraph()
+            set_p_rtl(p_rh, space_before_pt=6, space_after_pt=2)
+            add_r(p_rh, "۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            roles_list = roles if isinstance(roles, list) else [roles]
+            for r in roles_list:
+                p_r = doc.add_paragraph()
+                set_p_rtl(p_r, space_before_pt=1, space_after_pt=2)
+                add_r(p_r, f"• {r}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
+        if f_casc and isinstance(f_casc, list):
+            add_callout_box(
+                doc,
+                title="🔄 آبشار تنظیمی و فیدبک هورمونی (Feedback & Signaling Cascade)",
+                content_items=f_casc,
+                border_color="007A87",
+                header_bg="E6FFFA",
+                body_bg="FFFFFF",
+                icon="🔄"
+            )
+
+        if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
+            p_th = doc.add_paragraph()
+            set_p_rtl(p_th, space_before_pt=6, space_after_pt=2)
+            add_r(p_th, "۳. سنجش آزمایشگاهی و مقادیر پایه (Baseline & Dynamic Tests)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            for t in mod["baseline_tests"]:
+                p_t = doc.add_paragraph()
+                set_p_rtl(p_t, space_before_pt=1, space_after_pt=2)
+                add_r(p_t, f"• {t}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
+            p_ch = doc.add_paragraph()
+            set_p_rtl(p_ch, space_before_pt=6, space_after_pt=2)
+            add_r(p_ch, "۴. ارتباط بالینی و عوارض اولیه اختلال (Clinical Correlate)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            for cr in mod["clinical_relevance"]:
+                p_c = doc.add_paragraph()
+                set_p_rtl(p_c, space_before_pt=1, space_after_pt=2)
+                add_r(p_c, f"• {cr}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+    # -------------------------------------------------------------------
+    # Archetype 2: Clinical Approach & Diagnostic Algorithms
+    # -------------------------------------------------------------------
+    elif is_approach:
+        inits = mod.get("initial_assessment") or mod.get("triage_and_stabilization")
+        if inits:
+            p_ih = doc.add_paragraph()
+            set_p_rtl(p_ih, space_before_pt=6, space_after_pt=2)
+            add_r(p_ih, "۱. ارزیابی اولیه و پایداری همودینامیک (Triage & Initial Workup)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            inits_list = inits if isinstance(inits, list) else [inits]
+            for init in inits_list:
+                p_i = doc.add_paragraph()
+                set_p_rtl(p_i, space_before_pt=1, space_after_pt=2)
+                add_r(p_i, f"• {init}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        steps = mod.get("step_by_step_algorithm") or mod.get("sequential_steps")
+        if steps and isinstance(steps, list):
+            add_callout_box(
+                doc,
+                title="🧭 الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Clinical Decision)",
+                content_items=steps,
+                border_color="007A87",
+                header_bg="E6FFFA",
+                body_bg="FFFFFF",
+                icon="🧭"
+            )
+
+        pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
+        if pivots and isinstance(pivots, list):
+            p_ph = doc.add_paragraph()
+            set_p_rtl(p_ph, space_before_pt=6, space_after_pt=2)
+            add_r(p_ph, "۳. نقاط انشعاب کلیدی و کات‌آف‌ها (Clinical Pivot Points & Cutoffs)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            for pv in pivots:
+                p_p = doc.add_paragraph()
+                set_p_rtl(p_p, space_before_pt=1, space_after_pt=2)
+                add_r(p_p, f"• {pv}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        actions = mod.get("action_plan") or mod.get("first_line_management")
+        if actions and isinstance(actions, list):
+            p_ah = doc.add_paragraph()
+            set_p_rtl(p_ah, space_before_pt=6, space_after_pt=2)
+            add_r(p_ah, "۴. پلن اقدام بالینی و مداخله (Clinical Action Plan)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+            for act in actions:
+                p_a = doc.add_paragraph()
+                set_p_rtl(p_a, space_before_pt=1, space_after_pt=2)
+                add_r(p_a, f"• {act}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+    # -------------------------------------------------------------------
+    # Archetype 3: Disease Illness Script (Full Standard)
+    # -------------------------------------------------------------------
+    else:
+        # Part 1: Definition & Etiology
+        p_h2_1 = doc.add_paragraph()
+        set_p_rtl(p_h2_1, space_before_pt=8, space_after_pt=2)
+        add_r(p_h2_1, "۱. تعریف و سبب‌شناسی (Definition & Etiology)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+        defs = mod.get("definition_and_etiology")
+        if isinstance(defs, str):
+            defs = [defs]
+        for b in (defs or []):
+            p_b = doc.add_paragraph()
+            set_p_rtl(p_b, space_before_pt=1, space_after_pt=2)
+            add_r(p_b, f"• {b}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        risk_factors = mod.get("risk_factors")
+        if risk_factors:
+            risk_items = risk_factors if isinstance(risk_factors, list) else [risk_factors]
+            for r in risk_items:
+                p_r = doc.add_paragraph()
+                set_p_rtl(p_r, space_before_pt=1, space_after_pt=2)
+                add_r(p_r, f"• ریسک‌فاکتورها: {r}", font_name=FONT_DUBAI, size_pt=9.5, color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
+
+        # Part 2: Pathophysiology Cascade (Callout Box)
+        p_casc = mod.get("pathophysiology_cascade")
+        if p_casc:
+            items = p_casc if isinstance(p_casc, list) else [p_casc]
+            add_callout_box(
+                doc,
+                title="⚙️ آبشار پاتوفیزیولوژی و مکانیسم بیماری (Pathophysiology Cascade)",
+                content_items=items,
+                border_color="007A87",
+                header_bg="E6FFFA",
+                body_bg="FFFFFF",
+                icon="⚙️"
+            )
+
+        # Part 3: Clinical Presentation
+        if mod.get("clinical_presentation"):
+            p_h2_3 = doc.add_paragraph()
+            set_p_rtl(p_h2_3, space_before_pt=8, space_after_pt=2)
+            add_r(p_h2_3, "۳. تظاهرات بالینی، نشانه‌ها و معاینه فیزیکی (Clinical Presentation)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+
+            pres_items = mod["clinical_presentation"]
+            if isinstance(pres_items, str):
+                pres_items = [pres_items]
+            for item in pres_items:
+                p_p = doc.add_paragraph()
+                set_p_rtl(p_p, space_before_pt=1, space_after_pt=2)
+                add_r(p_p, f"• {item}", font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_TEXT_DARK, is_rtl=True)
+
+        # Diagnostic Criteria & Staging
+        if mod.get("diagnostic_criteria") and isinstance(mod["diagnostic_criteria"], list):
+            add_callout_box(
+                doc,
+                title="📋 معیارهای تشخیصی و گایدلاین‌ها (Diagnostic Criteria & Guidelines)",
+                content_items=mod["diagnostic_criteria"],
+                border_color="007A87",
+                header_bg="F0FDFA",
+                body_bg="FFFFFF",
+                icon="📋"
+            )
+
+        if mod.get("staging_and_classification") and isinstance(mod["staging_and_classification"], list):
+            add_callout_box(
+                doc,
+                title="📊 استیجینگ و طبقه‌بندی شدت (Staging & Severity Classification)",
+                content_items=mod["staging_and_classification"],
+                border_color="007A87",
+                header_bg="F0FDFA",
+                body_bg="FFFFFF",
+                icon="📊"
+            )
+
+        # Part 4: Diagnostics
+        if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
+            diag = mod["diagnostics"]
+            p_h2_4 = doc.add_paragraph()
+            set_p_rtl(p_h2_4, space_before_pt=8, space_after_pt=2)
+            add_r(p_h2_4, "۴. رویکرد تشخیصی و تست‌های پاراکلینیک (Diagnostic Workup)", font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+
+            if diag.get("best_initial_test"):
+                p_init = doc.add_paragraph()
+                set_p_rtl(p_init, space_before_pt=1, space_after_pt=2)
+                add_r(p_init, "• اقدام تشخیصی نخستین (Best Initial Test): ", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+                add_r(p_init, str(diag['best_initial_test']), font_name=FONT_DUBAI, size_pt=10.0, is_rtl=True)
+
+            if diag.get("gold_standard"):
+                p_gold = doc.add_paragraph()
+                set_p_rtl(p_gold, space_before_pt=1, space_after_pt=2)
+                add_r(p_gold, "• استاندارد طلایی و قطعی (Gold Standard / Confirmatory): ", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+                add_r(p_gold, str(diag['gold_standard']), font_name=FONT_DUBAI, size_pt=10.0, is_rtl=True)
+
+            labs = diag.get("key_laboratory_findings") or diag.get("key_findings")
+            if labs:
+                labs_list = labs if isinstance(labs, list) else [labs]
+                for lab in labs_list:
+                    p_l = doc.add_paragraph()
+                    set_p_rtl(p_l, space_before_pt=1, space_after_pt=2)
+                    add_r(p_l, f"• یافته آزمایشگاهی کلیدی: {lab}", font_name=FONT_DUBAI, size_pt=9.5, is_rtl=True)
+
+        # Part 5: Comprehensive Management (Medical, Surgical & Conservative Rx)
+        has_pharma = bool(mod.get("pharmacology_and_management"))
+        raw_surg = mod.get("surgical_and_interventions") or mod.get("surgical_and_interventional_indications")
+        has_surg = bool(raw_surg)
+        raw_life = mod.get("lifestyle_and_followup") or mod.get("follow_up_and_monitoring") or mod.get("lifestyle_and_conservative")
+        has_life = bool(raw_life)
+
+        if has_pharma or has_surg or has_life:
+            p_sub = doc.add_paragraph()
+            set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
+            add_r(p_sub, "۵. درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)",
+                  font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+
+            if has_pharma and isinstance(mod["pharmacology_and_management"], list):
+                for rx in mod["pharmacology_and_management"]:
+                    if not isinstance(rx, dict):
+                        continue
+                    p_rx = doc.add_paragraph()
+                    set_p_rtl(p_rx, space_before_pt=1, space_after_pt=3)
+                    drug_class = rx.get("drug_class") or rx.get("class") or rx.get("agent") or rx.get("drug") or "-"
+                    mechanism = rx.get("mechanism_of_action") or rx.get("mechanism") or rx.get("moa") or "-"
+                    pearl = rx.get("pearl") or rx.get("exam_pearl") or rx.get("high_yield_pearl") or ""
+                    add_r(p_rx, f"💊 داروی انتخابی ({drug_class}): ", font_name=FONT_DUBAI, size_pt=10.5,
+                          bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
+                    text_desc = f"مکانیسم: {mechanism}"
+                    if pearl:
+                        text_desc += f" | نکته: {pearl}"
+                    add_bidi_text(p_rx, text_desc, font_name=FONT_DUBAI, size_pt=10.5)
+
+            if has_surg:
+                surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
+                p_sh = doc.add_paragraph()
+                set_p_rtl(p_sh, space_before_pt=4, space_after_pt=2)
+                add_r(p_sh, "• اندیکاسیون‌های مداخله و جراحی (Surgical & Interventional Indications):", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+                for s in surg_items:
+                    p_s = doc.add_paragraph()
+                    set_p_rtl(p_s, space_before_pt=1, space_after_pt=2)
+                    add_r(p_s, f"  - {s}", font_name=FONT_DUBAI, size_pt=9.5, is_rtl=True)
+
+            if has_life:
+                life_items = raw_life if isinstance(raw_life, list) else [raw_life]
+                p_lh = doc.add_paragraph()
+                set_p_rtl(p_lh, space_before_pt=4, space_after_pt=2)
+                add_r(p_lh, "• اصلاح سبک زندگی، پیگیری و پایش (Lifestyle & Follow-up):", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
+                for l in life_items:
+                    p_l = doc.add_paragraph()
+                    set_p_rtl(p_l, space_before_pt=1, space_after_pt=2)
+                    add_r(p_l, f"  - {l}", font_name=FONT_DUBAI, size_pt=9.5, is_rtl=True)
+
+        # Complications & Prognosis
+        if mod.get("complications_and_prognosis"):
+            p_h2_comp = doc.add_paragraph()
+            set_p_rtl(p_h2_comp, space_before_pt=6, space_after_pt=2)
+            add_r(p_h2_comp, "• عوارض و پیش‌آگهی (Complications & Prognosis):", font_name=FONT_DUBAI, size_pt=10.0, bold=True, color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
+            comps = mod["complications_and_prognosis"]
+            if isinstance(comps, str):
+                comps = [comps]
+            for comp in comps:
+                p_c = doc.add_paragraph()
+                set_p_rtl(p_c, space_before_pt=1, space_after_pt=2)
+                add_r(p_c, f"  - {comp}", font_name=FONT_DUBAI, size_pt=9.5, is_rtl=True)
+
+    # -------------------------------------------------------------------
+    # High-Yield Callout Boxes (Universally rendered across all archetypes)
+    # -------------------------------------------------------------------
+    pearls = mod.get("high_yield_pearls") or mod.get("clinical_pearls") or []
+    if pearls:
+        pearls_list = pearls if isinstance(pearls, list) else [pearls]
+        add_callout_box(
+            doc,
+            title=f"💎 مرواریدهای بالینی و نکات کلیدی آزمون: {mod_name}",
+            content_items=pearls_list,
+            border_color="007A87",
+            header_bg="E6FFFA",
+            body_bg="FFFFFF",
+            icon="💎"
+        )
+
+    traps = mod.get("exam_traps") or mod.get("common_pitfalls") or []
+    if traps:
+        traps_list = traps if isinstance(traps, list) else [traps]
+        add_callout_box(
+            doc,
+            title=f"⚠️ تله‌های تستی و خطاهای رایج پزشکی: {mod_name}",
+            content_items=traps_list,
+            border_color="B91C1C",
+            header_bg="FEF2F2",
+            body_bg="FFFFFF",
+            icon="⚠️"
+        )
+
+    emerg = mod.get("emergency_management") or mod.get("emergency_action") or []
+    if emerg:
+        emerg_list = emerg if isinstance(emerg, list) else [emerg]
+        add_callout_box(
+            doc,
+            title=f"🚨 اقدامات اورژانسی و پروتکل کرایزیس: {mod_name}",
+            content_items=emerg_list,
+            border_color="C0392B",
+            header_bg="FDEDEC",
+            body_bg="FFFFFF",
+            icon="🚨"
+        )
+
+    spec = mod.get("special_populations") or mod.get("special_considerations") or []
+    if spec:
+        spec_list = spec if isinstance(spec, list) else [spec]
+        add_callout_box(
+            doc,
+            title=f"👥 ملاحظات جمعیت‌های ویژه (بارداری، اطفال، سالمندان، CKD): {mod_name}",
+            content_items=spec_list,
+            border_color="0284C7",
+            header_bg="F0F9FF",
+            body_bg="FFFFFF",
+            icon="👥"
+        )
+
+    emphasis = mod.get("instructor_emphasis") or mod.get("prof_notes") or []
+    if emphasis:
+        emp_list = emphasis if isinstance(emphasis, list) else [emphasis]
+        add_callout_box(
+            doc,
+            title=f"⭐ تأکید ویژه استاد در تدریس: {mod_name}",
+            content_items=emp_list,
+            border_color="D97706",
+            header_bg="FFFBEB",
+            body_bg="FFFFFF",
+            icon="⭐"
+        )
+
+    # Diagnostic & Physiological Formulas
+    formulas = mod.get("formulas") or mod.get("clinical_formulas") or []
+    if formulas:
+        f_list = formulas if isinstance(formulas, list) else [formulas]
+        for f_item in f_list:
+            if isinstance(f_item, dict):
+                f_name = f_item.get("name", f"فرمول بالینی {mod_name}")
+                f_code = f_item.get("latex") or f_item.get("code") or f_item.get("formula", "")
+                f_cap = f_item.get("interpretation") or f_item.get("notes", "")
+                add_formula_card(doc, f_code, f_name, f_cap)
+            elif isinstance(f_item, str):
+                add_formula_card(doc, f_item, f"فرمول تشخیصی {mod_name}")
+
+    # Diagram Rendering (Playwright PNG embed - Dual-Target High-DPI Engine)
+    diag_png = mod.get("diagram_image_path") or mod.get("diagram_png")
+    m_code = mod.get("mermaid_code") or mod.get("flowchart_mermaid") or mod.get("pathophysiology_cascade_mermaid") or mod.get("algorithm_mermaid")
+    d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و مسیر پاتوفیزیولوژی {mod_name}"
+
+    if not diag_png and m_code:
+        m_hash = hashlib.md5(m_code.strip().encode("utf-8")).hexdigest()[:10]
+        candidate_png = os.path.join("dist", "diagrams", f"diag_{m_hash}.png")
+        if render_mermaid_diagram_to_png(m_code, candidate_png, title=d_title):
+            diag_png = candidate_png
+
+    if diag_png and os.path.exists(diag_png):
+        add_diagram_picture_block(doc, diag_png, title=d_title)
+
+    # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
+    atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+    if atlas_figs:
+        add_visual_atlas_section(doc, atlas_figs)
+    elif mod.get("figures"):
+        for fig in (mod.get("figures") or []):
+            if isinstance(fig, dict):
+                add_figure_block(doc, fig.get("path", ""), fig.get("caption", ""))
+
+    # Clinical Vignettes (Active Recall MCQs)
+    if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
+        add_clinical_vignettes(doc, mod["clinical_vignettes"])
+
+
+def render_docx_flow_item(doc, item: Dict[str, Any], idx: int, covered_entities: Set[str]):
+    """Renders a chronological flow item (topic, section_only, or module_only) into Word."""
+    i_type = item.get("type")
+    c_badge = item.get("chapter_badge", "")
+    if i_type == "topic":
+        if item.get("section"):
+            render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge)
+        if item.get("module"):
+            render_docx_module_block(doc, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+    elif i_type == "section_only":
+        render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge)
+    elif i_type == "module_only":
+        render_docx_module_block(doc, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+
+
 def build_docx_summary(data: Dict[str, Any], output_path: str):
     """
     Builds the complete publication-grade Word study guide document (.docx).
@@ -1503,509 +2129,37 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     add_r(p_tag, f"📌 کورس: {organ_system}  |  🎯 سطح: فیزیوپاتولوژی بالینی  |  ⚡ نوع سند: مرور های‌یلد و شب امتحان",
           font_name=FONT_DUBAI, size_pt=10.0, bold=False, color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
 
-    # -------------------------------------------------------------------
-    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
-    # -------------------------------------------------------------------
-    sections = data.get("sections") or data.get("thematic_sections") or []
-    if sections:
-        for sec_idx, sec in enumerate(sections, 1):
-            if not isinstance(sec, dict):
-                continue
-            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
-            sec_headers = sec.get("headers") or []
-            sec_rows = sec.get("rows") or []
+    chapters = data.get("chapters")
+    is_multi = bool(data.get("is_multi_chapter") or (chapters and len(chapters) > 1))
 
-            p_sec = doc.add_paragraph()
-            set_p_rtl(p_sec, space_before_pt=14, space_after_pt=4)
-            add_r(p_sec, f"■ {sec_title}", font_name=FONT_DUBAI, size_pt=13.0, bold=True,
-                  color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
-
-            if sec_headers and sec_rows:
-                add_thematic_table(doc, headers=sec_headers, rows=sec_rows)
-
-            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
-            if sec_flowchart:
-                m_hash = hashlib.md5(sec_flowchart.strip().encode("utf-8")).hexdigest()[:10]
-                candidate_png = os.path.join("dist", "diagrams", f"diag_sec_{m_hash}.png")
-                if render_mermaid_diagram_to_png(sec_flowchart, candidate_png, title=f"الگوریتم {sec_title}"):
-                    add_diagram_picture_block(doc, candidate_png, title=f"الگوریتم بالینی {sec_title}")
-
-            sec_callouts = sec.get("callouts") or []
-            if sec_callouts:
-                callout_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
-                add_callout_box(
-                    doc,
-                    title="🚨 هشدار اورژانسی و خطای بالینی",
-                    content_items=callout_list,
-                    border_color="C0392B",
-                    header_bg="FDEDEC",
-                    body_bg="FFFFFF",
-                    icon="🚨"
-                )
-
-    # Iterate over modules/diseases in the data
-    modules = data.get("modules", [])
-    covered_entities = extract_covered_section_entities(data)
-    for mod_idx, mod in enumerate(modules, 1):
-        mod_name = mod.get("name", f"مبحث شماره {mod_idx}")
-        mod_name_en = mod.get("name_en", "")
-        mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
-        is_foundation = (
-            mod_type == "foundational_concept"
-            or bool(mod.get("feedback_cascade"))
-            or bool(mod.get("regulatory_mechanisms_and_feedback"))
-            or bool(mod.get("physiological_role"))
-            or bool(mod.get("anatomical_physiological_basis"))
-        )
-        is_approach = (
-            mod_type == "clinical_approach"
-            or bool(mod.get("step_by_step_algorithm"))
-        )
-        is_covered = is_module_covered_in_sections(mod, covered_entities)
-
-        # Heading 1 (Module Title)
-        p_h1 = doc.add_paragraph()
-        set_p_rtl(p_h1, space_before_pt=14, space_after_pt=6)
-        type_badge = ""
-        if is_foundation:
-            type_badge = " [مفاهیم و فیزیولوژی پایه]"
-        elif is_approach:
-            type_badge = " [رویکرد و الگوریتم تشخیصی]"
-        add_r(p_h1, f"■ {mod_name}{type_badge}", font_name=FONT_DUBAI, size_pt=13.5, bold=True,
-              color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-        if mod_name_en:
-            add_r(p_h1, f"  ({mod_name_en})", font_name=FONT_DUBAI, size_pt=12.0, bold=True,
-                  color_rgb=COLOR_SECONDARY_TEAL, is_rtl=False)
-
-        # Cross-Layer Deduplication Notice (v3.9.3)
-        if is_covered:
-            p_cov = doc.add_paragraph()
-            set_p_rtl(p_cov, space_before_pt=3, space_after_pt=5)
-            add_r(p_cov, "⚡ ارجاع به جدول تماتیک: ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-            add_bidi_text(p_cov, "جزئیات تشخیصی، کات‌آف‌ها، تظاهرات و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.",
-                          font_name=FONT_DUBAI, size_pt=10.0, color_rgb=COLOR_MUTED_GRAY)
-
-        # Module-level Thematic Tables (v3.9.0 Table-First Hybrid)
-        if mod.get("tables") and isinstance(mod["tables"], list):
-            for t_item in mod["tables"]:
-                if isinstance(t_item, dict):
-                    add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
-        elif mod.get("thematic_table") and isinstance(mod["thematic_table"], dict):
-            t_item = mod["thematic_table"]
-            add_thematic_table(doc, headers=t_item.get("headers", []), rows=t_item.get("rows", []), title=t_item.get("title"))
-
-        if is_covered:
-            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
-        # -------------------------------------------------------------------
-        # Archetype 1: Foundational Physiology & Regulatory Loops
-        # -------------------------------------------------------------------
-        elif is_foundation:
-            roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
-            if roles:
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                roles_list = roles if isinstance(roles, list) else [roles]
-                for r in roles_list:
-                    p_r = doc.add_paragraph()
-                    set_p_rtl(p_r, space_before_pt=1, space_after_pt=3)
-                    add_r(p_r, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_r, str(r), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
-            if f_casc and isinstance(f_casc, list):
-                add_callout_box(
-                    doc,
-                    title="۲. مسیر فیدبک هورمونی و سیگنالینگ تنظیمی (Regulatory & Feedback Loops)",
-                    content_items=f_casc,
-                    border_color=COLOR_BLUE_BORDER,
-                    header_bg=COLOR_BLUE_BG,
-                    body_bg="FFFFFF",
-                    icon="🔄"
-                )
-
-            if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۳. تست‌های ارزیابی عملکرد پایه و مقادیر مرجع (Baseline Functional Tests)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                for t in mod["baseline_tests"]:
-                    p_t = doc.add_paragraph()
-                    set_p_rtl(p_t, space_before_pt=1, space_after_pt=3)
-                    add_r(p_t, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_t, str(t), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۴. اهمیت بالینی در پاتولوژی و تله‌های امتحانی (Clinical Relevance & Exam Anchors)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                for cr in mod["clinical_relevance"]:
-                    p_cr = doc.add_paragraph()
-                    set_p_rtl(p_cr, space_before_pt=1, space_after_pt=3)
-                    add_r(p_cr, "⚡ ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                    add_bidi_text(p_cr, str(cr), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-        # -------------------------------------------------------------------
-        # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
-        # -------------------------------------------------------------------
-        elif is_approach:
-            inits = mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario")
-            if inits:
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۱. تظاهر بالینی و شکایت اولیه (Initial Clinical Presentation)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                inits_list = inits if isinstance(inits, list) else [inits]
-                for init in inits_list:
-                    p_init = doc.add_paragraph()
-                    set_p_rtl(p_init, space_before_pt=1, space_after_pt=3)
-                    add_r(p_init, "🔹 ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_init, str(init), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            steps = mod.get("step_by_step_algorithm")
-            if steps and isinstance(steps, list):
-                step_items = []
-                for s in steps:
-                    if isinstance(s, dict):
-                        st = s.get("step", "")
-                        ac = s.get("action", "")
-                        step_items.append(f"{st}: {ac}" if st and ac else (st or ac))
-                    else:
-                        step_items.append(str(s))
-                add_callout_box(
-                    doc,
-                    title="۲. الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Triage Algorithm)",
-                    content_items=step_items,
-                    border_color=COLOR_AMBER_BORDER,
-                    header_bg=COLOR_AMBER_BG,
-                    body_bg="FFFFFF",
-                    icon="🧭"
-                )
-
-            pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
-            if pivots and isinstance(pivots, list):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۳. نقاط انشعاب تشخیصی و تصمیم‌گیری (Decision Bifurcations / Pivot Criteria)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                for pv in pivots:
-                    p_pv = doc.add_paragraph()
-                    set_p_rtl(p_pv, space_before_pt=1, space_after_pt=3)
-                    add_r(p_pv, "⚖️ ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                    add_bidi_text(p_pv, str(pv), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            if mod.get("definitive_action"):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۴. اقدام قطعی بعدی (Definitive Next Step / Confirmatory Action)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                actions = mod["definitive_action"] if isinstance(mod["definitive_action"], list) else [mod["definitive_action"]]
-                for act in actions:
-                    p_act = doc.add_paragraph()
-                    set_p_rtl(p_act, space_before_pt=1, space_after_pt=3)
-                    add_r(p_act, "⭐ ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_act, str(act), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-        # -------------------------------------------------------------------
-        # Archetype 3: Disease Illness Script (Pathologies & Syndromes)
-        # -------------------------------------------------------------------
-        else:
-            # 1. Definition, Etiology & Risk Factors
-            risks = mod.get("risk_factors_and_epidemiology") or mod.get("risk_factors_and_predisposing")
-            defs = mod.get("definition_and_etiology")
-            if defs or risks:
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۱. تعریف، اتیولوژی و عوامل خطر (Definition, Etiology & Risk Factors)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-
-                for b in (defs or []):
-                    p_b = doc.add_paragraph()
-                    set_p_rtl(p_b, space_before_pt=1, space_after_pt=3)
-                    add_r(p_b, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_b, str(b), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-                risk_items = risks if isinstance(risks, list) else ([risks] if risks else [])
-                if isinstance(risk_items, str):
-                    risk_items = [risk_items]
-                for r in risk_items:
-                    p_r = doc.add_paragraph()
-                    set_p_rtl(p_r, space_before_pt=1, space_after_pt=3)
-                    add_r(p_r, "👥 ریسک‌فاکتور / اپیدمیولوژی: ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
-                    add_bidi_text(p_r, str(r), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            # 2. Pathophysiology Cascade (in Callout Box)
-            if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
-                cascade_steps = mod["pathophysiology_cascade"]
-                add_callout_box(
-                    doc,
-                    title="۲. زنجیره و فلوچارت مکانیسم پاتوفیزیولوژی (Pathophysiological Cascade)",
-                    content_items=cascade_steps,
-                    border_color=COLOR_BLUE_BORDER,
-                    header_bg=COLOR_BLUE_BG,
-                    body_bg="FFFFFF",
-                    icon="🔄"
-                )
-
-            # 3. Clinical Presentation (Symptoms & Signs) with Mechanistic Links
-            if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۳. تظاهرات بالینی و توجیه مکانیسمی (Clinical Presentation & Signs)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-
-                for item in mod["clinical_presentation"]:
-                    if not isinstance(item, dict):
-                        continue
-                    p_item = doc.add_paragraph()
-                    set_p_rtl(p_item, space_before_pt=1, space_after_pt=3)
-                    sign = item.get("sign", "")
-                    mech = item.get("mechanism", "")
-                    add_r(p_item, f"• {sign}: ", font_name=FONT_DUBAI, size_pt=10.5, bold=True,
-                          color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                    add_bidi_text(p_item, f"علت فیزیوپاتولوژیک ← {mech}", font_name=FONT_DUBAI,
-                                  size_pt=10.5, bold=False, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            # Track 4: Clinical Semiology & Physical Examination (سیر سمیولوژی و مانورهای بالینی)
-            if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
-                add_semiology_box(doc, mod["clinical_semiology"])
-
-            # 4. Paraclinical & Diagnostic Findings
-            if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
-                diag = mod["diagnostics"]
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۴. بررسی‌های پاراکلینیک و تشخیصی (Diagnostic Workup)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-
-                best_init = diag.get("best_initial_test")
-                if best_init and str(best_init).strip() and str(best_init).lower() not in {"null", "none", "ذکر نشده"}:
-                    p_init = doc.add_paragraph()
-                    set_p_rtl(p_init, space_before_pt=1, space_after_pt=2)
-                    add_r(p_init, "🔹 اقدام تشخیصی نخستین (Best Next Step / Initial): ",
-                          font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                    add_bidi_text(p_init, str(best_init), font_name=FONT_DUBAI, size_pt=10.5)
-
-                gold_std = diag.get("gold_standard")
-                if gold_std and str(gold_std).strip() and str(gold_std).lower() not in {"null", "none", "ذکر نشده"}:
-                    p_gold = doc.add_paragraph()
-                    set_p_rtl(p_gold, space_before_pt=1, space_after_pt=2)
-                    add_r(p_gold, "⭐ استاندارد طلایی و قطعی (Gold Standard): ",
-                          font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-                    add_bidi_text(p_gold, str(gold_std), font_name=FONT_DUBAI, size_pt=10.5)
-
-                raw_labs = diag.get("key_labs") or []
-                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
-                for lab in labs_list:
-                    if lab and str(lab).strip():
-                        p_lab = doc.add_paragraph()
-                        set_p_rtl(p_lab, space_before_pt=1, space_after_pt=2)
-                        add_r(p_lab, "• ", font_name=FONT_DUBAI, size_pt=10.5, bold=True,
-                              color_rgb=COLOR_MUTED_GRAY, is_rtl=True)
-                        add_bidi_text(p_lab, str(lab), font_name=FONT_DUBAI, size_pt=10.5)
-
-            # 5. Comprehensive Management: Medical, Surgical & Non-Pharmacological
-            has_pharma = bool(mod.get("pharmacology_and_management"))
-            raw_surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications")
-            has_surg = bool(raw_surg)
-            has_life = bool(mod.get("lifestyle_and_conservative"))
-
-            if has_pharma or has_surg or has_life:
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۵. درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_SECONDARY_TEAL, is_rtl=True)
-
-                if has_pharma and isinstance(mod["pharmacology_and_management"], list):
-                    for rx in mod["pharmacology_and_management"]:
-                        if not isinstance(rx, dict):
-                            continue
-                        p_rx = doc.add_paragraph()
-                        set_p_rtl(p_rx, space_before_pt=1, space_after_pt=3)
-                        drug_class = rx.get("drug_class", "")
-                        mechanism = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
-                        pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
-                        add_r(p_rx, f"💊 داروی انتخابی ({drug_class}): ", font_name=FONT_DUBAI, size_pt=10.5,
-                              bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                        text_desc = f"مکانیسم: {mechanism}"
-                        if pearl:
-                            text_desc += f" | نکته: {pearl}"
-                        add_bidi_text(p_rx, text_desc, font_name=FONT_DUBAI, size_pt=10.5)
-
-                if has_surg:
-                    surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
-                    for s in surg_items:
-                        p_s = doc.add_paragraph()
-                        set_p_rtl(p_s, space_before_pt=1, space_after_pt=3)
-                        add_r(p_s, "🔪 اندیکاسیون جراحی / اقدام مداخله‌ای: ", font_name=FONT_DUBAI, size_pt=10.5,
-                              bold=True, color_rgb=(0x92, 0x2B, 0x21), is_rtl=True)
-                        add_bidi_text(p_s, str(s), font_name=FONT_DUBAI, size_pt=10.5)
-
-                if has_life:
-                    life_items = mod["lifestyle_and_conservative"] if isinstance(mod["lifestyle_and_conservative"], list) else [mod["lifestyle_and_conservative"]]
-                    for l in life_items:
-                        p_l = doc.add_paragraph()
-                        set_p_rtl(p_l, space_before_pt=1, space_after_pt=3)
-                        add_r(p_l, "🌱 درمان غیردارویی و تغییر سبک زندگی: ", font_name=FONT_DUBAI, size_pt=10.5,
-                              bold=True, color_rgb=(0x11, 0x78, 0x64), is_rtl=True)
-                        add_bidi_text(p_l, str(l), font_name=FONT_DUBAI, size_pt=10.5)
-
-            # 6. Complications & Prognosis
-            if mod.get("complications_and_prognosis"):
-                p_sub = doc.add_paragraph()
-                set_p_rtl(p_sub, space_before_pt=6, space_after_pt=3)
-                add_r(p_sub, "۶. عوارض وخیم و عوامل پیش‌آگهی (Complications & Prognosis)",
-                      font_name=FONT_DUBAI, size_pt=11.0, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                comps = mod["complications_and_prognosis"] if isinstance(mod["complications_and_prognosis"], list) else [mod["complications_and_prognosis"]]
-                for comp in comps:
-                    p_comp = doc.add_paragraph()
-                    set_p_rtl(p_comp, space_before_pt=1, space_after_pt=3)
-                    add_r(p_comp, "🚨 ", font_name=FONT_DUBAI, size_pt=10.5, bold=True, color_rgb=COLOR_PRIMARY_BURGUNDY, is_rtl=True)
-                    add_bidi_text(p_comp, str(comp), font_name=FONT_DUBAI, size_pt=10.5, color_rgb=COLOR_TEXT_CHARCOAL)
-
-            # 7. Differential Diagnosis Table
-            if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
-                diff = mod["differential_table"]
-                headers = diff.get("headers", ["بیماری / سندروم", "علائم مشترک", "نقطه تمایز کلیدی (Pivot Feature)", "تست تشخیصی قطعی"])
-                rows = diff.get("rows", [])
-                add_comparison_table(doc, title=f"تشخیص افتراقی‌های مهم {mod_name}", headers=headers, rows=rows)
-
-        # Retain Differential Diagnosis Table for covered modules if present
-        if is_covered and mod.get("differential_table") and isinstance(mod["differential_table"], dict):
-            diff = mod["differential_table"]
-            headers = diff.get("headers", ["بیماری / سندروم", "علائم مشترک", "نقطه تمایز کلیدی (Pivot Feature)", "تست تشخیصی قطعی"])
-            rows = diff.get("rows", [])
-            add_comparison_table(doc, title=f"تشخیص افتراقی‌های مهم {mod_name}", headers=headers, rows=rows)
-
-        # Track 4: Clinical Semiology & Physical Examination (always rendered for clinical maneuvers)
-        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
-            add_semiology_box(doc, mod["clinical_semiology"])
-
-        # High-Yield Pearls & Traps Box
-        if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
+    if is_multi and chapters:
+        render_docx_table_of_contents(doc, chapters)
+        for ch_idx, ch in enumerate(chapters, 1):
+            doc.add_page_break()
+            ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {ch_idx}"
+            src_file = ch.get("source_file") or ch.get("file_name") or "منبع نامشخص"
+            ch_organ = ch.get("organ_system") or organ_system
             add_callout_box(
                 doc,
-                title="⚡ نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls & Pitfalls)",
-                content_items=mod["high_yield_pearls"],
-                border_color=COLOR_AMBER_BORDER,
-                header_bg=COLOR_AMBER_BG,
+                title=f"📚 جزوه {to_fa_digits(ch_idx)}: {ch_title}",
+                content_items=[
+                    f"📄 فایل منبع تدریس: {src_file}",
+                    f"🏛️ کورس آموزشی: {ch_organ}  |  🎯 مقطع: فیزیوپاتولوژی بالینی"
+                ],
+                border_color="007A87",
+                header_bg="E6FFFA",
                 body_bg="FFFFFF",
-                icon="⚠️"
+                icon="📚"
             )
-
-        # Instructor Exam Alerts (⭐ تأکیدات قطعی استاد)
-        if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
-            add_callout_box(
-                doc,
-                title="⭐ اولویت اول مرور: تأکیدات مستقیم و سوالات قطعی استاد در کلاس",
-                content_items=mod["instructor_exam_alerts"],
-                border_color="D4AC0D",
-                header_bg="FEFDE8",
-                body_bg="FFFFFF",
-                icon="⭐"
-            )
-
-        # Emergency Management & Immediate Stabilization (🚨 اقدامات اورژانس و احیا)
-        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
-        if emerg_items:
-            emerg_list = format_emergency_items(emerg_items)
-            add_callout_box(
-                doc,
-                title="🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)",
-                content_items=emerg_list,
-                border_color="C0392B",
-                header_bg="FDEDEC",
-                body_bg="FFFFFF",
-                icon="🚨"
-            )
-
-        # Contraindications & Lethal Withholds (⛔ موارد مصرف ممنوع)
-        if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
-            add_callout_box(
-                doc,
-                title="⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications & Lethal Withholds)",
-                content_items=mod["contraindications_and_warnings"],
-                border_color="C0392B",
-                header_bg="FDEDEC",
-                body_bg="FFFFFF",
-                icon="⛔"
-            )
-
-        # Special Populations & Pregnancy (🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان)
-        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
-        if special_items:
-            spec_list = special_items if isinstance(special_items, list) else [special_items]
-            add_callout_box(
-                doc,
-                title="🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)",
-                content_items=spec_list,
-                border_color="8E44AD",
-                header_bg="F4ECF7",
-                body_bg="FFFFFF",
-                icon="🤰"
-            )
-
-        # Clinical Scoring Criteria, Staging & Diagnostic Systems (📋 معیارها و سیستم‌های مرحله‌بندی)
-        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
-        if criteria_obj:
-            if isinstance(criteria_obj, dict):
-                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی بالینی {mod_name}")
-                sc_headers = criteria_obj.get("headers", ["معیار بالینی", "آستانه / امتیاز", "تفسیر بالینی"])
-                sc_rows = criteria_obj.get("rows", [])
-                add_comparison_table(doc, title=sc_title, headers=sc_headers, rows=sc_rows)
-            elif isinstance(criteria_obj, list) and criteria_obj:
-                if isinstance(criteria_obj[0], dict):
-                    sc_headers = list(criteria_obj[0].keys())
-                    sc_rows = [[str(item.get(k, "-")) for k in sc_headers] for item in criteria_obj]
-                    add_comparison_table(doc, title=f"جدول مرحله‌بندی و معیارهای بالینی {mod_name}", headers=sc_headers, rows=sc_rows)
-                else:
-                    add_callout_box(
-                        doc,
-                        title=f"📋 سیستم طبقه‌بندی و معیارهای بالینی {mod_name} (Staging & Diagnostic Criteria)",
-                        content_items=[str(x) for x in criteria_obj if x],
-                        border_color=COLOR_TEAL_BORDER,
-                        header_bg=COLOR_TEAL_BG,
-                        body_bg="FFFFFF",
-                        icon="📋"
-                    )
-
-        # Diagnostic Formulas & Calculations in Word (🧮 فرمول‌های تشخیصی)
-        f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
-        if f_list and isinstance(f_list, list):
-            for f_item in f_list:
-                if isinstance(f_item, dict):
-                    add_formula_card(doc, f_item.get("formula", ""), f_item.get("title", ""))
-                elif isinstance(f_item, str):
-                    add_formula_card(doc, f_item, f"فرمول تشخیصی {mod_name}")
-
-        # Diagram Rendering (Playwright PNG embed - Dual-Target High-DPI Engine)
-        diag_png = mod.get("diagram_image_path") or mod.get("diagram_png")
-        m_code = mod.get("mermaid_code") or mod.get("flowchart_mermaid") or mod.get("pathophysiology_cascade_mermaid") or mod.get("algorithm_mermaid")
-        d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و مسیر پاتوفیزیولوژی {mod_name}"
-
-        if not diag_png and m_code:
-            m_hash = hashlib.md5(m_code.strip().encode("utf-8")).hexdigest()[:10]
-            candidate_png = os.path.join("dist", "diagrams", f"diag_{m_hash}.png")
-            if render_mermaid_diagram_to_png(m_code, candidate_png, title=d_title):
-                diag_png = candidate_png
-
-        if diag_png and os.path.exists(diag_png):
-            add_diagram_picture_block(doc, diag_png, title=d_title)
-
-        # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
-        atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
-        if atlas_figs:
-            add_visual_atlas_section(doc, atlas_figs)
-        elif mod.get("figures"):
-            for fig in (mod.get("figures") or []):
-                if isinstance(fig, dict):
-                    add_figure_block(doc, fig.get("path", ""), fig.get("caption", ""))
-
-        # Clinical Vignettes (Active Recall MCQs)
-        if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
-            add_clinical_vignettes(doc, mod["clinical_vignettes"])
+            ch_flow = extract_chronological_flow(ch, chapter_badge=f"[جزوه {to_fa_digits(ch_idx)}]")
+            ch_covered = extract_covered_section_entities(ch)
+            for it_idx, item in enumerate(ch_flow, 1):
+                render_docx_flow_item(doc, item, it_idx, ch_covered)
+    else:
+        flow = extract_chronological_flow(data, chapter_badge="")
+        covered_entities = extract_covered_section_entities(data)
+        for it_idx, item in enumerate(flow, 1):
+            render_docx_flow_item(doc, item, it_idx, covered_entities)
 
     # -----------------------------------------------------------------------
     # Track 4: Clinical Semiology & Physical Examination (سمیولوژی و معاینات بالینی)
@@ -2107,307 +2261,265 @@ def add_markdown_alert(lines: List[str], alert_type: str, title: str, items: Lis
     lines.append("")
 
 
-def build_markdown_summary(data: Dict[str, Any], output_path: str):
-    """Generates a clean, GitHub/Obsidian-compatible Markdown study guide."""
-    ensure_master_matrices(data)
-    topic_title = data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
-    topic_title_en = data.get("topic_title_en", "")
-    organ_system = data.get("organ_system", "فیزیوپاتولوژی")
 
-    lines = []
-    lines.append(f"# 🩺 {topic_title} ({topic_title_en})")
-    lines.append(f"> **کورس آموزشی:** {organ_system} | **مقطع:** فیزیوپاتولوژی بالینی | **نوع سند:** راهنمای مرور های‌یلد\n")
+def render_markdown_table_of_contents(lines: List[str], chapters: List[Dict[str, Any]], title: str = "📑 فهرست فصول و مباحث درسنامه جامع"):
+    """Renders GitHub/Obsidian-compatible Table of Contents for multi-handout bundles."""
+    lines.append(f"# {title}\n")
+    lines.append("| شماره جزوه | عنوان جزوه / سرفصل | فایل منبع | تعداد مباحث |")
+    lines.append("| :--- | :--- | :--- | :--- |")
+    for idx, ch in enumerate(chapters, 1):
+        ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {idx}"
+        src = ch.get("source_file") or ch.get("file_name") or "منبع نامشخص"
+        n_topics = len(ch.get("sections", []) or ch.get("thematic_sections", [])) + len(ch.get("modules", []))
+        slug = re.sub(r'[^\\w\\s-]', '', ch_title).strip().replace(' ', '-')
+        lines.append(f"| جزوه {to_fa_digits(idx)} | [📚 {ch_title}](#{slug}) | `{src}` | {max(1, n_topics)} مبحث |")
+    lines.append("\n")
 
-    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
-    sections = data.get("sections") or data.get("thematic_sections") or []
-    if sections:
-        for sec_idx, sec in enumerate(sections, 1):
-            if not isinstance(sec, dict):
-                continue
-            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
-            sec_headers = sec.get("headers") or []
-            sec_rows = sec.get("rows") or []
+    for idx, ch in enumerate(chapters, 1):
+        ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {idx}"
+        src = ch.get("source_file") or ch.get("file_name") or ""
+        slug = re.sub(r'[^\\w\\s-]', '', ch_title).strip().replace(' ', '-')
+        src_badge = f" (منبع: `{src}`)" if src else ""
+        lines.append(f"- **[📚 {ch_title}](#{slug})**{src_badge}")
+        for sec in ch.get("sections", []) or ch.get("thematic_sections", []):
+            s_name = sec.get("title") or sec.get("section_title") or ""
+            if s_name:
+                s_slug = re.sub(r'[^\\w\\s-]', '', s_name).strip().replace(' ', '-')
+                lines.append(f"  - [■ [جزوه {to_fa_digits(idx)}] {s_name}](#{s_slug})")
+        for mod in ch.get("modules", []):
+            m_name = mod.get("name", "")
+            if m_name and not any(m_name in (s.get("title") or s.get("section_title") or "") for s in (ch.get("sections") or [])):
+                m_slug = re.sub(r'[^\\w\\s-]', '', m_name).strip().replace(' ', '-')
+                lines.append(f"  - [■ [جزوه {to_fa_digits(idx)}] {m_name}](#{m_slug})")
+    lines.append("\n---\n")
 
-            lines.append(f"## ■ {sec_title}\n")
-            if sec_headers and sec_rows:
-                lines.append(format_md_table_row(sec_headers))
-                lines.append("| " + " | ".join([":---"] * len(sec_headers)) + " |")
-                for r in sec_rows:
-                    safe_r = r[:len(sec_headers)] if isinstance(r, (list, tuple)) else [str(r)]
-                    clean_r = ["<br>".join(str(c).splitlines()) for c in safe_r]
-                    lines.append(format_md_table_row(clean_r))
-                lines.append("")
 
-            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
-            if sec_flowchart:
-                lines.append("```mermaid")
-                lines.append(clean_mermaid_code(sec_flowchart.strip()))
-                lines.append("```\n")
+def render_md_section_block(lines: List[str], sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = ""):
+    """Renders a single thematic section (table, flowchart, callouts) into Markdown."""
+    if not isinstance(sec, dict):
+        return
+    raw_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
+    if chapter_badge and chapter_badge not in raw_title:
+        sec_title = f"{chapter_badge} {raw_title}"
+    else:
+        sec_title = raw_title
+    sec_headers = sec.get("headers") or []
+    sec_rows = sec.get("rows") or []
 
-            sec_callouts = sec.get("callouts") or []
-            if sec_callouts:
-                c_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
-                add_markdown_alert(lines, "WARNING", "هشدار اورژانسی و بالینی", c_list, icon="🚨")
+    lines.append(f"## ■ {sec_title}\n")
+    if sec_headers and sec_rows:
+        lines.append(format_md_table_row(sec_headers))
+        lines.append("| " + " | ".join([":---"] * len(sec_headers)) + " |")
+        for r in sec_rows:
+            safe_r = r[:len(sec_headers)] if isinstance(r, (list, tuple)) else [str(r)]
+            clean_r = ["<br>".join(str(c).splitlines()) for c in safe_r]
+            lines.append(format_md_table_row(clean_r))
+        lines.append("")
 
-    covered_entities = extract_covered_section_entities(data)
-    for mod in (data.get("modules") or []):
-        if not isinstance(mod, dict):
-            continue
-        m_name = mod.get("name", "")
-        m_name_en = mod.get("name_en", "")
-        mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
-        is_foundation = (
-            mod_type == "foundational_concept"
-            or bool(mod.get("feedback_cascade"))
-            or bool(mod.get("regulatory_mechanisms_and_feedback"))
-            or bool(mod.get("physiological_role"))
-            or bool(mod.get("anatomical_physiological_basis"))
-        )
-        is_approach = (
-            mod_type == "clinical_approach"
-            or bool(mod.get("step_by_step_algorithm"))
-        )
-        is_covered = is_module_covered_in_sections(mod, covered_entities)
+    sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+    if sec_flowchart:
+        lines.append("```mermaid")
+        lines.append(clean_mermaid_code(sec_flowchart.strip()))
+        lines.append("```\n")
 
-        type_badge = ""
-        if is_foundation:
-            type_badge = " [مفاهیم و فیزیولوژی پایه]"
-        elif is_approach:
-            type_badge = " [رویکرد و الگوریتم تشخیصی]"
+    sec_callouts = sec.get("callouts") or []
+    if sec_callouts:
+        c_list = sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]
+        add_markdown_alert(lines, "WARNING", "هشدار اورژانسی و بالینی", c_list, icon="🚨")
 
-        lines.append(f"## ■ {m_name}{type_badge} ({m_name_en})\n")
 
-        # Cross-Layer Deduplication Notice (v3.9.3)
-        if is_covered:
-            lines.append("> [!NOTE]\n> **⚡ ارجاع به جدول تماتیک:** جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.\n")
+def render_md_module_block(lines: List[str], mod: Dict[str, Any], mod_idx: int = 1, covered_entities: Optional[Set[str]] = None, chapter_badge: str = ""):
+    """Renders a single high-yield module/illness script into Markdown."""
+    if not isinstance(mod, dict):
+        return
+    covered_entities = covered_entities or set()
+    raw_m_name = mod.get("name", f"مبحث شماره {mod_idx}")
+    if chapter_badge and chapter_badge not in raw_m_name:
+        m_name = f"{chapter_badge} {raw_m_name}"
+    else:
+        m_name = raw_m_name
+    if not isinstance(mod, dict):
+        return
+    # m_name already computed with chapter_badge
+    m_name_en = mod.get("name_en", "")
+    mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
+    is_foundation = (
+        mod_type == "foundational_concept"
+        or bool(mod.get("feedback_cascade"))
+        or bool(mod.get("regulatory_mechanisms_and_feedback"))
+        or bool(mod.get("physiological_role"))
+        or bool(mod.get("anatomical_physiological_basis"))
+    )
+    is_approach = (
+        mod_type == "clinical_approach"
+        or bool(mod.get("step_by_step_algorithm"))
+    )
+    is_covered = is_module_covered_in_sections(mod, covered_entities)
 
-        if is_covered:
-            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
-        # Archetype 1: Foundational Physiology & Regulatory Loops
-        elif is_foundation:
-            roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
-            if roles:
-                lines.append("### ۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)")
-                roles_list = roles if isinstance(roles, list) else [roles]
-                for r in roles_list:
-                    lines.append(f"- {r}")
-                lines.append("")
+    type_badge = ""
+    if is_foundation:
+        type_badge = " [مفاهیم و فیزیولوژی پایه]"
+    elif is_approach:
+        type_badge = " [رویکرد و الگوریتم تشخیصی]"
 
-            f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
-            if f_casc and isinstance(f_casc, list):
-                lines.append("### ۲. مسیر فیدبک هورمونی و سیگنالینگ تنظیمی (Regulatory & Feedback Loops)")
-                f_cascade = [
-                    str(c).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip()
-                    for c in f_casc if c and str(c).strip()
-                ]
-                if len(f_cascade) > 1:
-                    lines.append("```mermaid")
-                    lines.append("graph TD")
-                    for i in range(len(f_cascade) - 1):
-                        lines.append(f'    fnode{i}["{f_cascade[i]}"] --> fnode{i+1}["{f_cascade[i+1]}"]')
-                    lines.append("```")
-                for item in f_cascade:
-                    lines.append(f"- **مسیر تنظیمی:** {item}")
-                lines.append("")
+    lines.append(f"## ■ {m_name}{type_badge} ({m_name_en})\n")
 
-            if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
-                lines.append("### ۳. تست‌های ارزیابی عملکرد پایه و مقادیر مرجع (Baseline Functional Tests)")
-                for t in mod["baseline_tests"]:
-                    lines.append(f"- • {t}")
-                lines.append("")
+    # Cross-Layer Deduplication Notice (v3.9.3)
+    if is_covered:
+        lines.append("> [!NOTE]\n> **⚡ ارجاع به جدول تماتیک:** جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.\n")
 
-            if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
-                lines.append("### ۴. اهمیت بالینی در پاتولوژی و تله‌های امتحانی (Clinical Relevance & Exam Anchors)")
-                for cr in mod["clinical_relevance"]:
-                    lines.append(f"- ⚡ {cr}")
-                lines.append("")
-
-        # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
-        elif is_approach:
-            inits = mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario")
-            if inits:
-                lines.append("### ۱. تظاهر بالینی و شکایت اولیه (Initial Clinical Presentation)")
-                inits_list = inits if isinstance(inits, list) else [inits]
-                for init in inits_list:
-                    lines.append(f"- 🔹 {init}")
-                lines.append("")
-
-            steps = mod.get("step_by_step_algorithm")
-            if steps and isinstance(steps, list):
-                lines.append("### ۲. الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Triage Algorithm)")
-                alg_steps = []
-                for s in steps:
-                    if isinstance(s, dict):
-                        st = s.get("step", "")
-                        ac = s.get("action", "")
-                        alg_steps.append(f"{st}: {ac}" if st and ac else (st or ac))
-                    else:
-                        alg_steps.append(str(s).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip())
-                if len(alg_steps) > 1:
-                    lines.append("```mermaid")
-                    lines.append("graph TD")
-                    for i in range(len(alg_steps) - 1):
-                        lines.append(f'    anode{i}["{alg_steps[i]}"] --> anode{i+1}["{alg_steps[i+1]}"]')
-                    lines.append("```")
-                for s_idx, s in enumerate(alg_steps, 1):
-                    lines.append(f"- **گام {s_idx}:** {s}")
-                lines.append("")
-
-            pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
-            if pivots and isinstance(pivots, list):
-                lines.append("### ۳. نقاط انشعاب تشخیصی و تصمیم‌گیری (Decision Bifurcations / Pivot Criteria)")
-                for pv in pivots:
-                    lines.append(f"- ⚖️ {pv}")
-                lines.append("")
-
-            if mod.get("definitive_action"):
-                lines.append("### ۴. اقدام قطعی بعدی (Definitive Next Step / Confirmatory Action)")
-                actions = mod["definitive_action"] if isinstance(mod["definitive_action"], list) else [mod["definitive_action"]]
-                for act in actions:
-                    lines.append(f"- ⭐ {act}")
-                lines.append("")
-
-        # Archetype 3: Disease Illness Script (Pathologies & Syndromes)
-        else:
-            # Definition & Etiology & Risk Factors
-            risks = mod.get("risk_factors_and_epidemiology") or mod.get("risk_factors_and_predisposing")
-            defs = mod.get("definition_and_etiology")
-            if defs or risks:
-                lines.append("### ۱. تعریف، اتیولوژی و عوامل خطر (Definition, Etiology & Risk Factors)")
-                for item in (defs or []):
-                    lines.append(f"- {item}")
-                risk_items = risks if isinstance(risks, list) else ([risks] if risks else [])
-                for r in risk_items:
-                    lines.append(f"- 👥 **عامل خطر / اپیدمیولوژی:** {r}")
-                lines.append("")
-
-            # Pathophysiology Cascade (with Mermaid diagram)
-            if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
-                lines.append("### ۲. زنجیره پاتوفیزیولوژی (Pathophysiological Cascade)")
-                cascade = [
-                    str(c).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip()
-                    for c in mod["pathophysiology_cascade"] if c and str(c).strip()
-                ]
-                if len(cascade) > 1:
-                    lines.append("```mermaid")
-                    lines.append("graph TD")
-                    for i in range(len(cascade) - 1):
-                        lines.append(f'    node{i}["{cascade[i]}"] --> node{i+1}["{cascade[i+1]}"]')
-                    lines.append("```")
-                elif len(cascade) == 1:
-                    lines.append("```mermaid")
-                    lines.append("graph TD")
-                    lines.append(f'    node0["{cascade[0]}"]')
-                    lines.append("```")
-                for item in cascade:
-                    lines.append(f"- **گام مکانیسمی:** {item}")
-                lines.append("")
-
-            # Clinical Presentation
-            if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
-                lines.append("### ۳. تظاهرات بالینی و ارتباط مکانیسمی (Clinical Presentation)")
-                for cp in mod["clinical_presentation"]:
-                    if not isinstance(cp, dict):
-                        continue
-                    sign = cp.get("sign", "")
-                    mech = cp.get("mechanism", "")
-                    lines.append(f"- **{sign}:** توجیه پاتوفیزیولوژیک ← {mech}")
-                lines.append("")
-
-            # Diagnostics
-            if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
-                lines.append("### ۴. بررسی‌های تشخیصی (Diagnostic Workup)")
-                diag = mod["diagnostics"]
-                best_init = diag.get("best_initial_test")
-                if best_init and str(best_init).strip() and str(best_init).lower() not in {"null", "none", "ذکر نشده"}:
-                    lines.append(f"- 🔹 **اقدام تشخیصی اولیه (Best Next Step):** {best_init}")
-                gold_std = diag.get("gold_standard")
-                if gold_std and str(gold_std).strip() and str(gold_std).lower() not in {"null", "none", "ذکر نشده"}:
-                    lines.append(f"- ⭐ **استاندارد طلایی (Gold Standard):** {gold_std}")
-                raw_labs = diag.get("key_labs") or []
-                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
-                for lab in labs_list:
-                    if lab and str(lab).strip():
-                        lines.append(f"- • {lab}")
-                lines.append("")
-
-            # Clinical Semiology & Physical Examination (سیر سمیولوژی و مانورهای بالینی)
-            if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
-                lines.append("### 🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)")
-                for sem in mod["clinical_semiology"]:
-                    if not isinstance(sem, dict):
-                        continue
-                    man = sem.get("maneuver_or_sign", "")
-                    tech = sem.get("technique", "")
-                    sig = sem.get("clinical_significance", "")
-                    pearl = sem.get("exam_pearl", "")
-                    desc = f"- 🩺 **{man}:** "
-                    if tech:
-                        desc += f"روش انجام ← {tech}"
-                    if sig:
-                        desc += f" | اهمیت بالینی ← {sig}"
-                    if pearl:
-                        desc += f" *(نکته آزمون: {pearl})*"
-                    lines.append(desc)
-                lines.append("")
-
-            # Comprehensive Management
-            has_pharma = bool(mod.get("pharmacology_and_management"))
-            raw_surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications")
-            has_surg = bool(raw_surg)
-            has_life = bool(mod.get("lifestyle_and_conservative"))
-
-            if has_pharma or has_surg or has_life:
-                lines.append("### ۵. اصول درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)")
-                if has_pharma and isinstance(mod["pharmacology_and_management"], list):
-                    for rx in mod["pharmacology_and_management"]:
-                        if not isinstance(rx, dict):
-                            continue
-                        d_class = rx.get("drug_class", "")
-                        mechanism = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
-                        pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
-                        desc = f"مکانیسم عمل: {mechanism}"
-                        if pearl:
-                            desc += f" (نکته: {pearl})"
-                        lines.append(f"- 💊 **{d_class}:** {desc}")
-                if has_surg:
-                    surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
-                    for s in surg_items:
-                        lines.append(f"- 🔪 **اندیکاسیون جراحی / مداخله‌ای:** {s}")
-                if has_life:
-                    life_items = mod["lifestyle_and_conservative"] if isinstance(mod["lifestyle_and_conservative"], list) else [mod["lifestyle_and_conservative"]]
-                    for l in life_items:
-                        lines.append(f"- 🌱 **درمان غیردارویی و تغییر سبک زندگی:** {l}")
-                lines.append("")
-
-            # Complications & Prognosis
-            if mod.get("complications_and_prognosis"):
-                lines.append("### ۶. عوارض وخیم و پیش‌آگهی (Complications & Prognosis)")
-                comps = mod["complications_and_prognosis"] if isinstance(mod["complications_and_prognosis"], list) else [mod["complications_and_prognosis"]]
-                for comp in comps:
-                    lines.append(f"- 🚨 {comp}")
-                lines.append("")
-
-        # Figures
-        for fig in (mod.get("figures") or []):
-            if isinstance(fig, dict):
-                f_path = fig.get("path", "")
-                f_cap = fig.get("caption", "")
-                lines.append(f"![{f_cap}]({f_path})\n*🔍 تصویر آموزشی: {f_cap}*\n")
-
-        # Differential Table
-        if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
-            lines.append("### ۶. تشخیص افتراقی (Differential Diagnosis Matrix)")
-            dt = mod["differential_table"]
-            headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
-            lines.append(format_md_table_row(headers))
-            lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
-            for row in dt.get("rows", []):
-                lines.append(format_md_table_row(row))
+    if is_covered:
+        pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
+    # Archetype 1: Foundational Physiology & Regulatory Loops
+    elif is_foundation:
+        roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
+        if roles:
+            lines.append("### ۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)")
+            roles_list = roles if isinstance(roles, list) else [roles]
+            for r in roles_list:
+                lines.append(f"- {r}")
             lines.append("")
 
-        # Clinical Semiology & Physical Examination (retained for covered modules)
-        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+        f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
+        if f_casc and isinstance(f_casc, list):
+            lines.append("### ۲. مسیر فیدبک هورمونی و سیگنالینگ تنظیمی (Regulatory & Feedback Loops)")
+            f_cascade = [
+                str(c).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip()
+                for c in f_casc if c and str(c).strip()
+            ]
+            if len(f_cascade) > 1:
+                lines.append("```mermaid")
+                lines.append("graph TD")
+                for i in range(len(f_cascade) - 1):
+                    lines.append(f'    fnode{i}["{f_cascade[i]}"] --> fnode{i+1}["{f_cascade[i+1]}"]')
+                lines.append("```")
+            for item in f_cascade:
+                lines.append(f"- **مسیر تنظیمی:** {item}")
+            lines.append("")
+
+        if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
+            lines.append("### ۳. تست‌های ارزیابی عملکرد پایه و مقادیر مرجع (Baseline Functional Tests)")
+            for t in mod["baseline_tests"]:
+                lines.append(f"- • {t}")
+            lines.append("")
+
+        if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
+            lines.append("### ۴. اهمیت بالینی در پاتولوژی و تله‌های امتحانی (Clinical Relevance & Exam Anchors)")
+            for cr in mod["clinical_relevance"]:
+                lines.append(f"- ⚡ {cr}")
+            lines.append("")
+
+    # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
+    elif is_approach:
+        inits = mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario")
+        if inits:
+            lines.append("### ۱. تظاهر بالینی و شکایت اولیه (Initial Clinical Presentation)")
+            inits_list = inits if isinstance(inits, list) else [inits]
+            for init in inits_list:
+                lines.append(f"- 🔹 {init}")
+            lines.append("")
+
+        steps = mod.get("step_by_step_algorithm")
+        if steps and isinstance(steps, list):
+            lines.append("### ۲. الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Triage Algorithm)")
+            alg_steps = []
+            for s in steps:
+                if isinstance(s, dict):
+                    st = s.get("step", "")
+                    ac = s.get("action", "")
+                    alg_steps.append(f"{st}: {ac}" if st and ac else (st or ac))
+                else:
+                    alg_steps.append(str(s).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip())
+            if len(alg_steps) > 1:
+                lines.append("```mermaid")
+                lines.append("graph TD")
+                for i in range(len(alg_steps) - 1):
+                    lines.append(f'    anode{i}["{alg_steps[i]}"] --> anode{i+1}["{alg_steps[i+1]}"]')
+                lines.append("```")
+            for s_idx, s in enumerate(alg_steps, 1):
+                lines.append(f"- **گام {s_idx}:** {s}")
+            lines.append("")
+
+        pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
+        if pivots and isinstance(pivots, list):
+            lines.append("### ۳. نقاط انشعاب تشخیصی و تصمیم‌گیری (Decision Bifurcations / Pivot Criteria)")
+            for pv in pivots:
+                lines.append(f"- ⚖️ {pv}")
+            lines.append("")
+
+        if mod.get("definitive_action"):
+            lines.append("### ۴. اقدام قطعی بعدی (Definitive Next Step / Confirmatory Action)")
+            actions = mod["definitive_action"] if isinstance(mod["definitive_action"], list) else [mod["definitive_action"]]
+            for act in actions:
+                lines.append(f"- ⭐ {act}")
+            lines.append("")
+
+    # Archetype 3: Disease Illness Script (Pathologies & Syndromes)
+    else:
+        # Definition & Etiology & Risk Factors
+        risks = mod.get("risk_factors_and_epidemiology") or mod.get("risk_factors_and_predisposing")
+        defs = mod.get("definition_and_etiology")
+        if defs or risks:
+            lines.append("### ۱. تعریف، اتیولوژی و عوامل خطر (Definition, Etiology & Risk Factors)")
+            for item in (defs or []):
+                lines.append(f"- {item}")
+            risk_items = risks if isinstance(risks, list) else ([risks] if risks else [])
+            for r in risk_items:
+                lines.append(f"- 👥 **عامل خطر / اپیدمیولوژی:** {r}")
+            lines.append("")
+
+        # Pathophysiology Cascade (with Mermaid diagram)
+        if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
+            lines.append("### ۲. زنجیره پاتوفیزیولوژی (Pathophysiological Cascade)")
+            cascade = [
+                str(c).replace('"', "'").replace('[', '(').replace(']', ')').replace("\n", " ").strip()
+                for c in mod["pathophysiology_cascade"] if c and str(c).strip()
+            ]
+            if len(cascade) > 1:
+                lines.append("```mermaid")
+                lines.append("graph TD")
+                for i in range(len(cascade) - 1):
+                    lines.append(f'    node{i}["{cascade[i]}"] --> node{i+1}["{cascade[i+1]}"]')
+                lines.append("```")
+            elif len(cascade) == 1:
+                lines.append("```mermaid")
+                lines.append("graph TD")
+                lines.append(f'    node0["{cascade[0]}"]')
+                lines.append("```")
+            for item in cascade:
+                lines.append(f"- **گام مکانیسمی:** {item}")
+            lines.append("")
+
+        # Clinical Presentation
+        if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
+            lines.append("### ۳. تظاهرات بالینی و ارتباط مکانیسمی (Clinical Presentation)")
+            for cp in mod["clinical_presentation"]:
+                if not isinstance(cp, dict):
+                    continue
+                sign = cp.get("sign", "")
+                mech = cp.get("mechanism", "")
+                lines.append(f"- **{sign}:** توجیه پاتوفیزیولوژیک ← {mech}")
+            lines.append("")
+
+        # Diagnostics
+        if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
+            lines.append("### ۴. بررسی‌های تشخیصی (Diagnostic Workup)")
+            diag = mod["diagnostics"]
+            best_init = diag.get("best_initial_test")
+            if best_init and str(best_init).strip() and str(best_init).lower() not in {"null", "none", "ذکر نشده"}:
+                lines.append(f"- 🔹 **اقدام تشخیصی اولیه (Best Next Step):** {best_init}")
+            gold_std = diag.get("gold_standard")
+            if gold_std and str(gold_std).strip() and str(gold_std).lower() not in {"null", "none", "ذکر نشده"}:
+                lines.append(f"- ⭐ **استاندارد طلایی (Gold Standard):** {gold_std}")
+            raw_labs = diag.get("key_labs") or []
+            labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
+            for lab in labs_list:
+                if lab and str(lab).strip():
+                    lines.append(f"- • {lab}")
+            lines.append("")
+
+        # Clinical Semiology & Physical Examination (سیر سمیولوژی و مانورهای بالینی)
+        if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
             lines.append("### 🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)")
             for sem in mod["clinical_semiology"]:
                 if not isinstance(sem, dict):
@@ -2426,117 +2538,239 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 lines.append(desc)
             lines.append("")
 
-        # High Yield Pearls
-        if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
-            add_markdown_alert(lines, "WARNING", "نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls):", mod["high_yield_pearls"], icon="⚡")
+        # Comprehensive Management
+        has_pharma = bool(mod.get("pharmacology_and_management"))
+        raw_surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications")
+        has_surg = bool(raw_surg)
+        has_life = bool(mod.get("lifestyle_and_conservative"))
 
-        # Instructor Alerts
-        if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
-            add_markdown_alert(lines, "IMPORTANT", "⭐ اولویت اول مرور: تأکیدات مستقیم استاد در کلاس:", mod["instructor_exam_alerts"], icon="⭐")
+        if has_pharma or has_surg or has_life:
+            lines.append("### ۵. اصول درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)")
+            if has_pharma and isinstance(mod["pharmacology_and_management"], list):
+                for rx in mod["pharmacology_and_management"]:
+                    if not isinstance(rx, dict):
+                        continue
+                    d_class = rx.get("drug_class", "")
+                    mechanism = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
+                    pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
+                    desc = f"مکانیسم عمل: {mechanism}"
+                    if pearl:
+                        desc += f" (نکته: {pearl})"
+                    lines.append(f"- 💊 **{d_class}:** {desc}")
+            if has_surg:
+                surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
+                for s in surg_items:
+                    lines.append(f"- 🔪 **اندیکاسیون جراحی / مداخله‌ای:** {s}")
+            if has_life:
+                life_items = mod["lifestyle_and_conservative"] if isinstance(mod["lifestyle_and_conservative"], list) else [mod["lifestyle_and_conservative"]]
+                for l in life_items:
+                    lines.append(f"- 🌱 **درمان غیردارویی و تغییر سبک زندگی:** {l}")
+            lines.append("")
 
-        # Emergency Management & Immediate Resuscitation
-        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
-        if emerg_items:
-            emerg_list = format_emergency_items(emerg_items)
-            add_markdown_alert(lines, "CAUTION", "🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):", emerg_list, icon="🚨")
+        # Complications & Prognosis
+        if mod.get("complications_and_prognosis"):
+            lines.append("### ۶. عوارض وخیم و پیش‌آگهی (Complications & Prognosis)")
+            comps = mod["complications_and_prognosis"] if isinstance(mod["complications_and_prognosis"], list) else [mod["complications_and_prognosis"]]
+            for comp in comps:
+                lines.append(f"- 🚨 {comp}")
+            lines.append("")
 
-        # Contraindications & Lethal Withholds
-        if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
-            add_markdown_alert(lines, "CAUTION", "⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications):", mod["contraindications_and_warnings"], icon="⛔")
+    # Figures
+    for fig in (mod.get("figures") or []):
+        if isinstance(fig, dict):
+            f_path = fig.get("path", "")
+            f_cap = fig.get("caption", "")
+            lines.append(f"![{f_cap}]({f_path})\n*🔍 تصویر آموزشی: {f_cap}*\n")
 
-        # Special Populations & Pregnancy
-        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
-        if special_items:
-            spec_list = special_items if isinstance(special_items, list) else [special_items]
-            add_markdown_alert(lines, "NOTE", "🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy):", spec_list, icon="🤰")
+    # Differential Table
+    if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
+        lines.append("### ۶. تشخیص افتراقی (Differential Diagnosis Matrix)")
+        dt = mod["differential_table"]
+        headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
+        lines.append(format_md_table_row(headers))
+        lines.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        for row in dt.get("rows", []):
+            lines.append(format_md_table_row(row))
+        lines.append("")
 
-        # Diagnostic Formulas in Markdown
-        if mod.get("formulas") or mod.get("diagnostic_formulas"):
-            f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
-            if isinstance(f_list, list):
-                lines.append(f"### 🧮 فرمول‌های تشخیصی و محاسبات بالینی {m_name}\n")
-                for f_item in f_list:
-                    if isinstance(f_item, dict):
-                        f_title = f_item.get("title", "فرمول محاسباتی")
-                        f_code = sanitize_medical_text_symbols(f_item.get("formula", ""))
-                        lines.append(f"> **🧮 {f_title}:** `{f_code}`")
-                    elif isinstance(f_item, str):
-                        lines.append(f"> **🧮 فرمول:** `{sanitize_medical_text_symbols(f_item)}`")
-                lines.append("")
+    # Clinical Semiology & Physical Examination (retained for covered modules)
+    if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+        lines.append("### 🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)")
+        for sem in mod["clinical_semiology"]:
+            if not isinstance(sem, dict):
+                continue
+            man = sem.get("maneuver_or_sign", "")
+            tech = sem.get("technique", "")
+            sig = sem.get("clinical_significance", "")
+            pearl = sem.get("exam_pearl", "")
+            desc = f"- 🩺 **{man}:** "
+            if tech:
+                desc += f"روش انجام ← {tech}"
+            if sig:
+                desc += f" | اهمیت بالینی ← {sig}"
+            if pearl:
+                desc += f" *(نکته آزمون: {pearl})*"
+            lines.append(desc)
+        lines.append("")
 
-        # Staging & Diagnostic Criteria (Polymorphic)
-        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
-        if criteria_obj:
-            if isinstance(criteria_obj, dict):
-                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
-                lines.append(f"### 📋 {sc_title}")
-                sc_hdrs = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
+    # High Yield Pearls
+    if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
+        add_markdown_alert(lines, "WARNING", "نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls):", mod["high_yield_pearls"], icon="⚡")
+
+    # Instructor Alerts
+    if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
+        add_markdown_alert(lines, "IMPORTANT", "⭐ اولویت اول مرور: تأکیدات مستقیم استاد در کلاس:", mod["instructor_exam_alerts"], icon="⭐")
+
+    # Emergency Management & Immediate Resuscitation
+    emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
+    if emerg_items:
+        emerg_list = format_emergency_items(emerg_items)
+        add_markdown_alert(lines, "CAUTION", "🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization):", emerg_list, icon="🚨")
+
+    # Contraindications & Lethal Withholds
+    if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
+        add_markdown_alert(lines, "CAUTION", "⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications):", mod["contraindications_and_warnings"], icon="⛔")
+
+    # Special Populations & Pregnancy
+    special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
+    if special_items:
+        spec_list = special_items if isinstance(special_items, list) else [special_items]
+        add_markdown_alert(lines, "NOTE", "🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy):", spec_list, icon="🤰")
+
+    # Diagnostic Formulas in Markdown
+    if mod.get("formulas") or mod.get("diagnostic_formulas"):
+        f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
+        if isinstance(f_list, list):
+            lines.append(f"### 🧮 فرمول‌های تشخیصی و محاسبات بالینی {m_name}\n")
+            for f_item in f_list:
+                if isinstance(f_item, dict):
+                    f_title = f_item.get("title", "فرمول محاسباتی")
+                    f_code = sanitize_medical_text_symbols(f_item.get("formula", ""))
+                    lines.append(f"> **🧮 {f_title}:** `{f_code}`")
+                elif isinstance(f_item, str):
+                    lines.append(f"> **🧮 فرمول:** `{sanitize_medical_text_symbols(f_item)}`")
+            lines.append("")
+
+    # Staging & Diagnostic Criteria (Polymorphic)
+    criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
+    if criteria_obj:
+        if isinstance(criteria_obj, dict):
+            sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
+            lines.append(f"### 📋 {sc_title}")
+            sc_hdrs = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
+            lines.append(format_md_table_row(sc_hdrs))
+            lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
+            for row in criteria_obj.get("rows", []):
+                lines.append(format_md_table_row(row))
+            lines.append("")
+        elif isinstance(criteria_obj, list) and criteria_obj:
+            if isinstance(criteria_obj[0], dict):
+                lines.append(f"### 📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}")
+                sc_hdrs = list(criteria_obj[0].keys())
                 lines.append(format_md_table_row(sc_hdrs))
                 lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
-                for row in criteria_obj.get("rows", []):
-                    lines.append(format_md_table_row(row))
+                for item in criteria_obj:
+                    lines.append(format_md_table_row([str(item.get(k, "-")) for k in sc_hdrs]))
                 lines.append("")
-            elif isinstance(criteria_obj, list) and criteria_obj:
-                if isinstance(criteria_obj[0], dict):
-                    lines.append(f"### 📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}")
-                    sc_hdrs = list(criteria_obj[0].keys())
-                    lines.append(format_md_table_row(sc_hdrs))
-                    lines.append("| " + " | ".join(["---"] * len(sc_hdrs)) + " |")
-                    for item in criteria_obj:
-                        lines.append(format_md_table_row([str(item.get(k, "-")) for k in sc_hdrs]))
-                    lines.append("")
-                else:
-                    lines.append(f"### 📋 سیستم طبقه‌بندی و معیارهای بالینی {m_name} (Staging & Criteria)")
-                    for cr in criteria_obj:
-                        lines.append(f"- 📋 {cr}")
-                    lines.append("")
-
-        # Clinical Vignettes
-        if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
-            lines.append("### 📝 خودآزمایی فعال بالینی (Active Recall Clinical Vignettes)")
-            for v_idx, v in enumerate(mod["clinical_vignettes"], 1):
-                if not isinstance(v, dict):
-                    continue
-                lines.append(f"#### سناریوی {v_idx}: {v.get('scenario_title', '')}")
-                lines.append(f"> {v.get('scenario', '')}\n")
-                for opt in v.get("options", []):
-                    lines.append(f"- {opt}")
+            else:
+                lines.append(f"### 📋 سیستم طبقه‌بندی و معیارهای بالینی {m_name} (Staging & Criteria)")
+                for cr in criteria_obj:
+                    lines.append(f"- 📋 {cr}")
                 lines.append("")
-                lines.append("<details>")
-                lines.append("<summary><b>مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</b></summary>\n")
-                lines.append(f"**✓ {v.get('correct_answer', '')}**\n")
-                if "rationale" in v:
-                    lines.append(f"*تحلیل فیزیوپاتولوژی:* {v['rationale']}\n")
-                lines.append("</details>\n")
 
-        # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
-        atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
-        if atlas_figs:
-            lines.append(f"### 📸 اطلس تصویری و تحلیل اسلایدهای بالینی {m_name}\n")
-            for fig in atlas_figs:
-                if not isinstance(fig, dict):
-                    continue
-                f_title = fig.get("title", "تصویر اسلاید کلاسی")
-                f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
-                f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
-                f_pearl = fig.get("exam_pearl") or ""
-                lines.append(f"> **📷 {f_title}**")
+    # Clinical Vignettes
+    if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
+        lines.append("### 📝 خودآزمایی فعال بالینی (Active Recall Clinical Vignettes)")
+        for v_idx, v in enumerate(mod["clinical_vignettes"], 1):
+            if not isinstance(v, dict):
+                continue
+            lines.append(f"#### سناریوی {v_idx}: {v.get('scenario_title', '')}")
+            lines.append(f"> {v.get('scenario', '')}\n")
+            for opt in v.get("options", []):
+                lines.append(f"- {opt}")
+            lines.append("")
+            lines.append("<details>")
+            lines.append("<summary><b>مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</b></summary>\n")
+            lines.append(f"**✓ {v.get('correct_answer', '')}**\n")
+            if "rationale" in v:
+                lines.append(f"*تحلیل فیزیوپاتولوژی:* {v['rationale']}\n")
+            lines.append("</details>\n")
+
+    # Embedded Figures & Module-level Visual Atlas (اطلس تصویری و تحلیل اسلایدهای بالینی)
+    atlas_figs = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+    if atlas_figs:
+        lines.append(f"### 📸 اطلس تصویری و تحلیل اسلایدهای بالینی {m_name}\n")
+        for fig in atlas_figs:
+            if not isinstance(fig, dict):
+                continue
+            f_title = fig.get("title", "تصویر اسلاید کلاسی")
+            f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+            f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+            f_pearl = fig.get("exam_pearl") or ""
+            lines.append(f"> **📷 {f_title}**")
+            if f_p:
+                lines.append(f"> ![{f_title}]({f_p})")
+            if f_cap:
+                lines.append(f"> - **• تحلیل یافته‌های بالینی و رادیولوژیک:** {f_cap}")
+            if f_pearl:
+                lines.append(f"> - **⭐ نکته کلیدی استاد / تله امتحانی:** {f_pearl}")
+            lines.append("")
+    elif mod.get("figures"):
+        for fig in (mod.get("figures") or []):
+            if isinstance(fig, dict):
+                f_p = fig.get("path", "")
+                f_cap = fig.get("caption", "")
                 if f_p:
-                    lines.append(f"> ![{f_title}]({f_p})")
+                    lines.append(f"![{f_cap}]({f_p})")
                 if f_cap:
-                    lines.append(f"> - **• تحلیل یافته‌های بالینی و رادیولوژیک:** {f_cap}")
-                if f_pearl:
-                    lines.append(f"> - **⭐ نکته کلیدی استاد / تله امتحانی:** {f_pearl}")
-                lines.append("")
-        elif mod.get("figures"):
-            for fig in (mod.get("figures") or []):
-                if isinstance(fig, dict):
-                    f_p = fig.get("path", "")
-                    f_cap = fig.get("caption", "")
-                    if f_p:
-                        lines.append(f"![{f_cap}]({f_p})")
-                    if f_cap:
-                        lines.append(f"*{f_cap}*\n")
+                    lines.append(f"*{f_cap}*\n")
+
+
+
+def render_md_flow_item(lines: List[str], item: Dict[str, Any], idx: int, covered_entities: Set[str]):
+    """Renders a chronological flow item (topic, section_only, or module_only) into Markdown."""
+    i_type = item.get("type")
+    c_badge = item.get("chapter_badge", "")
+    if i_type == "topic":
+        if item.get("section"):
+            render_md_section_block(lines, item["section"], sec_idx=idx, chapter_badge=c_badge)
+        if item.get("module"):
+            render_md_module_block(lines, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+    elif i_type == "section_only":
+        render_md_section_block(lines, item["section"], sec_idx=idx, chapter_badge=c_badge)
+    elif i_type == "module_only":
+        render_md_module_block(lines, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+
+def build_markdown_summary(data: Dict[str, Any], output_path: str):
+    """Generates a clean, GitHub/Obsidian-compatible Markdown study guide."""
+    ensure_master_matrices(data)
+    topic_title = data.get("topic_title", "خلاصه مبحث فیزیوپاتولوژی")
+    topic_title_en = data.get("topic_title_en", "")
+    organ_system = data.get("organ_system", "فیزیوپاتولوژی")
+
+    lines = []
+    lines.append(f"# 🩺 {topic_title} ({topic_title_en})")
+    lines.append(f"> **کورس آموزشی:** {organ_system} | **مقطع:** فیزیوپاتولوژی بالینی | **نوع سند:** راهنمای مرور های‌یلد\n")
+    chapters = data.get("chapters")
+    is_multi = bool(data.get("is_multi_chapter") or (chapters and len(chapters) > 1))
+
+    if is_multi and chapters:
+        render_markdown_table_of_contents(lines, chapters)
+        for ch_idx, ch in enumerate(chapters, 1):
+            ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {ch_idx}"
+            src_file = ch.get("source_file") or ch.get("file_name") or "منبع نامشخص"
+            ch_organ = ch.get("organ_system") or organ_system
+            lines.append(f"---\n\n# 📚 جزوه {ch_idx}: {ch_title}\n")
+            lines.append(f"> **📄 فایل منبع:** `{src_file}` | **🏛️ کورس:** {ch_organ} | **🎯 سطح:** فیزیوپاتولوژی بالینی\n\n")
+            ch_flow = extract_chronological_flow(ch, chapter_badge=f"[جزوه {to_fa_digits(ch_idx)}]")
+            ch_covered = extract_covered_section_entities(ch)
+            for it_idx, item in enumerate(ch_flow, 1):
+                render_md_flow_item(lines, item, it_idx, ch_covered)
+    else:
+        flow = extract_chronological_flow(data, chapter_badge="")
+        covered_entities = extract_covered_section_entities(data)
+        for it_idx, item in enumerate(flow, 1):
+            render_md_flow_item(lines, item, it_idx, covered_entities)
 
     # Track 4: Clinical Semiology & Physical Examination (سمیولوژی و معاینات بالینی)
     if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
@@ -3017,6 +3251,500 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
 # HTML & PDF Generation Engine (Playwright + Persian BiDi Stamping)
 # ---------------------------------------------------------------------------
 
+
+def render_html_table_of_contents(html_parts: List[str], chapters: List[Dict[str, Any]], title: str = "📑 فهرست فصول و سرفصل‌های درسنامه جامع"):
+    """Renders interactive HTML Table of Contents with jump anchors and source metadata."""
+    html_parts.append(f"""
+    <div class="toc-container">
+        <div class="toc-header">
+            <div class="toc-main-title">{title}</div>
+            <div class="toc-sub-title">تفکیک جامع سرفصل‌ها و مباحث به تفکیک جزوات منبع</div>
+        </div>
+        <div class="toc-grid">
+    """)
+    for idx, ch in enumerate(chapters, 1):
+        ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {idx}"
+        src = ch.get("source_file") or ch.get("file_name") or "منبع نامشخص"
+        organ = ch.get("organ_system") or "فیزیوپاتولوژی"
+        topics = []
+        for sec in (ch.get("sections") or ch.get("thematic_sections") or []):
+            t_name = sec.get("title") or sec.get("section_title") or ""
+            if t_name and t_name not in topics:
+                topics.append(t_name)
+        for mod in (ch.get("modules") or []):
+            m_name = mod.get("name", "")
+            if m_name and not any(m_name in t for t in topics):
+                topics.append(m_name)
+        if not topics:
+            topics = ["مباحث جامع بالینی"]
+
+        topic_items_html = "".join([f"<li>• [جزوه {to_fa_digits(idx)}] {format_inline_markdown(t)}</li>" for t in topics[:8]])
+
+        html_parts.append(f"""
+            <div class="toc-card">
+                <div class="toc-card-header">
+                    <a href="#handout-{idx}" class="toc-link">📚 {ch_title}</a>
+                    <div class="toc-organ-badge">{organ}</div>
+                </div>
+                <div class="toc-meta">
+                    <span>📄 فایل منبع: <code dir="ltr">{src}</code></span>
+                    <span class="badge-gold">{len(topics)} مبحث تدریس‌شده</span>
+                </div>
+                <ul class="toc-topic-list">
+                    {topic_items_html}
+                </ul>
+            </div>
+        """)
+    html_parts.append("""
+        </div>
+    </div>
+    """)
+
+
+def render_html_section_block(html_parts: List[str], sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = ""):
+    """Renders a single thematic section (table, flowchart, callouts) into HTML."""
+    if not isinstance(sec, dict):
+        return
+    raw_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
+    if chapter_badge and chapter_badge not in raw_title:
+        sec_title = f"{chapter_badge} {raw_title}"
+    else:
+        sec_title = raw_title
+    sec_headers = sec.get("headers") or []
+    sec_rows = sec.get("rows") or []
+
+    html_parts.append(f'<div class="section-banner">■ {sec_title}</div>')
+    if sec_headers and sec_rows:
+        html_parts.append('<table dir="rtl"><thead><tr>')
+        for h in sec_headers:
+            html_parts.append(f'<th>{h}</th>')
+        html_parts.append('</tr></thead><tbody>')
+        for r_idx, row in enumerate(sec_rows):
+            html_parts.append('<tr>')
+            safe_row = row[:len(sec_headers)] if isinstance(row, (list, tuple)) else [str(row)]
+            for col_idx, cell in enumerate(safe_row):
+                html_parts.append(f'<td>{format_cell_html(str(cell))}</td>')
+            html_parts.append('</tr>')
+        html_parts.append('</tbody></table>')
+
+    sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
+    if sec_flowchart:
+        html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><pre class="mermaid">{clean_mermaid_code(sec_flowchart.strip())}</pre></div>')
+
+    sec_callouts = sec.get("callouts") or []
+    if sec_callouts:
+        html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 هشدار اورژانسی و بالینی</div><div class="callout-body">')
+        for c_item in (sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]):
+            html_parts.append(f'<div>• {format_inline_markdown(str(c_item))}</div>')
+        html_parts.append('</div></div>')
+
+
+def render_html_module_block(html_parts: List[str], mod: Dict[str, Any], mod_idx: int = 1, covered_entities: Optional[Set[str]] = None, chapter_badge: str = ""):
+    """Renders a single high-yield module/illness script into HTML."""
+    if not isinstance(mod, dict):
+        return
+    covered_entities = covered_entities or set()
+    raw_m_name = mod.get("name", f"مبحث شماره {mod_idx}")
+    if chapter_badge and chapter_badge not in raw_m_name:
+        m_name = f"{chapter_badge} {raw_m_name}"
+    else:
+        m_name = raw_m_name
+    if not isinstance(mod, dict):
+        return
+    # m_name already computed with chapter_badge
+    m_name_en = mod.get("name_en", "")
+    mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
+    is_foundation = (
+        mod_type == "foundational_concept"
+        or bool(mod.get("feedback_cascade"))
+        or bool(mod.get("regulatory_mechanisms_and_feedback"))
+        or bool(mod.get("physiological_role"))
+        or bool(mod.get("anatomical_physiological_basis"))
+    )
+    is_approach = (
+        mod_type == "clinical_approach"
+        or bool(mod.get("step_by_step_algorithm"))
+    )
+    is_covered = is_module_covered_in_sections(mod, covered_entities)
+
+    type_badge = ""
+    if is_foundation:
+        type_badge = " [مفاهیم و فیزیولوژی پایه]"
+    elif is_approach:
+        type_badge = " [رویکرد و الگوریتم تشخیصی]"
+    en_tag = f" ({m_name_en})" if m_name_en else ""
+    html_parts.append(f'<div class="module-header">■ {m_name}{type_badge}{en_tag}</div>')
+
+    # Cross-Layer Deduplication Notice (v3.9.3)
+    if is_covered:
+        html_parts.append('<div class="callout callout-semiology"><div class="callout-header">⚡ ارجاع به جدول تماتیک</div><div class="callout-body">جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.</div></div>')
+
+    if is_covered:
+        pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
+    # Archetype 1: Foundational Physiology & Regulatory Loops
+    elif is_foundation:
+        roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
+        if roles:
+            html_parts.append('<div class="section-title">۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)</div><ul>')
+            roles_list = roles if isinstance(roles, list) else [roles]
+            for r in roles_list:
+                html_parts.append(f'<li>{r}</li>')
+            html_parts.append('</ul>')
+
+        f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
+        if f_casc and isinstance(f_casc, list):
+            f_cascade = [str(c).strip() for c in f_casc if c and str(c).strip()]
+            if f_cascade:
+                html_parts.append('<div class="callout callout-patho"><div class="callout-header">🔄 ۲. مسیر فیدبک هورمونی و سیگنالینگ تنظیمی (Regulatory Loops)</div><div class="callout-body">')
+                for c_idx, step in enumerate(f_cascade, 1):
+                    arrow = " ← " if c_idx < len(f_cascade) else ""
+                    html_parts.append(f'<div class="cascade-step"><b>مرحله {c_idx}:</b> {step}{arrow}</div>')
+                html_parts.append('</div></div>')
+
+        if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
+            html_parts.append('<div class="section-title">۳. تست‌های ارزیابی عملکرد پایه و مقادیر مرجع (Baseline Functional Tests)</div><ul>')
+            for t in mod["baseline_tests"]:
+                html_parts.append(f'<li>• {t}</li>')
+            html_parts.append('</ul>')
+
+        if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
+            html_parts.append('<div class="section-title">۴. اهمیت بالینی در پاتولوژی و تله‌های امتحانی (Clinical Relevance & Exam Anchors)</div><ul>')
+            for cr in mod["clinical_relevance"]:
+                html_parts.append(f'<li>⚡ {cr}</li>')
+            html_parts.append('</ul>')
+
+    # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
+    elif is_approach:
+        inits = mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario")
+        if inits:
+            html_parts.append('<div class="section-title">۱. تظاهر بالینی و شکایت اولیه (Initial Clinical Presentation)</div><ul>')
+            inits_list = inits if isinstance(inits, list) else [inits]
+            for init in inits_list:
+                html_parts.append(f'<li>🔹 {init}</li>')
+            html_parts.append('</ul>')
+
+        steps = mod.get("step_by_step_algorithm")
+        if steps and isinstance(steps, list):
+            alg_steps = []
+            for s in steps:
+                if isinstance(s, dict):
+                    st = s.get("step", "")
+                    ac = s.get("action", "")
+                    alg_steps.append(f"{st}: {ac}" if st and ac else (st or ac))
+                else:
+                    alg_steps.append(str(s).strip())
+            if alg_steps:
+                html_parts.append('<div class="callout callout-alert"><div class="callout-header">🧭 ۲. الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Triage)</div><div class="callout-body">')
+                for s_idx, s in enumerate(alg_steps, 1):
+                    arrow = " ← " if s_idx < len(alg_steps) else ""
+                    html_parts.append(f'<div class="cascade-step"><b>گام {s_idx}:</b> {s}{arrow}</div>')
+                html_parts.append('</div></div>')
+
+        pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
+        if pivots and isinstance(pivots, list):
+            html_parts.append('<div class="section-title">۳. نقاط انشعاب تشخیصی و تصمیم‌گیری (Decision Bifurcations / Pivot Criteria)</div><ul>')
+            for pv in pivots:
+                html_parts.append(f'<li>⚖️ {pv}</li>')
+            html_parts.append('</ul>')
+
+        if mod.get("definitive_action"):
+            html_parts.append('<div class="section-title">۴. اقدام قطعی بعدی (Definitive Next Step / Confirmatory Action)</div><ul>')
+            actions = mod["definitive_action"] if isinstance(mod["definitive_action"], list) else [mod["definitive_action"]]
+            for act in actions:
+                html_parts.append(f'<li>⭐ {act}</li>')
+            html_parts.append('</ul>')
+
+    # Archetype 3: Disease Illness Script (Pathologies & Syndromes)
+    else:
+        # Definition & Etiology & Risk Factors
+        risks = mod.get("risk_factors_and_epidemiology") or mod.get("risk_factors_and_predisposing")
+        defs = mod.get("definition_and_etiology")
+        if defs or risks:
+            html_parts.append('<div class="section-title">۱. تعریف، اتیولوژی و عوامل خطر (Definition, Etiology & Risk Factors)</div><ul>')
+            for item in (defs or []):
+                html_parts.append(f'<li>{item}</li>')
+            risk_items = risks if isinstance(risks, list) else ([risks] if risks else [])
+            for r in risk_items:
+                html_parts.append(f'<li>👥 <b>عامل خطر / اپیدمیولوژی:</b> {r}</li>')
+            html_parts.append('</ul>')
+
+        # Pathophysiology Cascade
+        if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
+            cascade = [str(c).strip() for c in mod["pathophysiology_cascade"] if c and str(c).strip()]
+            if cascade:
+                html_parts.append('<div class="callout callout-patho"><div class="callout-header">🔄 ۲. زنجیره پاتوفیزیولوژی (Pathophysiological Cascade)</div><div class="callout-body">')
+                for c_idx, step in enumerate(cascade, 1):
+                    arrow = " ← " if c_idx < len(cascade) else ""
+                    html_parts.append(f'<div class="cascade-step"><b>گام {c_idx}:</b> {step}{arrow}</div>')
+                html_parts.append('</div></div>')
+
+        # Clinical Presentation
+        if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
+            html_parts.append('<div class="section-title">۳. تظاهرات بالینی و توجیه مکانیسمی (Clinical Presentation)</div><ul>')
+            for cp in mod["clinical_presentation"]:
+                if isinstance(cp, dict):
+                    sign = cp.get("sign", "")
+                    mech = cp.get("mechanism", "")
+                    html_parts.append(f'<li><b>{sign}:</b> توجیه مکانیسمی ← {mech}</li>')
+            html_parts.append('</ul>')
+
+        # Diagnostics
+        if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
+            diag = mod["diagnostics"]
+            html_parts.append('<div class="section-title">۴. بررسی‌های تشخیصی (Diagnostic Workup)</div><ul>')
+            b_init = diag.get("best_initial_test")
+            if b_init and str(b_init).strip() and str(b_init).lower() not in {"null", "none", "ذکر نشده"}:
+                html_parts.append(f'<li><span class="badge-init">اقدام تشخیصی اولیه</span> {b_init}</li>')
+            gold = diag.get("gold_standard")
+            if gold and str(gold).strip() and str(gold).lower() not in {"null", "none", "ذکر نشده"}:
+                html_parts.append(f'<li><span class="badge-gold">استاندارد طلایی</span> {gold}</li>')
+            raw_labs = diag.get("key_labs") or []
+            labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
+            for lab in labs_list:
+                if lab and str(lab).strip():
+                    html_parts.append(f'<li>• {lab}</li>')
+            html_parts.append('</ul>')
+
+        # Track 4: Clinical Semiology
+        if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
+            for sem in mod["clinical_semiology"]:
+                if isinstance(sem, dict):
+                    man = sem.get("maneuver_or_sign", "")
+                    tech = sem.get("technique", "")
+                    sig = sem.get("clinical_significance", "")
+                    pearl = sem.get("exam_pearl", "")
+                    line = f"<b>🩺 {man}:</b> "
+                    if tech:
+                        line += f"روش انجام ← {tech}"
+                    if sig:
+                        line += f" | اهمیت بالینی ← {sig}"
+                    if pearl:
+                        line += f" <i>(نکته: {pearl})</i>"
+                    html_parts.append(f'<div>{line}</div>')
+            html_parts.append('</div></div>')
+
+        # Comprehensive Management
+        has_pharma = bool(mod.get("pharmacology_and_management"))
+        raw_surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications")
+        has_surg = bool(raw_surg)
+        has_life = bool(mod.get("lifestyle_and_conservative"))
+
+        if has_pharma or has_surg or has_life:
+            html_parts.append('<div class="section-title">۵. درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)</div><ul>')
+            if has_pharma and isinstance(mod["pharmacology_and_management"], list):
+                for rx in mod["pharmacology_and_management"]:
+                    if isinstance(rx, dict):
+                        d_class = rx.get("drug_class", "")
+                        mech = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
+                        pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
+                        p_txt = f" | نکته: {pearl}" if pearl else ""
+                        html_parts.append(f'<li>💊 <b>{d_class}:</b> مکانیسم اثر: {mech}{p_txt}</li>')
+            if has_surg:
+                surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
+                for s in surg_items:
+                    html_parts.append(f'<li>🔪 <b>اندیکاسیون جراحی / مداخله‌ای:</b> {s}</li>')
+            if has_life:
+                life_items = mod["lifestyle_and_conservative"] if isinstance(mod["lifestyle_and_conservative"], list) else [mod["lifestyle_and_conservative"]]
+                for l in life_items:
+                    html_parts.append(f'<li>🌱 <b>درمان غیردارویی و تغییر سبک زندگی:</b> {l}</li>')
+            html_parts.append('</ul>')
+
+        # Complications & Prognosis
+        if mod.get("complications_and_prognosis"):
+            html_parts.append('<div class="section-title">۶. عوارض وخیم و عوامل پیش‌آگهی (Complications & Prognosis)</div><ul>')
+            comps = mod["complications_and_prognosis"] if isinstance(mod["complications_and_prognosis"], list) else [mod["complications_and_prognosis"]]
+            for comp in comps:
+                html_parts.append(f'<li>🚨 {comp}</li>')
+            html_parts.append('</ul>')
+
+    # Differential Diagnosis Table
+    if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
+        dt = mod["differential_table"]
+        headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
+        rows = dt.get("rows", [])
+        if headers and rows:
+            html_parts.append(f'<div class="section-title">۶. تشخیص افتراقی ({m_name})</div><table dir="rtl"><thead><tr>')
+            for h in headers:
+                html_parts.append(f'<th>{h}</th>')
+            html_parts.append('</tr></thead><tbody>')
+            for row in rows:
+                html_parts.append('<tr>')
+                for cell in row:
+                    html_parts.append(f'<td>{cell}</td>')
+                html_parts.append('</tr>')
+            html_parts.append('</tbody></table>')
+
+    # Clinical Semiology & Physical Examination (retained for covered modules)
+    if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
+        html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
+        for sem in mod["clinical_semiology"]:
+            if isinstance(sem, dict):
+                man = sem.get("maneuver_or_sign", "")
+                tech = sem.get("technique", "")
+                sig = sem.get("clinical_significance", "")
+                pearl = sem.get("exam_pearl", "")
+                line = f"<b>🩺 {man}:</b> "
+                if tech:
+                    line += f"روش انجام ← {tech}"
+                if sig:
+                    line += f" | اهمیت بالینی ← {sig}"
+                if pearl:
+                    line += f" <i>(نکته: {pearl})</i>"
+                html_parts.append(f'<div>{line}</div>')
+        html_parts.append('</div></div>')
+
+    # High Yield Pearls
+    if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
+        html_parts.append('<div class="callout callout-pearl"><div class="callout-header">⚡ نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls)</div><div class="callout-body">')
+        for p in mod["high_yield_pearls"]:
+            html_parts.append(f'<div>⚡ {format_inline_markdown(p)}</div>')
+        html_parts.append('</div></div>')
+
+    # Instructor Alerts
+    if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
+        html_parts.append('<div class="callout callout-alert"><div class="callout-header">⭐ تأکیدات مستقیم استاد در کلاس</div><div class="callout-body">')
+        for a in mod["instructor_exam_alerts"]:
+            html_parts.append(f'<div>⭐ {format_inline_markdown(a)}</div>')
+        html_parts.append('</div></div>')
+
+    # Emergency Management & Immediate Stabilization
+    emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
+    if emerg_items:
+        emerg_list = format_emergency_items(emerg_items)
+        html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)</div><div class="callout-body">')
+        for em in emerg_list:
+            html_parts.append(f'<div>🚨 {format_inline_markdown(em)}</div>')
+        html_parts.append('</div></div>')
+
+    # Contraindications & Warnings
+    if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
+        html_parts.append('<div class="callout callout-contra"><div class="callout-header">⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications)</div><div class="callout-body">')
+        for c in mod["contraindications_and_warnings"]:
+            html_parts.append(f'<div>⛔ {format_inline_markdown(c)}</div>')
+        html_parts.append('</div></div>')
+
+    # Special Populations & Pregnancy
+    special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
+    if special_items:
+        spec_list = special_items if isinstance(special_items, list) else [special_items]
+        html_parts.append('<div class="callout callout-special"><div class="callout-header">🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)</div><div class="callout-body">')
+        for sp in spec_list:
+            html_parts.append(f'<div>🤰 {format_inline_markdown(sp)}</div>')
+        html_parts.append('</div></div>')
+
+    # Diagnostic Formulas & Calculations in HTML
+    f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
+    if f_list and isinstance(f_list, list):
+        for f_item in f_list:
+            if isinstance(f_item, dict):
+                html_parts.append(render_formula_html(f_item.get("formula", ""), f_item.get("title", "")))
+            elif isinstance(f_item, str):
+                html_parts.append(render_formula_html(f_item, f"فرمول تشخیصی {m_name}"))
+
+    # Staging & Diagnostic Criteria (Polymorphic)
+    criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
+    if criteria_obj:
+        if isinstance(criteria_obj, dict):
+            sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
+            headers = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
+            rows = criteria_obj.get("rows", [])
+            if headers and rows:
+                html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table dir="rtl"><thead><tr>')
+                for h in headers:
+                    html_parts.append(f'<th>{h}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for row in rows:
+                    html_parts.append('<tr>')
+                    for cell in row:
+                        html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+        elif isinstance(criteria_obj, list) and criteria_obj:
+            if isinstance(criteria_obj[0], dict):
+                headers = list(criteria_obj[0].keys())
+                html_parts.append(f'<div class="section-title">📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}</div><table dir="rtl"><thead><tr>')
+                for h in headers:
+                    html_parts.append(f'<th>{h}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for item in criteria_obj:
+                    html_parts.append('<tr>')
+                    for k in headers:
+                        html_parts.append(f'<td>{format_inline_markdown(item.get(k, "-"))}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table>')
+            else:
+                html_parts.append(f'<div class="section-title">📋 معیارهای بالینی و طبقه‌بندی {m_name}</div><ul>')
+                for cr in criteria_obj:
+                    html_parts.append(f'<li>📋 {format_inline_markdown(cr)}</li>')
+                html_parts.append('</ul>')
+
+    # Clinical Vignettes
+    if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
+        for v_idx, v in enumerate(mod["clinical_vignettes"], 1):
+            if isinstance(v, dict):
+                v_title = v.get("scenario_title", f"سناریوی بالینی {v_idx}")
+                html_parts.append(f'<div class="callout callout-vignette"><div class="callout-header">📝 خودآزمایی فعال: {v_title}</div><div class="callout-body">')
+                html_parts.append(f'<p>{v.get("scenario", "")}</p><ul>')
+                for opt in v.get("options", []):
+                    html_parts.append(f'<li>{opt}</li>')
+                html_parts.append('</ul>')
+                corr = v.get("correct_answer", "")
+                rat = v.get("rationale", "")
+                html_parts.append(f'<details style="margin-top: 8px; cursor: pointer;"><summary style="font-weight: bold; color: #0E6251;">مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</summary><div style="padding: 8px 12px; background: #FAF9F6; margin-top: 4px; border-right: 3px solid #0E6251;"><b>✓ {corr}</b><br><i>تحلیل مکانیسمی: {rat}</i></div></details>')
+                html_parts.append('</div></div>')
+
+    # Embedded Diagrams (Mermaid / Rendered High-DPI PNG)
+    d_img = mod.get("diagram_image_path") or mod.get("diagram_png_path")
+    d_code = mod.get("mermaid_code") or mod.get("mermaid_diagram") or (mod.get("diagram") if isinstance(mod.get("diagram"), str) else None)
+    d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و پاتوفیزیولوژی {m_name}"
+    if d_img or d_code:
+        html_parts.append('<div class="diagram-card">')
+        html_parts.append(f'<div class="diagram-header">🧬 {d_title}</div>')
+        if d_img and os.path.exists(d_img):
+            html_parts.append(f'<img class="diagram-img" src="{d_img}" alt="{d_title}" />')
+        elif d_code:
+            clean_mermaid = clean_mermaid_code(d_code)
+            html_parts.append(f'<div class="mermaid">{clean_mermaid}</div>')
+        html_parts.append('</div>')
+
+    # Module-level Multimodal Visual Atlas (اطلس تصویری و اسلایدهای بالینی)
+    mod_atlas = mod.get("visual_atlas") or mod.get("clinical_figures") or []
+    if mod_atlas:
+        html_parts.append(f'<div class="section-title">📸 اطلس تصویری و اسلایدهای بالینی {m_name}</div>')
+        for fig in mod_atlas:
+            if not isinstance(fig, dict):
+                continue
+            f_title = fig.get("title", "تصویر اسلاید کلاسی")
+            f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
+            f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
+            f_pearl = fig.get("exam_pearl") or ""
+            html_parts.append('<div class="figure-card">')
+            html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
+            if f_p:
+                html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
+            if f_cap:
+                html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
+            if f_pearl:
+                html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}</div>')
+            html_parts.append('</div>')
+
+
+
+def render_html_flow_item(html_parts: List[str], item: Dict[str, Any], idx: int, covered_entities: Set[str]):
+    """Renders a chronological flow item (topic, section_only, or module_only) into HTML."""
+    i_type = item.get("type")
+    c_badge = item.get("chapter_badge", "")
+    if i_type == "topic":
+        if item.get("section"):
+            render_html_section_block(html_parts, item["section"], sec_idx=idx, chapter_badge=c_badge)
+        if item.get("module"):
+            render_html_module_block(html_parts, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+    elif i_type == "section_only":
+        render_html_section_block(html_parts, item["section"], sec_idx=idx, chapter_badge=c_badge)
+    elif i_type == "module_only":
+        render_html_module_block(html_parts, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
+
 def build_html_summary(data: Dict[str, Any], output_path: Optional[str] = None) -> str:
     """
     Renders an interactive, standalone publication-grade HTML study guide
@@ -3386,6 +4114,97 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     direction: ltr;
     display: inline-block;
 }
+.toc-container {
+    background: #F8FAFC;
+    border: 2px solid #007A87;
+    border-radius: 8px;
+    padding: 16px;
+    margin: 18px 0 24px 0;
+    page-break-after: always;
+}
+.toc-main-title {
+    color: #007A87;
+    font-size: 14pt;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+.toc-sub-title {
+    color: #64748B;
+    font-size: 9pt;
+    margin-bottom: 12px;
+}
+.toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+.toc-card {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-right: 4px solid #007A87;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+.toc-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.toc-link {
+    color: #007A87;
+    font-weight: bold;
+    text-decoration: none;
+    font-size: 10.5pt;
+}
+.toc-link:hover {
+    text-decoration: underline;
+}
+.toc-organ-badge {
+    display: inline-block;
+    background: #E0F2FE;
+    color: #0369A1;
+    font-size: 8pt;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+.toc-meta {
+    font-size: 8.5pt;
+    color: #64748B;
+    margin: 6px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.toc-topic-list {
+    margin: 6px 0 0 0;
+    padding-right: 14px;
+    font-size: 8.5pt;
+    color: #334155;
+    list-style-type: none;
+}
+.toc-topic-list li {
+    margin: 2px 0;
+}
+.handout-banner {
+    background: #F0FDFA;
+    border: 2px solid #007A87;
+    border-right: 6px solid #007A87;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 24px 0 14px 0;
+    page-break-before: always;
+}
+.handout-banner-title {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #007A87;
+    margin-bottom: 4px;
+}
+.handout-banner-meta {
+    font-size: 9pt;
+    color: #475569;
+}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
@@ -3409,424 +4228,30 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     html_parts.append(f"""    <div class="meta-tag">🏛️ {institution} | 📌 کورس: {organ_system} | 🎯 سطح: فیزیوپاتولوژی بالینی | ⚡ نوع سند: کتابچه مرور های‌یلد</div>
 </div>""")
 
-    # -------------------------------------------------------------------
-    # Thematic Table Sections (v3.9.0 Table-First Hybrid Architecture)
-    # -------------------------------------------------------------------
-    sections = data.get("sections") or data.get("thematic_sections") or []
-    if sections:
-        for sec_idx, sec in enumerate(sections, 1):
-            if not isinstance(sec, dict):
-                continue
-            sec_title = sec.get("title") or sec.get("section_title") or f"بخش {sec_idx}: مبحث بالینی"
-            sec_headers = sec.get("headers") or []
-            sec_rows = sec.get("rows") or []
+    chapters = data.get("chapters")
+    is_multi = bool(data.get("is_multi_chapter") or (chapters and len(chapters) > 1))
 
-            html_parts.append(f'<div class="section-banner">■ {sec_title}</div>')
-            if sec_headers and sec_rows:
-                html_parts.append('<table dir="rtl"><thead><tr>')
-                for h in sec_headers:
-                    html_parts.append(f'<th>{h}</th>')
-                html_parts.append('</tr></thead><tbody>')
-                for r_idx, row in enumerate(sec_rows):
-                    html_parts.append('<tr>')
-                    safe_row = row[:len(sec_headers)] if isinstance(row, (list, tuple)) else [str(row)]
-                    for col_idx, cell in enumerate(safe_row):
-                        html_parts.append(f'<td>{format_cell_html(str(cell))}</td>')
-                    html_parts.append('</tr>')
-                html_parts.append('</tbody></table>')
-
-            sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
-            if sec_flowchart:
-                html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><pre class="mermaid">{clean_mermaid_code(sec_flowchart.strip())}</pre></div>')
-
-            sec_callouts = sec.get("callouts") or []
-            if sec_callouts:
-                html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 هشدار اورژانسی و بالینی</div><div class="callout-body">')
-                for c_item in (sec_callouts if isinstance(sec_callouts, list) else [sec_callouts]):
-                    html_parts.append(f'<div>• {format_inline_markdown(str(c_item))}</div>')
-                html_parts.append('</div></div>')
-
-    covered_entities = extract_covered_section_entities(data)
-    for mod_idx, mod in enumerate((data.get("modules") or []), 1):
-        if not isinstance(mod, dict):
-            continue
-        m_name = mod.get("name", f"مبحث {mod_idx}")
-        m_name_en = mod.get("name_en", "")
-        mod_type = mod.get("type") or mod.get("module_type") or "illness_script"
-        is_foundation = (
-            mod_type == "foundational_concept"
-            or bool(mod.get("feedback_cascade"))
-            or bool(mod.get("regulatory_mechanisms_and_feedback"))
-            or bool(mod.get("physiological_role"))
-            or bool(mod.get("anatomical_physiological_basis"))
-        )
-        is_approach = (
-            mod_type == "clinical_approach"
-            or bool(mod.get("step_by_step_algorithm"))
-        )
-        is_covered = is_module_covered_in_sections(mod, covered_entities)
-
-        type_badge = ""
-        if is_foundation:
-            type_badge = " [مفاهیم و فیزیولوژی پایه]"
-        elif is_approach:
-            type_badge = " [رویکرد و الگوریتم تشخیصی]"
-        en_tag = f" ({m_name_en})" if m_name_en else ""
-        html_parts.append(f'<div class="module-header">■ {m_name}{type_badge}{en_tag}</div>')
-
-        # Cross-Layer Deduplication Notice (v3.9.3)
-        if is_covered:
-            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">⚡ ارجاع به جدول تماتیک</div><div class="callout-body">جزئیات تشخیصی، کات‌آف‌ها، تظاهرات بالینی و درمان در جدول تماتیک فوق به صورت مقایسه‌ای ارائه شده است. در ادامه تنها نکات دامی آزمون، مدیریت اورژانس و هشدارهای اختصاصی درج می‌گردد.</div></div>')
-
-        if is_covered:
-            pass  # Suppress duplicate boilerplate paragraphs; jump straight to high-yield callouts!
-        # Archetype 1: Foundational Physiology & Regulatory Loops
-        elif is_foundation:
-            roles = mod.get("physiological_role") or mod.get("anatomical_physiological_basis")
-            if roles:
-                html_parts.append('<div class="section-title">۱. نقش و تنظیم فیزیولوژیک (Physiological Role & Homeostasis)</div><ul>')
-                roles_list = roles if isinstance(roles, list) else [roles]
-                for r in roles_list:
-                    html_parts.append(f'<li>{r}</li>')
-                html_parts.append('</ul>')
-
-            f_casc = mod.get("feedback_cascade") or mod.get("regulatory_mechanisms_and_feedback")
-            if f_casc and isinstance(f_casc, list):
-                f_cascade = [str(c).strip() for c in f_casc if c and str(c).strip()]
-                if f_cascade:
-                    html_parts.append('<div class="callout callout-patho"><div class="callout-header">🔄 ۲. مسیر فیدبک هورمونی و سیگنالینگ تنظیمی (Regulatory Loops)</div><div class="callout-body">')
-                    for c_idx, step in enumerate(f_cascade, 1):
-                        arrow = " ← " if c_idx < len(f_cascade) else ""
-                        html_parts.append(f'<div class="cascade-step"><b>مرحله {c_idx}:</b> {step}{arrow}</div>')
-                    html_parts.append('</div></div>')
-
-            if mod.get("baseline_tests") and isinstance(mod["baseline_tests"], list):
-                html_parts.append('<div class="section-title">۳. تست‌های ارزیابی عملکرد پایه و مقادیر مرجع (Baseline Functional Tests)</div><ul>')
-                for t in mod["baseline_tests"]:
-                    html_parts.append(f'<li>• {t}</li>')
-                html_parts.append('</ul>')
-
-            if mod.get("clinical_relevance") and isinstance(mod["clinical_relevance"], list):
-                html_parts.append('<div class="section-title">۴. اهمیت بالینی در پاتولوژی و تله‌های امتحانی (Clinical Relevance & Exam Anchors)</div><ul>')
-                for cr in mod["clinical_relevance"]:
-                    html_parts.append(f'<li>⚡ {cr}</li>')
-                html_parts.append('</ul>')
-
-        # Archetype 2: Clinical Diagnostic & Decision Approach (Algorithms)
-        elif is_approach:
-            inits = mod.get("initial_presentation") or mod.get("chief_complaint_or_scenario")
-            if inits:
-                html_parts.append('<div class="section-title">۱. تظاهر بالینی و شکایت اولیه (Initial Clinical Presentation)</div><ul>')
-                inits_list = inits if isinstance(inits, list) else [inits]
-                for init in inits_list:
-                    html_parts.append(f'<li>🔹 {init}</li>')
-                html_parts.append('</ul>')
-
-            steps = mod.get("step_by_step_algorithm")
-            if steps and isinstance(steps, list):
-                alg_steps = []
-                for s in steps:
-                    if isinstance(s, dict):
-                        st = s.get("step", "")
-                        ac = s.get("action", "")
-                        alg_steps.append(f"{st}: {ac}" if st and ac else (st or ac))
-                    else:
-                        alg_steps.append(str(s).strip())
-                if alg_steps:
-                    html_parts.append('<div class="callout callout-alert"><div class="callout-header">🧭 ۲. الگوریتم گام‌به‌گام تصمیم‌گیری بالینی (Step-by-Step Triage)</div><div class="callout-body">')
-                    for s_idx, s in enumerate(alg_steps, 1):
-                        arrow = " ← " if s_idx < len(alg_steps) else ""
-                        html_parts.append(f'<div class="cascade-step"><b>گام {s_idx}:</b> {s}{arrow}</div>')
-                    html_parts.append('</div></div>')
-
-            pivots = mod.get("pivot_points") or mod.get("high_yield_decision_points")
-            if pivots and isinstance(pivots, list):
-                html_parts.append('<div class="section-title">۳. نقاط انشعاب تشخیصی و تصمیم‌گیری (Decision Bifurcations / Pivot Criteria)</div><ul>')
-                for pv in pivots:
-                    html_parts.append(f'<li>⚖️ {pv}</li>')
-                html_parts.append('</ul>')
-
-            if mod.get("definitive_action"):
-                html_parts.append('<div class="section-title">۴. اقدام قطعی بعدی (Definitive Next Step / Confirmatory Action)</div><ul>')
-                actions = mod["definitive_action"] if isinstance(mod["definitive_action"], list) else [mod["definitive_action"]]
-                for act in actions:
-                    html_parts.append(f'<li>⭐ {act}</li>')
-                html_parts.append('</ul>')
-
-        # Archetype 3: Disease Illness Script (Pathologies & Syndromes)
-        else:
-            # Definition & Etiology & Risk Factors
-            risks = mod.get("risk_factors_and_epidemiology") or mod.get("risk_factors_and_predisposing")
-            defs = mod.get("definition_and_etiology")
-            if defs or risks:
-                html_parts.append('<div class="section-title">۱. تعریف، اتیولوژی و عوامل خطر (Definition, Etiology & Risk Factors)</div><ul>')
-                for item in (defs or []):
-                    html_parts.append(f'<li>{item}</li>')
-                risk_items = risks if isinstance(risks, list) else ([risks] if risks else [])
-                for r in risk_items:
-                    html_parts.append(f'<li>👥 <b>عامل خطر / اپیدمیولوژی:</b> {r}</li>')
-                html_parts.append('</ul>')
-
-            # Pathophysiology Cascade
-            if mod.get("pathophysiology_cascade") and isinstance(mod["pathophysiology_cascade"], list):
-                cascade = [str(c).strip() for c in mod["pathophysiology_cascade"] if c and str(c).strip()]
-                if cascade:
-                    html_parts.append('<div class="callout callout-patho"><div class="callout-header">🔄 ۲. زنجیره پاتوفیزیولوژی (Pathophysiological Cascade)</div><div class="callout-body">')
-                    for c_idx, step in enumerate(cascade, 1):
-                        arrow = " ← " if c_idx < len(cascade) else ""
-                        html_parts.append(f'<div class="cascade-step"><b>گام {c_idx}:</b> {step}{arrow}</div>')
-                    html_parts.append('</div></div>')
-
-            # Clinical Presentation
-            if mod.get("clinical_presentation") and isinstance(mod["clinical_presentation"], list):
-                html_parts.append('<div class="section-title">۳. تظاهرات بالینی و توجیه مکانیسمی (Clinical Presentation)</div><ul>')
-                for cp in mod["clinical_presentation"]:
-                    if isinstance(cp, dict):
-                        sign = cp.get("sign", "")
-                        mech = cp.get("mechanism", "")
-                        html_parts.append(f'<li><b>{sign}:</b> توجیه مکانیسمی ← {mech}</li>')
-                html_parts.append('</ul>')
-
-            # Diagnostics
-            if mod.get("diagnostics") and isinstance(mod["diagnostics"], dict):
-                diag = mod["diagnostics"]
-                html_parts.append('<div class="section-title">۴. بررسی‌های تشخیصی (Diagnostic Workup)</div><ul>')
-                b_init = diag.get("best_initial_test")
-                if b_init and str(b_init).strip() and str(b_init).lower() not in {"null", "none", "ذکر نشده"}:
-                    html_parts.append(f'<li><span class="badge-init">اقدام تشخیصی اولیه</span> {b_init}</li>')
-                gold = diag.get("gold_standard")
-                if gold and str(gold).strip() and str(gold).lower() not in {"null", "none", "ذکر نشده"}:
-                    html_parts.append(f'<li><span class="badge-gold">استاندارد طلایی</span> {gold}</li>')
-                raw_labs = diag.get("key_labs") or []
-                labs_list = raw_labs if isinstance(raw_labs, list) else ([raw_labs] if raw_labs else [])
-                for lab in labs_list:
-                    if lab and str(lab).strip():
-                        html_parts.append(f'<li>• {lab}</li>')
-                html_parts.append('</ul>')
-
-            # Track 4: Clinical Semiology
-            if mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
-                html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
-                for sem in mod["clinical_semiology"]:
-                    if isinstance(sem, dict):
-                        man = sem.get("maneuver_or_sign", "")
-                        tech = sem.get("technique", "")
-                        sig = sem.get("clinical_significance", "")
-                        pearl = sem.get("exam_pearl", "")
-                        line = f"<b>🩺 {man}:</b> "
-                        if tech:
-                            line += f"روش انجام ← {tech}"
-                        if sig:
-                            line += f" | اهمیت بالینی ← {sig}"
-                        if pearl:
-                            line += f" <i>(نکته: {pearl})</i>"
-                        html_parts.append(f'<div>{line}</div>')
-                html_parts.append('</div></div>')
-
-            # Comprehensive Management
-            has_pharma = bool(mod.get("pharmacology_and_management"))
-            raw_surg = mod.get("surgical_and_interventional") or mod.get("surgical_and_interventional_indications")
-            has_surg = bool(raw_surg)
-            has_life = bool(mod.get("lifestyle_and_conservative"))
-
-            if has_pharma or has_surg or has_life:
-                html_parts.append('<div class="section-title">۵. درمان و مدیریت جامع بالینی (Medical, Surgical & Conservative Rx)</div><ul>')
-                if has_pharma and isinstance(mod["pharmacology_and_management"], list):
-                    for rx in mod["pharmacology_and_management"]:
-                        if isinstance(rx, dict):
-                            d_class = rx.get("drug_class", "")
-                            mech = rx.get("mechanism_of_action") or rx.get("mechanism") or ""
-                            pearl = rx.get("pearl") or rx.get("exam_pearl") or ""
-                            p_txt = f" | نکته: {pearl}" if pearl else ""
-                            html_parts.append(f'<li>💊 <b>{d_class}:</b> مکانیسم اثر: {mech}{p_txt}</li>')
-                if has_surg:
-                    surg_items = raw_surg if isinstance(raw_surg, list) else [raw_surg]
-                    for s in surg_items:
-                        html_parts.append(f'<li>🔪 <b>اندیکاسیون جراحی / مداخله‌ای:</b> {s}</li>')
-                if has_life:
-                    life_items = mod["lifestyle_and_conservative"] if isinstance(mod["lifestyle_and_conservative"], list) else [mod["lifestyle_and_conservative"]]
-                    for l in life_items:
-                        html_parts.append(f'<li>🌱 <b>درمان غیردارویی و تغییر سبک زندگی:</b> {l}</li>')
-                html_parts.append('</ul>')
-
-            # Complications & Prognosis
-            if mod.get("complications_and_prognosis"):
-                html_parts.append('<div class="section-title">۶. عوارض وخیم و عوامل پیش‌آگهی (Complications & Prognosis)</div><ul>')
-                comps = mod["complications_and_prognosis"] if isinstance(mod["complications_and_prognosis"], list) else [mod["complications_and_prognosis"]]
-                for comp in comps:
-                    html_parts.append(f'<li>🚨 {comp}</li>')
-                html_parts.append('</ul>')
-
-        # Differential Diagnosis Table
-        if mod.get("differential_table") and isinstance(mod["differential_table"], dict):
-            dt = mod["differential_table"]
-            headers = dt.get("headers", ["بیماری", "علائم مشترک", "نقطه تمایز (Pivot)", "تست قطعی"])
-            rows = dt.get("rows", [])
-            if headers and rows:
-                html_parts.append(f'<div class="section-title">۶. تشخیص افتراقی ({m_name})</div><table dir="rtl"><thead><tr>')
-                for h in headers:
-                    html_parts.append(f'<th>{h}</th>')
-                html_parts.append('</tr></thead><tbody>')
-                for row in rows:
-                    html_parts.append('<tr>')
-                    for cell in row:
-                        html_parts.append(f'<td>{cell}</td>')
-                    html_parts.append('</tr>')
-                html_parts.append('</tbody></table>')
-
-        # Clinical Semiology & Physical Examination (retained for covered modules)
-        if is_covered and mod.get("clinical_semiology") and isinstance(mod["clinical_semiology"], list):
-            html_parts.append('<div class="callout callout-semiology"><div class="callout-header">🩺 سمیولوژی و مانورهای بالینی (Clinical Semiology & Maneuvers)</div><div class="callout-body">')
-            for sem in mod["clinical_semiology"]:
-                if isinstance(sem, dict):
-                    man = sem.get("maneuver_or_sign", "")
-                    tech = sem.get("technique", "")
-                    sig = sem.get("clinical_significance", "")
-                    pearl = sem.get("exam_pearl", "")
-                    line = f"<b>🩺 {man}:</b> "
-                    if tech:
-                        line += f"روش انجام ← {tech}"
-                    if sig:
-                        line += f" | اهمیت بالینی ← {sig}"
-                    if pearl:
-                        line += f" <i>(نکته: {pearl})</i>"
-                    html_parts.append(f'<div>{line}</div>')
-            html_parts.append('</div></div>')
-
-        # High Yield Pearls
-        if mod.get("high_yield_pearls") and isinstance(mod["high_yield_pearls"], list):
-            html_parts.append('<div class="callout callout-pearl"><div class="callout-header">⚡ نکات دامی آزمونی و مرواریدهای کلیدی (High-Yield Pearls)</div><div class="callout-body">')
-            for p in mod["high_yield_pearls"]:
-                html_parts.append(f'<div>⚡ {format_inline_markdown(p)}</div>')
-            html_parts.append('</div></div>')
-
-        # Instructor Alerts
-        if mod.get("instructor_exam_alerts") and isinstance(mod["instructor_exam_alerts"], list):
-            html_parts.append('<div class="callout callout-alert"><div class="callout-header">⭐ تأکیدات مستقیم استاد در کلاس</div><div class="callout-body">')
-            for a in mod["instructor_exam_alerts"]:
-                html_parts.append(f'<div>⭐ {format_inline_markdown(a)}</div>')
-            html_parts.append('</div></div>')
-
-        # Emergency Management & Immediate Stabilization
-        emerg_items = mod.get("emergency_management") or mod.get("immediate_stabilization")
-        if emerg_items:
-            emerg_list = format_emergency_items(emerg_items)
-            html_parts.append('<div class="callout callout-emergency"><div class="callout-header">🚨 اقدامات اورژانس و احیای فوری بیمار (Emergency Resuscitation & Immediate Stabilization)</div><div class="callout-body">')
-            for em in emerg_list:
-                html_parts.append(f'<div>🚨 {format_inline_markdown(em)}</div>')
-            html_parts.append('</div></div>')
-
-        # Contraindications & Warnings
-        if mod.get("contraindications_and_warnings") and isinstance(mod["contraindications_and_warnings"], list):
-            html_parts.append('<div class="callout callout-contra"><div class="callout-header">⛔ موارد مصرف ممنوع و خطاهای مرگبار (Absolute Contraindications)</div><div class="callout-body">')
-            for c in mod["contraindications_and_warnings"]:
-                html_parts.append(f'<div>⛔ {format_inline_markdown(c)}</div>')
-            html_parts.append('</div></div>')
-
-        # Special Populations & Pregnancy
-        special_items = mod.get("special_populations_and_pregnancy") or mod.get("special_populations") or mod.get("pregnancy_and_pediatrics")
-        if special_items:
-            spec_list = special_items if isinstance(special_items, list) else [special_items]
-            html_parts.append('<div class="callout callout-special"><div class="callout-header">🤰 ملاحظات گروه‌های خاص، بارداری و سالمندان (Special Populations & Pregnancy)</div><div class="callout-body">')
-            for sp in spec_list:
-                html_parts.append(f'<div>🤰 {format_inline_markdown(sp)}</div>')
-            html_parts.append('</div></div>')
-
-        # Diagnostic Formulas & Calculations in HTML
-        f_list = mod.get("formulas") or mod.get("diagnostic_formulas")
-        if f_list and isinstance(f_list, list):
-            for f_item in f_list:
-                if isinstance(f_item, dict):
-                    html_parts.append(render_formula_html(f_item.get("formula", ""), f_item.get("title", "")))
-                elif isinstance(f_item, str):
-                    html_parts.append(render_formula_html(f_item, f"فرمول تشخیصی {m_name}"))
-
-        # Staging & Diagnostic Criteria (Polymorphic)
-        criteria_obj = mod.get("staging_and_classification") or mod.get("scoring_criteria") or mod.get("diagnostic_criteria")
-        if criteria_obj:
-            if isinstance(criteria_obj, dict):
-                sc_title = criteria_obj.get("title", f"سیستم نمره‌دهی و طبقه‌بندی {m_name}")
-                headers = criteria_obj.get("headers", ["معیار", "آستانه", "تفسیر"])
-                rows = criteria_obj.get("rows", [])
-                if headers and rows:
-                    html_parts.append(f'<div class="section-title">📋 {sc_title}</div><table dir="rtl"><thead><tr>')
-                    for h in headers:
-                        html_parts.append(f'<th>{h}</th>')
-                    html_parts.append('</tr></thead><tbody>')
-                    for row in rows:
-                        html_parts.append('<tr>')
-                        for cell in row:
-                            html_parts.append(f'<td>{format_inline_markdown(cell)}</td>')
-                        html_parts.append('</tr>')
-                    html_parts.append('</tbody></table>')
-            elif isinstance(criteria_obj, list) and criteria_obj:
-                if isinstance(criteria_obj[0], dict):
-                    headers = list(criteria_obj[0].keys())
-                    html_parts.append(f'<div class="section-title">📋 جدول مرحله‌بندی و معیارهای بالینی {m_name}</div><table dir="rtl"><thead><tr>')
-                    for h in headers:
-                        html_parts.append(f'<th>{h}</th>')
-                    html_parts.append('</tr></thead><tbody>')
-                    for item in criteria_obj:
-                        html_parts.append('<tr>')
-                        for k in headers:
-                            html_parts.append(f'<td>{format_inline_markdown(item.get(k, "-"))}</td>')
-                        html_parts.append('</tr>')
-                    html_parts.append('</tbody></table>')
-                else:
-                    html_parts.append(f'<div class="section-title">📋 معیارهای بالینی و طبقه‌بندی {m_name}</div><ul>')
-                    for cr in criteria_obj:
-                        html_parts.append(f'<li>📋 {format_inline_markdown(cr)}</li>')
-                    html_parts.append('</ul>')
-
-        # Clinical Vignettes
-        if mod.get("clinical_vignettes") and isinstance(mod["clinical_vignettes"], list):
-            for v_idx, v in enumerate(mod["clinical_vignettes"], 1):
-                if isinstance(v, dict):
-                    v_title = v.get("scenario_title", f"سناریوی بالینی {v_idx}")
-                    html_parts.append(f'<div class="callout callout-vignette"><div class="callout-header">📝 خودآزمایی فعال: {v_title}</div><div class="callout-body">')
-                    html_parts.append(f'<p>{v.get("scenario", "")}</p><ul>')
-                    for opt in v.get("options", []):
-                        html_parts.append(f'<li>{opt}</li>')
-                    html_parts.append('</ul>')
-                    corr = v.get("correct_answer", "")
-                    rat = v.get("rationale", "")
-                    html_parts.append(f'<details style="margin-top: 8px; cursor: pointer;"><summary style="font-weight: bold; color: #0E6251;">مشاهده پاسخ صحیح و تحلیل فیزیوپاتولوژی</summary><div style="padding: 8px 12px; background: #FAF9F6; margin-top: 4px; border-right: 3px solid #0E6251;"><b>✓ {corr}</b><br><i>تحلیل مکانیسمی: {rat}</i></div></details>')
-                    html_parts.append('</div></div>')
-
-        # Embedded Diagrams (Mermaid / Rendered High-DPI PNG)
-        d_img = mod.get("diagram_image_path") or mod.get("diagram_png_path")
-        d_code = mod.get("mermaid_code") or mod.get("mermaid_diagram") or (mod.get("diagram") if isinstance(mod.get("diagram"), str) else None)
-        d_title = mod.get("diagram_title") or f"دیاگرام الگوریتم بالینی و پاتوفیزیولوژی {m_name}"
-        if d_img or d_code:
-            html_parts.append('<div class="diagram-card">')
-            html_parts.append(f'<div class="diagram-header">🧬 {d_title}</div>')
-            if d_img and os.path.exists(d_img):
-                html_parts.append(f'<img class="diagram-img" src="{d_img}" alt="{d_title}" />')
-            elif d_code:
-                clean_mermaid = clean_mermaid_code(d_code)
-                html_parts.append(f'<div class="mermaid">{clean_mermaid}</div>')
-            html_parts.append('</div>')
-
-        # Module-level Multimodal Visual Atlas (اطلس تصویری و اسلایدهای بالینی)
-        mod_atlas = mod.get("visual_atlas") or mod.get("clinical_figures") or []
-        if mod_atlas:
-            html_parts.append(f'<div class="section-title">📸 اطلس تصویری و اسلایدهای بالینی {m_name}</div>')
-            for fig in mod_atlas:
-                if not isinstance(fig, dict):
-                    continue
-                f_title = fig.get("title", "تصویر اسلاید کلاسی")
-                f_p = fig.get("image_path") or fig.get("path") or fig.get("src") or ""
-                f_cap = fig.get("caption") or fig.get("clinical_findings") or ""
-                f_pearl = fig.get("exam_pearl") or ""
-                html_parts.append('<div class="figure-card">')
-                html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
-                if f_p:
-                    html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
-                if f_cap:
-                    html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
-                if f_pearl:
-                    html_parts.append(f'<div class="figure-pearl">⭐ نکته کلیدی استاد / تله امتحانی: {f_pearl}</div>')
-                html_parts.append('</div>')
+    if is_multi and chapters:
+        render_html_table_of_contents(html_parts, chapters)
+        for ch_idx, ch in enumerate(chapters, 1):
+            ch_title = ch.get("title") or ch.get("topic_title") or f"جزوه {ch_idx}"
+            src_file = ch.get("source_file") or ch.get("file_name") or "منبع نامشخص"
+            ch_organ = ch.get("organ_system") or organ_system
+            html_parts.append(f"""
+    <div class="handout-banner" id="handout-{ch_idx}">
+        <div class="handout-banner-title">📚 جزوه {ch_idx}: {ch_title}</div>
+        <div class="handout-banner-meta">📄 فایل منبع: <code dir="ltr">{src_file}</code> | 🏛️ کورس: {ch_organ} | 🎯 سطح: فیزیوپاتولوژی بالینی</div>
+    </div>
+    """)
+            ch_flow = extract_chronological_flow(ch, chapter_badge=f"[جزوه {to_fa_digits(ch_idx)}]")
+            ch_covered = extract_covered_section_entities(ch)
+            for it_idx, item in enumerate(ch_flow, 1):
+                render_html_flow_item(html_parts, item, it_idx, ch_covered)
+    else:
+        flow = extract_chronological_flow(data, chapter_badge="")
+        covered_entities = extract_covered_section_entities(data)
+        for it_idx, item in enumerate(flow, 1):
+            render_html_flow_item(html_parts, item, it_idx, covered_entities)
 
     # Top-Level Track 4: Clinical Semiology
     if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):

@@ -29,7 +29,8 @@ SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
-from parse_input_lecture import ingest_file, partition_by_headings
+import glob
+from parse_input_lecture import ingest_file, partition_by_headings, ingest_multiple_files
 from audit_summary_coverage import audit_coverage
 from build_summary_pack import (
     build_docx_summary,
@@ -42,8 +43,31 @@ from build_summary_pack import (
 )
 
 def cmd_ingest(args):
-    print(f"--- [INGEST] Ingesting source file: {args.input} ---")
-    data = ingest_file(args.input, img_out_dir=args.img_dir)
+    raw_inputs = []
+    if getattr(args, "inputs", None):
+        raw_inputs.extend(args.inputs)
+    if getattr(args, "input", None):
+        raw_inputs.append(args.input)
+
+    input_files = []
+    for item in raw_inputs:
+        matched = glob.glob(item)
+        if matched:
+            input_files.extend(matched)
+        elif os.path.exists(item):
+            input_files.append(item)
+    input_files = sorted(list(set(input_files)))
+
+    if len(input_files) > 1:
+        print(f"--- [INGEST] Ingesting {len(input_files)} source files as multi-handout course ---")
+        data = ingest_multiple_files(input_files, img_out_dir=args.img_dir)
+    elif input_files:
+        print(f"--- [INGEST] Ingesting source file: {input_files[0]} ---")
+        data = ingest_file(input_files[0], img_out_dir=args.img_dir)
+    else:
+        print(f"[ERROR] No valid source file found from: {raw_inputs}")
+        sys.exit(1)
+
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -394,16 +418,20 @@ def cmd_bundle(args):
     # 2. Master DOCX
     docx_path = os.path.join(args.out_dir, f"{prefix}.docx")
     master_docx_data = {
+        "is_multi_chapter": True,
         "topic_title": course_title,
         "topic_title_en": "Comprehensive Medical Study Guide",
         "organ_system": institution,
+        "chapters": chapters_data,
         "modules": [],
+        "sections": [],
         "differential_tables": [],
         "high_yield_pharmacology": [],
         "morning_exam_checklist": []
     }
     for ch in chapters_data:
         master_docx_data["modules"].extend(ch.get("modules", []))
+        master_docx_data["sections"].extend(ch.get("sections", []) or ch.get("thematic_sections", []))
         master_docx_data["differential_tables"].extend(ch.get("differential_tables", []))
         master_docx_data["high_yield_pharmacology"].extend(ch.get("high_yield_pharmacology", []))
         master_docx_data["morning_exam_checklist"].extend(ch.get("morning_exam_checklist", []))
@@ -416,7 +444,12 @@ def cmd_bundle(args):
     build_markdown_summary(master_docx_data, md_path)
     print(f"[OK] Master Markdown generated: {md_path}")
 
-    # 4. Master Anki Deck (.tsv & .apkg)
+    # 4. Master HTML (.html)
+    html_path = os.path.join(args.out_dir, f"{prefix}.html")
+    build_html_summary(master_docx_data, html_path)
+    print(f"[OK] Master HTML generated: {html_path}")
+
+    # 5. Master Anki Deck (.tsv & .apkg)
     tsv_path = os.path.join(args.out_dir, f"{prefix}_anki.tsv")
     apkg_path = os.path.join(args.out_dir, f"{prefix}_anki.apkg")
     master_anki_cards = []
@@ -433,6 +466,7 @@ def cmd_bundle(args):
     print(f"PDF: {pdf_path}")
     print(f"DOCX: {docx_path}")
     print(f"Markdown: {md_path}")
+    print(f"HTML: {html_path}")
     print(f"Anki: {apkg_path}")
     print(f"=======================================================\n")
 
@@ -468,7 +502,8 @@ def main():
 
     # Ingest
     p_ingest = subparsers.add_parser("ingest", help="Ingest DOCX, PDF, or Markdown")
-    p_ingest.add_argument("--input", required=True, help="Input lecture file path")
+    p_ingest.add_argument("--input", default=None, help="Input lecture file path")
+    p_ingest.add_argument("--inputs", nargs="*", default=None, help="Multiple input lecture file paths or wildcards")
     p_ingest.add_argument("--out", default="ingested_lecture.json", help="Output JSON path")
     p_ingest.add_argument("--img-dir", default="extracted_images", help="Directory for extracted figures")
 
@@ -506,7 +541,8 @@ def main():
 
     # Auto
     p_auto = subparsers.add_parser("auto", help="Run end-to-end pipeline")
-    p_auto.add_argument("--input", required=True, help="Input lecture file path")
+    p_auto.add_argument("--input", default=None, help="Input lecture file path")
+    p_auto.add_argument("--inputs", nargs="*", default=None, help="Multiple input lecture file paths or wildcards")
     p_auto.add_argument("--summary-json", default=None, help="Pre-synthesized summary JSON")
     p_auto.add_argument("--out-dir", default="dist", help="Output directory")
     p_auto.add_argument("--prefix", default="summary_pack", help="File prefix")

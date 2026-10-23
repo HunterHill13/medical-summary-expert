@@ -2749,6 +2749,173 @@ def test_bug_am_semantic_binding_and_cutoff_integrity_gates():
     print("[PASS] Bug AM Test Passed: Local Context Binding, Clinical Cutoff Isolation, Instructor Emphasis, and Scanned Page Gates verified.")
 
 
+def test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation():
+    """
+    Bug AN: Verify chronological topic-level pairing (no table/module split across pages)
+    and multi-handout deliverables with initial Table of Contents, per-handout sectioning banners,
+    and granular provenance attribution.
+    """
+    from build_summary_pack import build_markdown_summary, build_docx_summary, build_html_summary
+
+    # -------------------------------------------------------------
+    # 1. Single Handout: Strict Chronological Topic-Level Pairing
+    # -------------------------------------------------------------
+    single_lecture_data = {
+        "topic_title": "فیزیوپاتولوژی عوارض میکروواسکولار دیابت",
+        "topic_title_en": "Diabetic Microvascular Complications",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: نفروپاتی دیابتی و پاتولوژی گلومرول",
+                "headers": ["مرحله بیماری", "یافته پاتولوژیک", "اقدام درمانی"],
+                "rows": [["میکروآلبومینوری", "افزایش ضخامت غشای پایه و ندول کیملستیل-ویلسون", "تجویز ACEi یا ARB"]]
+            },
+            {
+                "section_id": "sec_02",
+                "title": "بخش ۲: رتینوپاتی دیابتی و طبقه‌بندی بالینی",
+                "headers": ["فرم بیماری", "یافته فوندوسکوپی", "مداخله درمانی"],
+                "rows": [["رتینوپاتی تکثیری (PDR)", "نئوواسکولاریزاسیون دیسک و شبکیه", "لیزر فوتوکوآگولاسیون Panretinal"]]
+            }
+        ],
+        "modules": [
+            {
+                "name": "نفروپاتی دیابتی",
+                "name_en": "Diabetic Nephropathy",
+                "module_type": "illness_script",
+                "definition_and_etiology": "شایع‌ترین علت نارسایی مرحله نهایی کلیه (ESRD)",
+                "high_yield_pearls": ["میکروآلبومینوری ۳۰ تا ۳۰۰ میلی‌گرم در ۲۴ ساعت زنگ خطر اولیه است."],
+                "exam_traps": ["قطع ACEi در صورت افزایش کراتینین بیش از ۳۰ درصد الزامی است."]
+            },
+            {
+                "name": "رتینوپاتی دیابتی",
+                "name_en": "Diabetic Retinopathy",
+                "module_type": "illness_script",
+                "definition_and_etiology": "شایع‌ترین علت کوری غیرتروماتیک در سنین کار",
+                "high_yield_pearls": ["فوندوسکوپی سالانه با گشاد کردن مردمک از بدو تشخیص در تیپ ۲ الزامی است."],
+                "exam_traps": ["خونریزی زجاجیه و دکولمان کششی شبکیه در فرم PDR رخ می‌دهد."]
+            }
+        ]
+    }
+
+    out_md_single = "dist/diag_test_an_single.md"
+    build_markdown_summary(single_lecture_data, out_md_single)
+    with open(out_md_single, "r", encoding="utf-8") as f:
+        md_single = f.read()
+
+    # In strict chronological topic pairing:
+    # Topic 1 (Section 1 + Module 1) MUST appear before Topic 2 (Section 2 + Module 2).
+    # Specifically, Module 1's content (e.g. "میکروآلبومینوری ۳۰ تا ۳۰۰") MUST appear BEFORE Section 2's header ("بخش ۲: رتینوپاتی دیابتی").
+    pos_mod1 = md_single.find("میکروآلبومینوری ۳۰ تا ۳۰۰")
+    pos_sec2 = md_single.find("بخش ۲: رتینوپاتی دیابتی")
+    assert pos_mod1 != -1, "Module 1 pearl missing from Markdown output!"
+    assert pos_sec2 != -1, "Section 2 header missing from Markdown output!"
+    assert pos_mod1 < pos_sec2, (
+        f"Chronological topic ordering violated! Module 1 content appeared at index {pos_mod1} "
+        f"AFTER Section 2 table at index {pos_sec2}. Topics must be co-located chronologically."
+    )
+
+    # -------------------------------------------------------------
+    # 2. Multi-Handout: Table of Contents, Sectioning & Provenance
+    # -------------------------------------------------------------
+    multi_handout_data = {
+        "is_multi_chapter": True,
+        "topic_title": "کتابچه جامع فیزیوپاتولوژی کورس غدد و روماتولوژی",
+        "topic_title_en": "Comprehensive Endocrine & Rheumatology Course Pack",
+        "organ_system": "دانشگاه بق",
+        "chapters": [
+            {
+                "chapter_index": 1,
+                "title": "جزوه ۱: فیزیوپاتولوژی غدد و دیابت",
+                "source_file": "lecture_01_endocrine.docx",
+                "organ_system": "غدد درون‌ریز",
+                "sections": [
+                    {
+                        "title": "ماتریس بالینی دیابت و عوارض آن",
+                        "headers": ["مبحث", "تظاهر", "درمان"],
+                        "rows": [["دیابت نوع ۱", "پلی‌اوری و کتواسیدوز", "انسولین درمانی"]]
+                    }
+                ],
+                "modules": [
+                    {
+                        "name": "دیابت نوع ۱",
+                        "module_type": "illness_script",
+                        "definition_and_etiology": "تخریب اتوایمیون سلول‌های بتا",
+                        "high_yield_pearls": ["آنتی‌بادی ضد GAD65 در ۸۰ درصد موارد مثبت است."]
+                    }
+                ]
+            },
+            {
+                "chapter_index": 2,
+                "title": "جزوه ۲: فیزیوپاتولوژی بیماری‌های روماتولوژی",
+                "source_file": "lecture_02_rheumatology.pdf",
+                "organ_system": "روماتولوژی",
+                "sections": [
+                    {
+                        "title": "ماتریس بالینی آرتریت روماتوئید و لوپوس",
+                        "headers": ["بیماری", "تظاهر مفصلی", "آنتی‌بادی تشخیصی"],
+                        "rows": [["لوپوس اریتماتوز (SLE)", "آرتریت غیراروزیو ژاکود", "Anti-dsDNA و Anti-Sm"]]
+                    }
+                ],
+                "modules": [
+                    {
+                        "name": "لوپوس اریتماتوز سیستمیک (SLE)",
+                        "module_type": "illness_script",
+                        "definition_and_etiology": "بیماری کمپلکس ایمنی مولتی‌سیستمیک",
+                        "high_yield_pearls": ["آنتی‌بادی Anti-Sm اختصاصی‌ترین مارکر لوپوس است."]
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Test Markdown Multi-Handout
+    out_md_multi = "dist/diag_test_an_multi.md"
+    build_markdown_summary(multi_handout_data, out_md_multi)
+    with open(out_md_multi, "r", encoding="utf-8") as f:
+        md_multi = f.read()
+
+    # Must contain initial Table of Contents
+    assert "فهرست" in md_multi and ("مطالب" in md_multi or "فصول" in md_multi), "Multi-handout Markdown missing initial Table of Contents!"
+    assert "جزوه ۱: فیزیوپاتولوژی غدد" in md_multi, "TOC missing Chapter 1 title!"
+    assert "جزوه ۲: فیزیوپاتولوژی" in md_multi and "روماتولوژی" in md_multi, "TOC missing Chapter 2 title!"
+
+    # Must contain per-handout sectioning banners
+    assert "📚 جزوه ۱" in md_multi or "فصل ۱" in md_multi, "Chapter 1 sectioning banner missing!"
+    assert "📚 جزوه ۲" in md_multi or "فصل ۲" in md_multi, "Chapter 2 sectioning banner missing!"
+    assert "lecture_01_endocrine.docx" in md_multi, "Chapter 1 source provenance filename missing!"
+    assert "lecture_02_rheumatology.pdf" in md_multi, "Chapter 2 source provenance filename missing!"
+
+    # Must contain provenance badges in topics
+    assert "[جزوه ۱]" in md_multi or "منبع: جزوه ۱" in md_multi, "Chapter 1 topic missing provenance badge!"
+    assert "[جزوه ۲]" in md_multi or "منبع: جزوه ۲" in md_multi, "Chapter 2 topic missing provenance badge!"
+
+    # Test HTML Multi-Handout
+    out_html_multi = "dist/diag_test_an_multi.html"
+    build_html_summary(multi_handout_data, out_html_multi)
+    with open(out_html_multi, "r", encoding="utf-8") as f:
+        html_multi = f.read()
+
+    assert "toc-container" in html_multi or "toc-card" in html_multi or "فهرست" in html_multi, "Multi-handout HTML missing Table of Contents!"
+    assert "lecture_01_endocrine.docx" in html_multi, "HTML missing chapter 1 source file!"
+    assert "lecture_02_rheumatology.pdf" in html_multi, "HTML missing chapter 2 source file!"
+    assert "[جزوه ۱]" in html_multi or "منبع: جزوه ۱" in html_multi, "HTML missing chapter 1 topic provenance tag!"
+
+    # Test Word DOCX Multi-Handout
+    out_docx_multi = "dist/diag_test_an_multi.docx"
+    build_docx_summary(multi_handout_data, out_docx_multi)
+    assert os.path.exists(out_docx_multi), "Multi-handout DOCX not generated!"
+    doc_multi = docx.Document(out_docx_multi)
+    docx_full_text = "\n".join([p.text for p in doc_multi.paragraphs] + [c.text for t in doc_multi.tables for r in t.rows for c in r.cells])
+
+    assert "فهرست" in docx_full_text, "DOCX missing Table of Contents!"
+    assert "lecture_01_endocrine.docx" in docx_full_text, "DOCX missing Chapter 1 source provenance!"
+    assert "lecture_02_rheumatology.pdf" in docx_full_text, "DOCX missing Chapter 2 source provenance!"
+    assert len(doc_multi.tables) >= 2, f"Expected tables from both chapters in DOCX, found only {len(doc_multi.tables)}"
+
+    print("[PASS] Bug AN Test Passed: Chronological topic pairing and multi-handout TOC, banners, and provenance verified.")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -2790,4 +2957,5 @@ if __name__ == "__main__":
     test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
     test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
     test_bug_am_semantic_binding_and_cutoff_integrity_gates()
+    test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

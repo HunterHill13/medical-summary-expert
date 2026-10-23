@@ -445,6 +445,41 @@ def ingest_file(file_path: str, img_out_dir: str = "extracted_images") -> Dict[s
     else:
         raise ValueError(f"Unsupported file format: {ext}. Supported formats: .docx, .pdf, .md, .txt")
 
+
+def ingest_multiple_files(file_paths: List[str], img_out_dir: str = "extracted_images") -> Dict[str, Any]:
+    """
+    Ingests multiple lecture handouts (DOCX, PDF, MD), producing a unified multi-chapter structure.
+    Preserves per-handout provenance, page numbering, extracted images, and section boundaries.
+    """
+    chapters = []
+    combined_elements = []
+    combined_images = []
+    full_texts = []
+
+    for idx, fp in enumerate(file_paths, 1):
+        if not os.path.exists(fp):
+            continue
+        ch_img_dir = os.path.join(img_out_dir, f"handout_{idx}")
+        ch_data = ingest_file(fp, img_out_dir=ch_img_dir)
+        ch_data["chapter_index"] = idx
+        ch_data["source_file"] = os.path.basename(fp)
+        ch_title = os.path.splitext(os.path.basename(fp))[0].replace("_", " ")
+        ch_data["title"] = f"جزوه {idx}: {ch_title}"
+        chapters.append(ch_data)
+        combined_elements.extend(ch_data.get("elements", []))
+        combined_images.extend(ch_data.get("images", []))
+        full_texts.append(f"=== [📚 جزوه {idx}: {os.path.basename(fp)}] ===\n" + ch_data.get("full_text", ""))
+
+    return {
+        "is_multi_chapter": True,
+        "total_chapters": len(chapters),
+        "file_name": f"multi_handout_bundle_{len(chapters)}_files",
+        "chapters": chapters,
+        "elements": combined_elements,
+        "images": combined_images,
+        "full_text": "\n\n".join(full_texts)
+    }
+
 def main():
     parser = argparse.ArgumentParser(description="Ingest medical notes with zero table/textbox loss")
     parser.add_argument("--input", required=True, help="Path to input .docx, .md, or .txt file")

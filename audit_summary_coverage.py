@@ -806,9 +806,9 @@ def audit_cross_layer_duplication(summary_data: Dict[str, Any]) -> Dict[str, Any
 
 def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Adaptive Content Volume Metric:
-    Computes total words and estimated A4 pages dynamically based on handout size.
-    Does NOT enforce an artificial fixed page cap, respecting that handouts vary in size and complexity.
+    Adaptive Content Volume & Strict Page Budget Governance (Rule 25 - v3.9.10):
+    Target: 4 A4 pages ideal (~1,200 - 1,500 words).
+    Max Ceiling: 6 A4 pages (~2,400 words, including flowchart space).
     """
     if summary_data.get("is_multi_chapter") or summary_data.get("is_master_bundle"):
         return {
@@ -819,9 +819,34 @@ def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     raw_text = json.dumps(summary_data, ensure_ascii=False)
-    words = len(re.findall(r'\b\w+\b', raw_text))
-    est_pages = round(words / 320.0, 1)
+    words = len(re.findall(r'[\u0600-\u06FF\w]+', raw_text))
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
 
+    # If pure sections mode, enforce 4-6 A4 page budget
+    if sections:
+        flowchart_count = sum(1 for s in sections if isinstance(s, dict) and (s.get("flowchart") or s.get("mermaid_code")))
+        est_pages = round((words / 380.0) + (flowchart_count * 0.4), 1)
+        exceeded = est_pages > 6.0
+        if exceeded:
+            status = "WARNING_PAGE_BUDGET_EXCEEDED"
+        elif est_pages <= 4.5:
+            status = "OPTIMAL_PAGE_BUDGET"
+        else:
+            status = "ACCEPTABLE_PAGE_BUDGET"
+
+        return {
+            "page_budget_exceeded": exceeded,
+            "total_words": words,
+            "estimated_pages": est_pages,
+            "estimated_a4_pages": est_pages,
+            "flowchart_count": flowchart_count,
+            "ideal_target_pages": 4.0,
+            "max_ceiling_pages": 6.0,
+            "status": status
+        }
+
+    # Legacy modules fallback (e.g. Test AL)
+    est_pages = round(words / 320.0, 1)
     return {
         "page_budget_exceeded": False,
         "total_words": words,

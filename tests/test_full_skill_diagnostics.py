@@ -3297,6 +3297,127 @@ def test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline():
     print(f"[PASS] Bug AQ Test Passed: Pure Dynamic Table-Centric Schema & Infographic High-DPI Charts verified (Tables: {len(doc.tables)}, Cards: {len(tsv_cards)}).")
 
 
+def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
+    """Bug AR (v3.9.10 - Rule 25): Pure Table Color Highlighting, Trailing Bloat Elimination & 4-6 Page Budget Gate.
+    1. Trailing bloat suppression: When compiling pure sections, ensure_master_matrices does NOT auto-synthesize
+       trailing crash sheets, pharmacology matrices, or morning checklists.
+    2. In-cell color highlighting: ==text== converts to yellow highlight (FEF08A) and !!text!! converts to soft red
+       highlight (FEE2E2 + 991B1B) across DOCX, HTML, and Markdown without writing literal badge text.
+    3. Strict Page Budget Audit: 4 A4 pages ideal (~1200-1500 words), max 6 pages A4. Flag WARNING_PAGE_BUDGET_EXCEEDED if > 6.0 pages.
+    4. Prompt Template: BATCH_PROMPT_TEMPLATE specifies 4-6 pages budget and ==text== / !!text!! color highlighting.
+    """
+    from build_summary_pack import (
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        ensure_master_matrices
+    )
+    from audit_summary_coverage import audit_page_budget
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+    import docx
+    os.makedirs("dist", exist_ok=True)
+
+    # 1. Test Trailing Bloat Elimination on Pure Sections Data
+    pure_data = {
+        "topic_title": "اصول ارتباطات سلولی و بیوشیمی هورمون‌ها",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: شیوه‌های ترشح و پیام‌رسانی",
+                "headers": ["شیوه ارتباطی", "مکانیسم انتقال", "نکات کلیدی و تأکیدات آزمونی"],
+                "rows": [
+                    [
+                        "اندوکرین (Endocrine)",
+                        "ترشح هورمون به خون → اتصال به گیرنده سلول هدف دوردست",
+                        "• ==انسولین و گلوکاگون== از جزایر به کبد\n• !!اثر عبور اول کبدی در تجویز خوراکی انسولین اهمیت دارد!!"
+                    ],
+                    [
+                        "پاراکرین (Paracrine)",
+                        "انتشار در مایع بین‌سلولی موضعی",
+                        "• ==سوماتواستاتین سلول‌های D== موجب مهار پاراکرین ترشح انسولین و گلوکاگون می‌شود."
+                    ]
+                ],
+                "flowchart": "flowchart TD\n  A[هورمون] --> B[گیرنده]\n  style A fill:#E0F2FE,stroke:#0284C7"
+            }
+        ]
+    }
+
+    # Verify ensure_master_matrices does NOT auto-synthesize duplicate trailing tables
+    ensure_master_matrices(pure_data)
+    assert "master_pharmacology_matrix" not in pure_data, "ensure_master_matrices must not auto-synthesize master_pharmacology_matrix for pure sections!"
+    assert "last_minute_crash_sheet" not in pure_data, "ensure_master_matrices must not auto-synthesize last_minute_crash_sheet for pure sections!"
+    assert "morning_exam_checklist" not in pure_data, "ensure_master_matrices must not auto-synthesize morning_exam_checklist for pure sections!"
+
+    # 2. Test Word DOCX Rendering with Highlighting & Zero Trailing Bloat
+    out_docx = "dist/diag_test_ar.docx"
+    build_docx_summary(pure_data, out_docx)
+    assert os.path.exists(out_docx), "Word DOCX was not generated!"
+    doc = docx.Document(out_docx)
+    docx_full_text = "\n".join([p.text for p in doc.paragraphs] + [c.text for t in doc.tables for r in t.rows for c in r.cells])
+
+    # Must NOT have trailing bloat headers
+    assert "کپسول طلایی شب امتحان" not in docx_full_text, "Trailing crash sheet leaked into pure table DOCX!"
+    assert "ماتریس جامع مقایسه داروشناسی بالینی" not in docx_full_text, "Trailing pharmacology matrix leaked into pure table DOCX!"
+
+    # Verify highlight XML elements in Word runs
+    doc_xml = "".join([p._p.xml for p in doc.paragraphs] + [c._tc.xml for t in doc.tables for r in t.rows for c in r.cells])
+    assert 'w:fill="FEF08A"' in doc_xml, "Yellow highlight FEF08A missing from Word cell runs!"
+    assert 'w:fill="FEE2E2"' in doc_xml, "Red highlight FEE2E2 missing from Word cell runs!"
+    assert 'w:val="991B1B"' in doc_xml, "Dark red font color 991B1B missing from Word cell runs!"
+
+    # 3. Test HTML Rendering with Highlighting
+    out_html = "dist/diag_test_ar.html"
+    build_html_summary(pure_data, out_html)
+    assert os.path.exists(out_html), "HTML was not generated!"
+    with open(out_html, "r", encoding="utf-8") as f_html:
+        html_content = f_html.read()
+    assert "background-color: #FEF08A" in html_content, "HTML missing yellow mark background!"
+    assert "background-color: #FEE2E2" in html_content, "HTML missing soft red mark background!"
+    assert "کپسول طلایی شب امتحان" not in html_content, "HTML leaked trailing crash sheet!"
+
+    # 4. Test Strict Page Budget Audit (4-6 pages)
+    # 4a. Optimal Summary (e.g. 1400 words, 1 flowchart -> ~4.1 pages)
+    opt_summary = {
+        "sections": [
+            {
+                "title": f"بخش {i}: مبحث بالینی",
+                "headers": ["ستون ۱", "ستون ۲", "ستون ۳"],
+                "rows": [["سلول پاتوفیزیولوژی " * 8, "شرح علائم " * 8, "==نکته مهم== و !!تأکید استاد!! " * 5] for _ in range(4)],
+                "flowchart": "flowchart TD\n  A --> B" if i == 1 else None
+            }
+            for i in range(1, 5)
+        ]
+    }
+    opt_res = audit_page_budget(opt_summary)
+    assert opt_res["page_budget_exceeded"] is False, f"Optimal summary should pass budget, got {opt_res}"
+    assert opt_res["status"] in ["OPTIMAL_PAGE_BUDGET", "ACCEPTABLE_PAGE_BUDGET"], f"Unexpected status: {opt_res['status']}"
+    assert opt_res["estimated_a4_pages"] <= 6.0, f"Estimated pages should be <= 6.0, got {opt_res['estimated_a4_pages']}"
+
+    # 4b. Excessive Bloated Summary (> 6.0 pages, e.g. 3500 words)
+    bloated_summary = {
+        "sections": [
+            {
+                "title": f"بخش حجیم {i}",
+                "headers": ["سرستون الف", "سرستون ب", "سرستون ج"],
+                "rows": [["پاراگراف بسیار طولانی پر از کلمات غیرضروری " * 30, "توضیحات مفصل " * 30, "شرح داستان گونه " * 30] for _ in range(5)]
+            }
+            for i in range(1, 10)
+        ]
+    }
+    bloated_res = audit_page_budget(bloated_summary)
+    assert bloated_res["page_budget_exceeded"] is True, "Bloated summary must flag page_budget_exceeded!"
+    assert bloated_res["status"] == "WARNING_PAGE_BUDGET_EXCEEDED", f"Expected WARNING_PAGE_BUDGET_EXCEEDED, got {bloated_res['status']}"
+    assert bloated_res["estimated_a4_pages"] > 6.0, f"Expected estimated pages > 6.0, got {bloated_res['estimated_a4_pages']}"
+
+    # 5. Test BATCH_PROMPT_TEMPLATE Directives
+    assert any(num in BATCH_PROMPT_TEMPLATE for num in ["4", "۴"]), "BATCH_PROMPT_TEMPLATE must specify 4 pages ideal"
+    assert any(num in BATCH_PROMPT_TEMPLATE for num in ["6", "۶"]), "BATCH_PROMPT_TEMPLATE must specify 6 pages max ceiling"
+    assert "==" in BATCH_PROMPT_TEMPLATE and "!!" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify == and !! color highlighting"
+
+    print(f"[PASS] Bug AR Test Passed: Pure Table Color Highlighting, Zero Trailing Bloat, and 4-6 Page Budget Gate verified (Est: {opt_res['estimated_a4_pages']} pgs vs Bloated: {bloated_res['estimated_a4_pages']} pgs).")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3342,4 +3463,5 @@ if __name__ == "__main__":
     test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission()
     test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate()
     test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline()
-    print("=== ALL DIAGNOSTIC TESTS (43/43) COMPLETED SUCCESSFULLY ===")
+    test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate()
+    print("=== ALL DIAGNOSTIC TESTS (44/44) COMPLETED SUCCESSFULLY ===")

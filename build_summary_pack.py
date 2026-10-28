@@ -207,6 +207,9 @@ def format_cell_html(text: str) -> str:
         l = line.strip()
         if not l:
             continue
+        # Color highlights (Rule 25)
+        l = re.sub(r'==(.*?)==', r'<mark style="background-color: #FEF08A; padding: 1px 4px; border-radius: 3px;">\1</mark>', l)
+        l = re.sub(r'!!(.*?)!!', r'<mark style="background-color: #FEE2E2; color: #991B1B; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', l)
         # In-cell badge replacements with high-contrast colored spans
         l = re.sub(r'(🔴\s*تله\s*(?:بزرگ\s*)?امتحانی(?:\s*:\s*)?)', r'<span class="badge-trap">\1</span>', l)
         l = re.sub(r'(⚠️\s*خطای\s*(?:فاحش\s*|رایج\s*)(?:پزشکی\s*)?(?:\s*:\s*)?)', r'<span class="badge-error">\1</span>', l)
@@ -407,7 +410,7 @@ def add_formula_card(doc, raw_f_code: str, title: str = ""):
 
 def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
                   bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
-                  is_rtl: bool = True):
+                  is_rtl: bool = True, highlight_color: Optional[str] = None):
     """Low-level run builder with explicit Complex Script settings for Word."""
     run = p.add_run(text)
     run.font.name = font_name
@@ -456,39 +459,54 @@ def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
         if iCs_elem is None:
             rPr.append(parse_xml(r'<w:iCs {}/>'.format(nsdecls('w'))))
 
+    if highlight_color == "yellow":
+        rPr.append(parse_xml(r'<w:shd {} w:fill="FEF08A"/>'.format(nsdecls('w'))))
+    elif highlight_color == "red":
+        rPr.append(parse_xml(r'<w:shd {} w:fill="FEE2E2"/>'.format(nsdecls('w'))))
+        rPr.append(parse_xml(r'<w:color {} w:val="991B1B"/>'.format(nsdecls('w'))))
+
     return run
 
 
 def add_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
           bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
-          is_rtl: bool = True):
-    """Adds a run or parses inline markdown **bold** and sanitizes TeX symbols into Word runs."""
+          is_rtl: bool = True, highlight_color: Optional[str] = None):
+    """Adds a run or parses inline markdown **bold**, yellow ==highlight== and red !!highlight!! into Word runs."""
     clean_text = sanitize_medical_text_symbols(str(text))
-    if "**" in clean_text:
-        parts = re.split(r'(\*\*.*?\*\*)', clean_text)
+    if any(m in clean_text for m in ["==", "!!", "**"]):
+        parts = re.split(r'(==.*?==|!!.*?!!|\*\*.*?\*\*)', clean_text)
         last_run = None
         for part in parts:
             if not part:
                 continue
-            if part.startswith("**") and part.endswith("**") and len(part) >= 4:
+            if part.startswith("==") and part.endswith("==") and len(part) >= 4:
                 last_run = _add_single_r(p, part[2:-2], font_name=font_name, size_pt=size_pt,
-                                         bold=True, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+                                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl,
+                                         highlight_color="yellow")
+            elif part.startswith("!!") and part.endswith("!!") and len(part) >= 4:
+                last_run = _add_single_r(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                         bold=True, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl,
+                                         highlight_color="red")
+            elif part.startswith("**") and part.endswith("**") and len(part) >= 4:
+                last_run = _add_single_r(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                         bold=True, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl,
+                                         highlight_color=highlight_color)
             else:
                 last_run = _add_single_r(p, part, font_name=font_name, size_pt=size_pt,
-                                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+                                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl,
+                                         highlight_color=highlight_color)
         return last_run
     return _add_single_r(p, clean_text, font_name=font_name, size_pt=size_pt,
-                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl)
+                         bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=is_rtl,
+                         highlight_color=highlight_color)
 
 
 def add_bidi_text(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
-                  bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL):
+                  bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
+                  highlight_color: Optional[str] = None):
     """
     Renders mixed Persian/English scientific text with strict BiDi isolation.
-    Preserves arrows (→, ⇌), chemical symbols (Ca²⁺, HCO₃⁻), inequalities (≥, ≤, ±)
-    and Latin abbreviations without reversing English parentheses.
-    Sanitizes raw LaTeX/TeX tokens to Unicode, isolates chemical formulas,
-    and converts Markdown **bold** segments into true bold runs (zero raw asterisk leaks).
+    Supports yellow ==highlight== and red !!highlight!! without extra text badges.
     """
     if not text:
         return
@@ -500,22 +518,31 @@ def add_bidi_text(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
     for idx, line in enumerate(lines):
         if idx > 0:
             p.add_run().add_break()
-        # Parse inline markdown **bold**
-        parts = re.split(r'(\*\*.*?\*\*)', line)
+        # Parse inline markdown **bold** and highlights ==...== and !!...!!
+        parts = re.split(r'(==.*?==|!!.*?!!|\*\*.*?\*\*)', line)
         for part in parts:
             if not part:
                 continue
-            if part.startswith("**") and part.endswith("**") and len(part) >= 4:
+            if part.startswith("==") and part.endswith("==") and len(part) >= 4:
                 inner_text = part[2:-2]
                 _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=color_rgb)
+                                  bold=bold, italic=italic, color_rgb=color_rgb, highlight_color="yellow")
+            elif part.startswith("!!") and part.endswith("!!") and len(part) >= 4:
+                inner_text = part[2:-2]
+                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
+                                  bold=True, italic=italic, color_rgb=color_rgb, highlight_color="red")
+            elif part.startswith("**") and part.endswith("**") and len(part) >= 4:
+                inner_text = part[2:-2]
+                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
+                                  bold=True, italic=italic, color_rgb=color_rgb, highlight_color=highlight_color)
             else:
                 _render_bidi_line(p, part, font_name=font_name, size_pt=size_pt,
-                                  bold=bold, italic=italic, color_rgb=color_rgb)
+                                  bold=bold, italic=italic, color_rgb=color_rgb, highlight_color=highlight_color)
 
 
 def _render_bidi_line(p, text_line: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
-                      bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL):
+                      bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
+                      highlight_color: Optional[str] = None):
     if not text_line:
         return
     if not any('\u0600' <= c <= '\u06FF' for c in text_line):
@@ -546,10 +573,10 @@ def _render_bidi_line(p, text_line: str, font_name: str = FONT_DUBAI, size_pt: f
         )
         if (not has_persian and (re.search(r'[A-Za-z0-9→⇌⇄<>=≥≤≈≠×°µ·]', tok) or tok.startswith('('))) or is_math_expr:
             add_r(p, " " + tok.strip() + " ", font_name=font_name, size_pt=size_pt,
-                  bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=False)
+                  bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=False, highlight_color=highlight_color)
         else:
             add_r(p, tok, font_name=font_name, size_pt=size_pt,
-                  bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=True)
+                  bold=bold, italic=italic, color_rgb=color_rgb, is_rtl=True, highlight_color=highlight_color)
 
 
 def set_p_rtl(p, space_before_pt: float = 0, space_after_pt: float = 3.5, line_spacing: float = 1.15):
@@ -1329,7 +1356,11 @@ def ensure_master_matrices(data: Dict[str, Any]):
     are synthesized if missing, ensuring 100% content parity across Word and Markdown.
     Skips duplicate pharmacology matrix if already comprehensively covered in thematic sections.
     """
+    sections = data.get("sections") or data.get("thematic_sections") or []
     modules = data.get("modules") or []
+    # In pure table mode (sections present and no modules), do NOT synthesize trailing matrices!
+    if sections and not modules:
+        return
 
     # 1. Master Pharmacology Matrix
     if not data.get("master_pharmacology_matrix"):

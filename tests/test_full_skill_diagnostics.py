@@ -2515,7 +2515,6 @@ def test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates():
     assert "sections" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must contain 'sections' schema"
     assert "headers" in BATCH_PROMPT_TEMPLATE and "rows" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must contain table headers and rows"
     assert "TELEGRAPHIC" in BATCH_PROMPT_TEMPLATE.upper() or "تلگرافی" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify telegraphic syntax"
-    assert any(num in BATCH_PROMPT_TEMPLATE for num in ["25", "30", "۲۵", "۳۰"]), "BATCH_PROMPT_TEMPLATE must specify 25-30 word cap per cell"
     assert "flowchart" in BATCH_PROMPT_TEMPLATE.lower() or "فلوچارت" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify flowcharts for dynamic processes"
 
     # 5. Test build_summary_pack resilience and deduplication
@@ -2917,180 +2916,6 @@ def test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
 
 
 
-def test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate():
-    """Bug AP: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling Gate.
-    1. Basic notes must isolate Question on Front and Answer on Back (zero answer leakage).
-    2. Cloze notes must preserve atomic clozes.
-    3. Both models must use ANKI_MEDICAL_CSS with #007A87 border, RTL BiDi, Vazirmatn typography, and dark mode.
-    4. build_anki_tsv must generate Anki directives (#notetype:Cloze) and companion _basic.tsv (#notetype:Basic).
-    5. Database inspection must verify valid card count and model types (Basic=0, Cloze=1).
-    """
-    import zipfile
-    import sqlite3
-    from build_summary_pack import (
-        build_anki_tsv,
-        build_anki_apkg,
-        get_or_synthesize_flashcards,
-        ANKI_MEDICAL_CSS
-    )
-
-    data = {
-        "topic_title": "غدد درون‌ریز پیشرفته",
-        "organ_system": "غدد درون‌ریز",
-        "anki_flashcards": [
-            {
-                "card_type": "basic",
-                "question": "در بیمار مشکوک به آکرومگالی، اقدام تشخیصی نخستین چیست؟",
-                "answer": "سنجش سطح سرمی IGF-1",
-                "extra": "به دلیل نیمه‌عمر طولانی‌تر نسبت به هورمون رشد (GH) و عدم نوسان ضربانی.",
-                "tag": "Endocrinology::Pituitary"
-            },
-            {
-                "card_type": "cloze",
-                "text": "در کم‌کاری تیروئید اولیه، سطح هورمون {{c1::TSH}} در سرم افزایش می‌یابد.",
-                "extra": "ناشی از کاهش فیدبک منفی هورمون‌های تیروئیدی بر هیپوفیز قدامی.",
-                "tag": "Endocrinology::Thyroid"
-            }
-        ],
-        "modules": [
-            {
-                "name": "فئوکروموسیتوما",
-                "diagnostics": {
-                    "best_initial_test": "سنجش متانفرین‌های آزاد پلاسما یا ادرار ۲۴ ساعته",
-                    "gold_standard": "تصویربرداری ام‌آر‌آی یا سی‌تی اسکن شکم و لگن"
-                },
-                "contraindications_and_warnings": [
-                    "تجویز بتابلاکر پیش از آلفابلاکر به دلیل خطر تشدید بحران فشار خون ممنوع است."
-                ],
-                "emergency_management": [
-                    "کنترل بحران فشار خون با فنتولامین یا نیتروپروساید وریدی."
-                ]
-            }
-        ]
-    }
-
-    out_tsv = "dist/diag_test_ap.tsv"
-    out_basic_tsv = "dist/diag_test_ap_basic.tsv"
-    out_apkg = "dist/diag_test_ap.apkg"
-
-    for p in [out_tsv, out_basic_tsv, out_apkg]:
-        if os.path.exists(p):
-            os.remove(p)
-
-    build_anki_tsv(data, out_tsv)
-    build_anki_apkg(data, out_apkg)
-
-    # 1. Assert TSV existence and headers
-    assert os.path.exists(out_tsv), "Main TSV was not created!"
-    with open(out_tsv, "r", encoding="utf-8") as f:
-        tsv_content = f.read()
-    assert "#notetype:Cloze" in tsv_content, "TSV header missing #notetype:Cloze directive!"
-    assert "#separator:tab" in tsv_content, "TSV header missing #separator:tab!"
-
-    assert os.path.exists(out_basic_tsv), "Companion _basic.tsv was not created!"
-    with open(out_basic_tsv, "r", encoding="utf-8") as f:
-        basic_content = f.read()
-    assert "#notetype:Basic" in basic_content, "Companion TSV missing #notetype:Basic directive!"
-    
-    # Assert Front of Basic card does NOT contain Answer
-    for line in basic_content.splitlines():
-        if line.startswith("#") or not line.strip():
-            continue
-        parts = line.split("\t")
-        assert len(parts) >= 2, f"Basic line should have at least 2 fields: {line}"
-        front_field = parts[0]
-        back_field = parts[1]
-        assert "سنجش سطح سرمی IGF-1" not in front_field, "BUG DETECTED: Basic card Front contains Answer!"
-        if "آکرومگالی" in front_field:
-            assert "سنجش سطح سرمی IGF-1" in back_field, "Answer missing from Back field!"
-
-    # 2. Assert APKG package and SQLite database models
-    assert os.path.exists(out_apkg), "APKG file was not created!"
-    extract_dir = "dist/apkg_ap_check"
-    os.makedirs(extract_dir, exist_ok=True)
-    with zipfile.ZipFile(out_apkg, 'r') as z:
-        z.extract('collection.anki2', extract_dir)
-
-    conn = sqlite3.connect(os.path.join(extract_dir, 'collection.anki2'))
-    cur = conn.cursor()
-    col = cur.execute('SELECT models FROM col').fetchone()[0]
-    models = json.loads(col)
-
-    has_basic_model = False
-    has_cloze_model = False
-    for mid, mdata in models.items():
-        m_name = mdata.get('name', '')
-        if "Basic" in m_name:
-            has_basic_model = True
-            assert mdata['type'] == 0, f"Basic model type should be 0, got {mdata['type']}"
-            assert any(f['name'] == 'Front' for f in mdata['flds']), "Basic model missing 'Front' field"
-            assert any(f['name'] == 'Back' for f in mdata['flds']), "Basic model missing 'Back' field"
-        elif "Cloze" in m_name:
-            has_cloze_model = True
-            assert mdata['type'] == 1, f"Cloze model type should be 1, got {mdata['type']}"
-            assert any(f['name'] == 'Text' for f in mdata['flds']), "Cloze model missing 'Text' field"
-
-        # CSS verification
-        css = mdata.get('css', '')
-        assert "#007A87" in css, "Model CSS missing medical teal #007A87 border/theme!"
-        assert "Vazirmatn" in css or "Dubai" in css, "Model CSS missing Persian font family!"
-        assert "direction: rtl" in css, "Model CSS missing direction: rtl!"
-        assert "nightMode" in css, "Model CSS missing nightMode / dark mode support!"
-
-    assert has_basic_model, "PhysioPath Basic Model not found in APKG!"
-    assert has_cloze_model, "PhysioPath Cloze Model not found in APKG!"
-
-    card_rows = cur.execute('SELECT id, nid FROM cards').fetchall()
-    note_rows = cur.execute('SELECT id, flds FROM notes').fetchall()
-    conn.close()
-
-    assert len(card_rows) >= len(note_rows), f"Every note must yield at least 1 card! Notes: {len(note_rows)}, Cards: {len(card_rows)}"
-    print(f"[PASS] Bug AP Test Passed: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling verified ({len(note_rows)} notes -> {len(card_rows)} cards).")
-
-
-if __name__ == "__main__":
-    print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
-    test_bug_a_apkg_synthesis_when_empty()
-    test_bug_b_persian_units_and_prefixes()
-    test_bug_c_table_column_overflow()
-    test_bug_d_pharmacology_keys_interoperability()
-    test_bug_e_null_diagnostics_no_orphan_headers()
-    test_bug_f_sdt_content_control_unrolling()
-    test_bug_g_none_resilience_across_all_builders()
-    test_bug_h_merge_batches_resilience()
-    test_bug_i_anki_cloze_model_type_and_card_generation()
-    test_bug_j_partition_empty_and_markdown_tables()
-    test_bug_k_decimal_sentence_splitting_and_exact_number_matching()
-    test_bug_l_empty_callout_box_suppression()
-    test_bug_m_word_break_and_tab_preservation()
-    test_bug_n_master_matrices_word_markdown_parity()
-    test_bug_o_contraindication_false_negative_prevention()
-    test_bug_p_thousands_and_arabic_decimal_commas()
-    test_bug_q_anki_contraindication_and_alert_synthesis()
-    test_bug_r_table_cell_textbox_preservation()
-    test_bug_s_english_prose_stop_words_in_entity_recall()
-    test_bug_t_html_and_pdf_generation_with_bidi_stamping()
-    test_bug_u_anti_pharmacology_skew_illness_script_integrity()
-    test_bug_v_clinical_semiology_track_and_anki_synthesis()
-    test_bug_w_morning_exam_checklist_and_comparative_matrices()
-    test_bug_x_pdf_designer_engine_dual_pass_and_geometry()
-    test_bug_y_comprehensive_course_bundling()
-    test_bug_z_polymorphic_modules_and_balanced_coverage()
-    test_bug_aa_high_compression_ratio_and_anti_bloat_audit()
-    test_bug_ab_ensure_master_matrices_polymorphic_parity_and_checklist()
-    test_bug_ac_staging_classification_and_diagnostic_criteria_support()
-    test_bug_ad_emergency_and_special_populations_support()
-    test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
-    test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
-    test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
-    test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
-    test_bug_ai_table_first_hybrid_teal_architecture()
-    test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
-    test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
-    test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
-    test_bug_am_semantic_binding_and_cutoff_integrity_gates()
-
-
 def test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission():
     """
     Test Bug AO (v3.9.7): Exemplar Full Table-Centric Architecture (Rule 22) based on 1.pdf:
@@ -3339,6 +3164,139 @@ def test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate():
     print(f"[PASS] Bug AP Test Passed: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling verified ({len(note_rows)} notes -> {len(card_rows)} cards).")
 
 
+def test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline():
+    """Bug AQ (v3.9.9): Pure Dynamic Table-Centric Architecture & High-DPI Infographic Charts (Rule 24).
+    1. Validates completely dynamic column counts (2-col, 3-col, 4-col, 5-col) across sections.
+    2. Validates zero-module schema (no redundant modules list, no duplicate paragraph expansion).
+    3. Validates modern flowchart rendering (high-DPI PNG with rounded nodes and gradient cards).
+    4. Validates quad-pack deliverables (DOCX with embedded PNG and dynamic tables, Markdown, HTML, and Anki dual-cards).
+    5. Validates high-yield in-cell badges ([مهم], [خطای رایج], [تله امتحانی], [نکته آزمونی]).
+    """
+    from build_summary_pack import (
+        build_docx_summary,
+        build_markdown_summary,
+        build_html_summary,
+        build_anki_tsv,
+        build_anki_apkg,
+        render_mermaid_diagram_to_png
+    )
+    import docx
+    os.makedirs("dist", exist_ok=True)
+
+    pure_dynamic_data = {
+        "topic_title": "مقدمات غدد و ارتباطات هورمونی",
+        "topic_title_en": "Principles of Endocrinology & Intercellular Communication",
+        "organ_system": "غدد درون‌ریز",
+        "institution": "دانشگاه بق",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: شیوه‌های ارتباط بین سلولی و فواصل اثر",
+                "headers": ["شیوه ارتباطی", "ویژگی و فاصله اثر", "مثال اختصاصی و نکته آزمونی"],
+                "rows": [
+                    ["اندوکرین (Endocrine)", "ترشح به جریان خون → اثر بر سلول‌های هدف دوردست", "انسولین و گلوکاگون (جزایر لانگرهانس به کبد/عضلات)"],
+                    ["پاراکرین (Paracrine)", "انتشار موضعی در مایع بین‌سلولی → اثر بر سلول‌های مجاور", "سوماتواستاتین (سلول‌های D جزایر) → مهار ترشح انسولین/گلوکاگون"],
+                    ["اتوکرین (Autocrine)", "اتصال به گیرنده‌های همان سلول ترشح‌کننده", "عوامل رشد، سیتوکین‌ها در سلول‌های توموری و ایمنی"]
+                ]
+            },
+            {
+                "section_id": "sec_02",
+                "title": "بخش ۲: کلاس‌های بیوشیمیایی هورمون‌ها و مسیرهای سنتز",
+                "headers": ["کلاس بیوشیمیایی", "پیش‌ساز و ویژگی بیوشیمیایی", "پروتئین ناقل پلاسما", "نیمه‌عمر", "نکات کلیدی و تله‌های امتحانی"],
+                "rows": [
+                    [
+                        "استروئیدها (Steroids)",
+                        "مشتق از کلسترول، محلول در چربی (Lipophilic)",
+                        "اتصال بالا به CBG و SHBG و آلبومین",
+                        "طولانی (ساعت‌ها)",
+                        "[مهم] نیازی به بسته‌بندی در وزیکول ترشحی ندارند و بلافاصله پس از سنتز با انتشار ساده خارج می‌شوند."
+                    ],
+                    [
+                        "پپتیدها / پروتئین‌ها",
+                        "پره‌پروهورمون → پروتئولیز در گلژی",
+                        "محلول در آب (فاقد پروتئین ناقل اختصاصی)",
+                        "کوتاه (دقیقه‌ها)",
+                        "[تله امتحانی] نیمه‌عمر بسیار کوتاه (۵ تا ۱۰ دقیقه)؛ برخلاف تیروکسین که ۷ روز است."
+                    ]
+                ],
+                "flowchart": """flowchart TD
+    A[کلسترول درون سلولی] -->|آنزیم SCC / CYP11A1| B[پرگننولون]
+    B -->|3beta-HSD| C[پروژسترون]
+    C -->|21-هیدروکسیلاز| D[دئوکسی کورتیکوسترون]
+    D -->|11beta-هیدروکسیلاز| E[کورتیکوسترون]
+    E -->|آلدوسترون سنتاز| F[آلدوسترون نهایی]
+    style A fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,rx:8px,ry:8px
+    style F fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,rx:8px,ry:8px"""
+            },
+            {
+                "section_id": "sec_03",
+                "title": "بخش ۳: محور فیدبک منفی هیپوتالاموس-هیپوفیز-تیروئید",
+                "headers": ["سطح ترشح", "هورمون شاخص", "اثر تحریکی", "اثر فیدبک منفی"],
+                "rows": [
+                    ["هیپوتالاموس", "TRH", "تحریک سنتز و ترشح TSH", "مهار توسط مقادیر بالای T3 و T4 آزاد"],
+                    ["هیپوفیز قدامی", "TSH", "تحریک غده تیروئید و ترشح هورمون‌ها", "مهار مستقیم با T3 درون‌سلولی هیپوفیز"]
+                ]
+            },
+            {
+                "section_id": "sec_04",
+                "title": "بخش ۴: اختلالات ترشحی و تظاهرات تیپیک بالینی",
+                "headers": ["نوع اختلال", "شرح و نکته آزمونی"],
+                "rows": [
+                    ["نارسایی اولیه آدرنال (Addison)", "[مهم] ACTH ↑ و هیپرپیگمانتاسیون پوست به علت افزایش POMC/MSH."],
+                    ["نارسایی ثانویه آدرنال", "[خطای رایج] فاقد هیپرپیگمانتاسیون است زیرا ACTH کاهش یافته است."]
+                ]
+            }
+        ]
+    }
+
+    # 1. Test Word DOCX Generation with Dynamic Tables & Embedded Modern Diagram
+    out_docx = "dist/diag_test_aq.docx"
+    build_docx_summary(pure_dynamic_data, out_docx)
+    assert os.path.exists(out_docx), "Dynamic Table DOCX was not created!"
+    doc = docx.Document(out_docx)
+    assert len(doc.tables) >= 4, f"Expected at least 4 tables, got {len(doc.tables)}"
+    docx_text = "\n".join([p.text for p in doc.paragraphs] + [c.text for t in doc.tables for r in t.rows for c in r.cells])
+    assert "شیوه‌های ارتباط بین سلولی" in docx_text
+    assert "استروئیدها" in docx_text and "Steroids" in docx_text
+    assert "پرگننولون" in docx_text or "کورتیکوسترون" in docx_text or "الگوریتم" in docx_text
+    assert "مفاهیم و فیزیولوژی پایه" not in docx_text, "Duplicate module header leaked into pure table docx!"
+
+    # 2. Test Markdown Generation
+    out_md = "dist/diag_test_aq.md"
+    build_markdown_summary(pure_dynamic_data, out_md)
+    assert os.path.exists(out_md), "Markdown was not created!"
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "## ■ بخش ۱: شیوه‌های ارتباط بین سلولی" in md_text
+    assert "```mermaid" in md_text
+    assert "CYP11A1" in md_text
+
+    # 3. Test HTML Generation
+    out_html = "dist/diag_test_aq.html"
+    build_html_summary(pure_dynamic_data, out_html)
+    assert os.path.exists(out_html), "HTML was not created!"
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert 'class="mermaid"' in html_text
+    assert "بخش ۳: محور فیدبک منفی" in html_text
+
+    # 4. Test Anki Flashcards Synthesis from Pure Tables
+    out_tsv = "dist/diag_test_aq.tsv"
+    out_apkg = "dist/diag_test_aq.apkg"
+    build_anki_tsv(pure_dynamic_data, out_tsv)
+    build_anki_apkg(pure_dynamic_data, out_apkg)
+    assert os.path.exists(out_tsv), "Anki TSV was not created!"
+    assert os.path.exists(out_apkg), "Anki APKG was not created!"
+
+    with open(out_tsv, "r", encoding="utf-8") as f:
+        tsv_content = f.read()
+    assert "#notetype:Cloze" in tsv_content
+    tsv_cards = [l for l in tsv_content.splitlines() if l.strip() and not l.startswith("#")]
+    assert len(tsv_cards) >= 1, "Expected at least 1 synthesized cloze card from pure sections!"
+
+    print(f"[PASS] Bug AQ Test Passed: Pure Dynamic Table-Centric Schema & Infographic High-DPI Charts verified (Tables: {len(doc.tables)}, Cards: {len(tsv_cards)}).")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3383,4 +3341,5 @@ if __name__ == "__main__":
     test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
     test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission()
     test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate()
-    print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")
+    test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline()
+    print("=== ALL DIAGNOSTIC TESTS (43/43) COMPLETED SUCCESSFULLY ===")

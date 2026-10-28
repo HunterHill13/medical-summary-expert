@@ -977,80 +977,103 @@ def render_mermaid_diagram_to_png(
     edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     exec_path = edge_exe if os.path.exists(edge_exe) else None
 
-    html_content = f"""<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="utf-8">
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <script>
-        mermaid.initialize({{
+        mermaid.initialize({
             startOnLoad: true,
             theme: 'base',
-            themeVariables: {{
-                fontFamily: 'Dubai, Vazirmatn, Segoe UI, Tahoma, sans-serif',
-                primaryColor: '#EBF5FB',
-                primaryBorderColor: '#2980B9',
-                primaryTextColor: '#1A5276',
-                lineColor: '#2980B9',
-                secondaryColor: '#FEF9E7',
-                tertiaryColor: '#FDEDEC',
+            themeVariables: {
+                fontFamily: 'Vazirmatn, Dubai, Segoe UI, Tahoma, sans-serif',
+                primaryColor: '#F0FDFA',
+                primaryBorderColor: '#007A87',
+                primaryTextColor: '#0F172A',
+                lineColor: '#007A87',
+                secondaryColor: '#FEF3C7',
+                tertiaryColor: '#FFE4E6',
                 edgeLabelBackground: '#ffffff',
-                fontSize: '17px'
-            }}
-        }});
+                fontSize: '16px'
+            }
+        });
     </script>
     <style>
-        body {{
+        body {
             background: #ffffff;
             margin: 0;
-            padding: 16px;
-            font-family: 'Dubai', 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+            padding: 20px;
+            font-family: 'Vazirmatn', 'Dubai', 'Segoe UI', Tahoma, sans-serif;
             direction: rtl;
-        }}
-        .card {{
-            border: 1.5px solid #2980B9;
-            border-radius: 10px;
-            padding: 16px 20px;
-            background: #FAFCFD;
-            box-shadow: 0 4px 12px rgba(41, 128, 185, 0.08);
-            width: 760px;
-            max-width: 760px;
+        }
+        .card {
+            border: 1.5px solid #007A87;
+            border-radius: 12px;
+            padding: 20px 24px;
+            background: #FFFFFF;
+            box-shadow: 0 4px 18px rgba(0, 122, 135, 0.1);
+            width: 780px;
+            max-width: 780px;
             box-sizing: border-box;
             margin: 0 auto;
             text-align: center;
-        }}
-        .card-header {{
+        }
+        .card-header {
             font-size: 16px;
             font-weight: bold;
-            color: #1A5276;
-            margin-bottom: 14px;
-            border-bottom: 1.5px solid #AED6F1;
-            padding-bottom: 6px;
+            color: #FFFFFF;
+            background: linear-gradient(135deg, #007A87 0%, #005F6A 100%);
+            margin: -20px -24px 18px -24px;
+            padding: 10px 18px;
+            border-radius: 10px 10px 0 0;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 8px;
-        }}
-        .mermaid {{
+            box-shadow: 0 2px 6px rgba(0, 122, 135, 0.2);
+        }
+        .mermaid {
             display: flex;
             justify-content: center;
-        }}
-        .mermaid svg {{
+        }
+        .mermaid svg {
             max-width: 100% !important;
             height: auto !important;
-        }}
+        }
+        .node rect, .node circle, .node polygon {
+            rx: 10px !important;
+            ry: 10px !important;
+            filter: drop-shadow(0 3px 6px rgba(0, 122, 135, 0.12)) !important;
+        }
+        .edgePath path {
+            stroke-width: 2.2px !important;
+            stroke: #007A87 !important;
+        }
+        .edgeLabel {
+            font-weight: 600 !important;
+            background: #FFFFFF !important;
+            border-radius: 4px !important;
+            padding: 2px 6px !important;
+            border: 1px solid #E2E8F0 !important;
+        }
+        .cluster rect {
+            rx: 12px !important;
+            ry: 12px !important;
+            stroke: #00A896 !important;
+        }
     </style>
 </head>
 <body dir="rtl">
     <div class="card">
-        <div class="card-header">🧬 {title}</div>
+        <div class="card-header">🧬 __TITLE__</div>
         <div class="mermaid">
-{clean_code}
+__CLEAN_CODE__
         </div>
     </div>
 </body>
 </html>"""
-
+    html_content = html_template.replace("__TITLE__", title).replace("__CLEAN_CODE__", clean_code)
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:

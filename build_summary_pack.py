@@ -2880,11 +2880,229 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
 # Anki Flashcard Engine (Wozniak 20 Rules & AnKing Schema Compatible)
 # ---------------------------------------------------------------------------
 
+ANKI_MEDICAL_CSS = """
+.card {
+  font-family: 'Vazirmatn', 'Shabnam', 'IRANSans', 'Dubai', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  text-align: right;
+  direction: rtl;
+  color: #1F2937;
+  background-color: #F8FAFC;
+  padding: 15px;
+  margin: 0 auto;
+}
+
+.anki-card-container {
+  max-width: 680px;
+  margin: 0 auto;
+  background: #FFFFFF;
+  border: 1.5px solid #007A87;
+  border-radius: 12px;
+  padding: 22px 26px;
+  box-shadow: 0 4px 16px rgba(0, 122, 135, 0.08);
+  direction: rtl;
+  text-align: right;
+}
+
+.anki-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #007A87 0%, #005F6A 100%);
+  color: #FFFFFF;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 6px rgba(0, 122, 135, 0.25);
+}
+
+.anki-header-cloze {
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+}
+
+.anki-header-back {
+  background: #F1F5F9;
+  color: #475569;
+  box-shadow: none;
+  border: 1px solid #CBD5E1;
+}
+
+.anki-front-question {
+  font-size: 19px;
+  font-weight: 700;
+  color: #0F172A;
+  line-height: 1.8;
+  margin: 10px 0 16px 0;
+}
+
+.anki-front-question-compact {
+  font-size: 16px;
+  font-weight: 600;
+  color: #64748B;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.anki-divider {
+  height: 2px;
+  background: linear-gradient(to left, #007A87, #5EEAD4, transparent);
+  margin: 14px 0 18px 0;
+  border-radius: 2px;
+}
+
+.anki-answer-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0E6251;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.anki-back-answer {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0E6251;
+  background: #E8F8F5;
+  border-right: 4px solid #007A87;
+  padding: 12px 18px;
+  border-radius: 8px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+.anki-cloze-prompt {
+  font-size: 19px;
+  font-weight: 600;
+  color: #0F172A;
+  line-height: 1.8;
+  margin: 10px 0 16px 0;
+}
+
+.cloze {
+  font-weight: 800;
+  color: #007A87;
+  background: #E0F2F1;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border-bottom: 2px solid #007A87;
+}
+
+.anki-extra-box {
+  background: #F0FDFA;
+  border: 1px solid #99F6E4;
+  border-right: 4px solid #0D9488;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 16px;
+  text-align: right;
+}
+
+.anki-extra-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0F766E;
+  margin-bottom: 6px;
+}
+
+.anki-extra-content {
+  font-size: 15px;
+  color: #134E4A;
+  line-height: 1.6;
+}
+
+.anki-footer-sub {
+  font-size: 12px;
+  color: #94A3B8;
+  margin-top: 16px;
+  text-align: center;
+  border-top: 1px dashed #E2E8F0;
+  padding-top: 10px;
+}
+
+.anki-footer {
+  font-size: 12px;
+  color: #94A3B8;
+  margin-top: 18px;
+  text-align: left;
+  border-top: 1px solid #E2E8F0;
+  padding-top: 8px;
+  direction: ltr;
+}
+
+/* Night Mode (Dark Mode) Support */
+.nightMode .card {
+  background-color: #0F172A;
+  color: #F1F5F9;
+}
+.nightMode .anki-card-container {
+  background: #1E293B;
+  border-color: #14B8A6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.nightMode .anki-front-question {
+  color: #F8FAFC;
+}
+.nightMode .anki-front-question-compact {
+  color: #94A3B8;
+}
+.nightMode .anki-header-back {
+  background: #334155;
+  color: #CBD5E1;
+  border-color: #475569;
+}
+.nightMode .anki-back-answer {
+  background: #064E3B;
+  color: #A7F3D0;
+  border-right-color: #2DD4BF;
+}
+.nightMode .cloze {
+  color: #2DD4BF;
+  background: #134E4A;
+  border-bottom-color: #2DD4BF;
+}
+.nightMode .anki-extra-box {
+  background: #11292B;
+  border-color: #134E4A;
+  border-right-color: #2DD4BF;
+}
+.nightMode .anki-extra-header {
+  color: #5EEAD4;
+}
+.nightMode .anki-extra-content {
+  color: #CCFBF1;
+}
+.nightMode .anki-footer-sub,
+.nightMode .anki-footer {
+  color: #64748B;
+  border-color: #334155;
+}
+"""
+
+
 def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Retrieves declared flashcards or auto-synthesizes high-yield cards from modules."""
     cards = data.get("anki_flashcards") or []
     if cards:
-        return cards
+        normalized = []
+        for c in cards:
+            if not isinstance(c, dict):
+                continue
+            card_dict = dict(c)
+            # Ensure proper separation of Question and Answer for user-provided flashcards
+            if card_dict.get("question") and card_dict.get("answer"):
+                if not card_dict.get("text"):
+                    q = str(card_dict["question"]).strip()
+                    a = str(card_dict["answer"]).strip()
+                    card_dict["text"] = f"{q}: {{{{c1::{a}}}}}"
+                card_dict.setdefault("card_type", "basic")
+            normalized.append(card_dict)
+        return normalized
 
     cards = []
 
@@ -2913,13 +3131,19 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     if any(b in l for b in ["تله امتحانی", "خطای رایج", "استاندارد طلایی", "مهم"]):
                         row_has_badge = True
                         cards.append({
+                            "card_type": "cloze",
                             "text": f"در مبحث {sec_title} ({col_0}): {{{{c1::{l}}}}}",
+                            "question": f"در مبحث {sec_title}، نکته کلیدی مربوط به «{col_0}» چیست؟",
+                            "answer": f"{l}",
                             "extra": f"نکته کلیدی جدول {sec_title}.",
                             "tag": f"PhysioPath::{topic_name}::TableMatrix"
                         })
             if not row_has_badge and len(row) >= 2 and col_0 and col_last and len(col_last) > 3:
                 cards.append({
+                    "card_type": "basic",
                     "text": f"در {sec_title}، ویژگی بالینی یا امتحانی {col_0} عبارت است از: {{{{c1::{col_last}}}}}",
+                    "question": f"در مبحث {sec_title}، ویژگی بالینی یا امتحانی «{col_0}» چیست؟",
+                    "answer": f"{col_last}",
                     "extra": f"برگرفته از جدول خلاصه {sec_title}.",
                     "tag": f"PhysioPath::{topic_name}::TableMatrix"
                 })
@@ -2934,14 +3158,20 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             best_init = diag.get("best_initial_test")
             if best_init and str(best_init).strip() and str(best_init).lower() not in {"null", "none", "ذکر نشده"}:
                 cards.append({
+                    "card_type": "basic",
                     "text": f"در بیمار مشکوک به {mod_name}، اقدام تشخیصی نخستین (Best Next Step) عبارت است از {{{{c1::{best_init}}}}}.",
+                    "question": f"در بیمار مشکوک به {mod_name}، اقدام تشخیصی نخستین (Best Next Step) چیست؟",
+                    "answer": f"{best_init}",
                     "extra": f"بررسی اولیه جهت ارزیابی بالینی سریع و غیرتهاجمی در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Diagnostics"
                 })
             gold_std = diag.get("gold_standard")
             if gold_std and str(gold_std).strip() and str(gold_std).lower() not in {"null", "none", "ذکر نشده"}:
                 cards.append({
+                    "card_type": "basic",
                     "text": f"استاندارد طلایی و قطعی (Gold Standard) برای تشخیص {mod_name} عبارت است از {{{{c1::{gold_std}}}}}.",
+                    "question": f"استاندارد طلایی و تست قطعی (Gold Standard) برای تشخیص {mod_name} چیست؟",
+                    "answer": f"{gold_std}",
                     "extra": f"تست تشخیصی قطعی با بالاترین ویژگی و حساسیت در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Diagnostics"
                 })
@@ -2950,7 +3180,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if pearl and str(pearl).strip():
                 pearl_str = str(pearl).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"نکته های‌یلد {mod_name}: {{{{c1::{pearl_str}}}}}",
+                    "question": f"نکته های‌یلد و مروارید آزمونی پیرامون {mod_name} چیست؟",
+                    "answer": f"{pearl_str}",
                     "extra": f"نکته دامی آزمون پره‌انترنی/دستیاری و فیزیوپاتولوژی مبحث {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::HighYield"
                 })
@@ -2960,7 +3193,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if warn and str(warn).strip():
                 warn_str = str(warn).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"مورد مصرف ممنوع و خطای مرگبار در {mod_name}: {{{{c1::{warn_str}}}}}",
+                    "question": f"مهم‌ترین مورد مصرف ممنوع (کنترااندیکاسیون) و خطای پرخطر در {mod_name} چیست؟",
+                    "answer": f"{warn_str}",
                     "extra": f"کنترااندیکاسیون قطعی و خطای کشنده پزشکی در مبحث {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Contraindications"
                 })
@@ -2970,7 +3206,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if alert and str(alert).strip():
                 alert_str = str(alert).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"تأکید مستقیم استاد در آزمون {mod_name}: {{{{c1::{alert_str}}}}}",
+                    "question": f"تأکید ویژه و نکته مستقیم استاد در آزمون پیرامون {mod_name} چیست؟",
+                    "answer": f"{alert_str}",
                     "extra": f"نکته اولویت اول و سؤال قطعی امتحانی تدریس‌شده توسط استاد در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::InstructorAlerts"
                 })
@@ -2982,7 +3221,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 tech = str(sem.get("technique", "")).strip()
                 sig = str(sem.get("clinical_significance", "")).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"در معاینه فیزیکی و ارزیابی بالینی {mod_name}، مانور یا نشانه {{{{c1::{man}}}}} بررسی می‌شود.",
+                    "question": f"در معاینه فیزیکی و ارزیابی بالینی {mod_name}، مانور یا نشانه «{man}» چگونه انجام می‌شود و چه اهمیتی دارد؟",
+                    "answer": f"تکنیک: {tech} ← اهمیت: {sig}",
                     "extra": f"روش و اهمیت بالینی سمیولوژی: {tech} ← {sig}",
                     "tag": f"PhysioPath::{mod_name}::Semiology"
                 })
@@ -2995,7 +3237,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if surg and str(surg).strip():
                 s_str = str(surg).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"اندیکاسیون جراحی و اقدام مداخله‌ای در {mod_name}: {{{{c1::{s_str}}}}}",
+                    "question": f"مهم‌ترین اندیکاسیون‌های جراحی و اقدام مداخله‌ای در {mod_name} چیست؟",
+                    "answer": f"{s_str}",
                     "extra": f"معیارهای تصمیم‌گیری جراحی و اقدام تهاجمی در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Surgery"
                 })
@@ -3008,7 +3253,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if comp and str(comp).strip():
                 c_str = str(comp).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"عارضه بالینی وخیم و عامل پروگنوستیک در {mod_name}: {{{{c1::{c_str}}}}}",
+                    "question": f"مهم‌ترین عارضه بالینی و عامل پروگنوستیک نامناسب در {mod_name} چیست؟",
+                    "answer": f"{c_str}",
                     "extra": f"عوارض مهم بیماری و فاکتورهای پیش‌آگهی نامناسب در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Complications"
                 })
@@ -3019,7 +3267,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if f_step and str(f_step).strip():
                 f_str = str(f_step).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"در فیزیولوژی و فیدبک تنظیمی {mod_name}: {{{{c1::{f_str}}}}}",
+                    "question": f"در فیزیولوژی و فیدبک تنظیمی {mod_name}، مکانیسم کنترلی چگونه است؟",
+                    "answer": f"{f_str}",
                     "extra": f"مسیر سیگنالینگ و تنظیم هموستاز فیزیولوژیک {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Physiology"
                 })
@@ -3036,7 +3287,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     a_str = str(a_step).strip()
                 if a_str:
                     cards.append({
+                        "card_type": "basic",
                         "text": f"در رویکرد تشخیصی و الگوریتم بالینی {mod_name}: {{{{c1::{a_str}}}}}",
+                        "question": f"در الگوریتم بالینی {mod_name}، گام‌های تصمیم‌گیری تشخیصی چیست؟",
+                        "answer": f"{a_str}",
                         "extra": f"گام‌های تصمیم‌گیری بالینی و تریاژ تشخیصی در {mod_name}.",
                         "tag": f"PhysioPath::{mod_name}::Approach"
                     })
@@ -3046,7 +3300,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if d_pt and str(d_pt).strip():
                 d_str = str(d_pt).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"نقطه انشعاب تشخیصی و تصمیم‌گیری در {mod_name}: {{{{c1::{d_str}}}}}",
+                    "question": f"نقطه انشعاب تشخیصی و معیار تمایز بالینی در {mod_name} چیست؟",
+                    "answer": f"{d_str}",
                     "extra": f"معیار تمایز و تصمیم‌گیری قطعی در الگوریتم بالینی {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Approach"
                 })
@@ -3057,7 +3314,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if em and str(em).strip():
                 e_str = str(em).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"اقدام اورژانس و احیای فوری در {mod_name}: {{{{c1::{e_str}}}}}",
+                    "question": f"اقدام اورژانس و احیای فوری نجات‌بخش در مواجهه با {mod_name} چیست؟",
+                    "answer": f"{e_str}",
                     "extra": f"اقدام نجات‌بخش نخستین و پایدارسازی بیمار در شرایط حاد و اورژانس {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::Emergency"
                 })
@@ -3072,7 +3332,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     cr_str = str(cr).strip()
                 if cr_str:
                     cards.append({
+                        "card_type": "basic",
                         "text": f"معیار بالینی و سیستم مرحله‌بندی {mod_name}: {{{{c1::{cr_str}}}}}",
+                        "question": f"معیار بالینی و سیستم مرحله‌بندی / نمره‌دهی در {mod_name} چیست؟",
+                        "answer": f"{cr_str}",
                         "extra": f"سیستم طبقه‌بندی، نمره‌دهی بالینی و پیش‌آگهی در {mod_name}.",
                         "tag": f"PhysioPath::{mod_name}::Staging"
                     })
@@ -3081,7 +3344,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 r_str = " - ".join(str(c) for c in row if c)
                 if r_str:
                     cards.append({
+                        "card_type": "basic",
                         "text": f"معیار و طبقه‌بندی بالینی {mod_name}: {{{{c1::{r_str}}}}}",
+                        "question": f"معیار و طبقه‌بندی بالینی در {mod_name} چیست؟",
+                        "answer": f"{r_str}",
                         "extra": f"سیستم نمره‌دهی و مرحله‌بندی: {crit_obj.get('title', mod_name)}",
                         "tag": f"PhysioPath::{mod_name}::Staging"
                     })
@@ -3094,7 +3360,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if sp and str(sp).strip():
                 sp_str = str(sp).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"ملاحظه در بارداری و گروه‌های خاص در {mod_name}: {{{{c1::{sp_str}}}}}",
+                    "question": f"مهم‌ترین ملاحظه درمانی در بارداری یا گروه‌های خاص برای بیماری {mod_name} چیست؟",
+                    "answer": f"{sp_str}",
                     "extra": f"تعدیل درمانی، عوارض جنینی و ملاحظات پره‌ناتال یا ارگان‌های نارسا در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::SpecialPopulations"
                 })
@@ -3107,7 +3376,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             if cr and str(cr).strip():
                 cr_str = str(cr).strip()
                 cards.append({
+                    "card_type": "basic",
                     "text": f"اهمیت بالینی مفهوم پایه {mod_name}: {{{{c1::{cr_str}}}}}",
+                    "question": f"اهمیت بالینی مفهوم پایه {mod_name} چیست؟",
+                    "answer": f"{cr_str}",
                     "extra": f"پل ارتباطی علوم پایه با بالین و سؤالات آزمونی در {mod_name}.",
                     "tag": f"PhysioPath::{mod_name}::ClinicalRelevance"
                 })
@@ -3121,13 +3393,19 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 f_pearl = str(fig.get("exam_pearl") or "").strip()
                 if f_cap:
                     cards.append({
+                        "card_type": "basic",
                         "text": f"در تحلیل اسلاید بالینی {f_title} ({mod_name})، یافته کلیدی عبارت است از {{{{c1::{f_cap}}}}}.",
+                        "question": f"در تحلیل اسلاید بالینی «{f_title}» ({mod_name})، یافته کلیدی چیست؟",
+                        "answer": f"{f_cap}",
                         "extra": f"نکته تکمیلی / تله امتحانی: {f_pearl}" if f_pearl else f"تحلیل اطلس تصویری و اسلایدهای بالینی مبحث {mod_name}.",
                         "tag": f"PhysioPath::{mod_name}::VisualAtlas"
                     })
                 elif f_pearl:
                     cards.append({
+                        "card_type": "basic",
                         "text": f"نکته کلیدی استاد در اسلاید بالینی {f_title} ({mod_name}): {{{{c1::{f_pearl}}}}}",
+                        "question": f"نکته کلیدی استاد در اسلاید بالینی «{f_title}» ({mod_name}) چیست؟",
+                        "answer": f"{f_pearl}",
                         "extra": f"نکته دامی آزمون در اطلس تصویری مبحث {mod_name}.",
                         "tag": f"PhysioPath::{mod_name}::VisualAtlas"
                     })
@@ -3140,7 +3418,10 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             tech = str(sem.get("technique", "")).strip()
             sig = str(sem.get("clinical_significance", "")).strip()
             cards.append({
+                "card_type": "basic",
                 "text": f"در معاینه فیزیکی و ارزیابی بالینی ({topic_name})، مانور یا نشانه {{{{c1::{man}}}}} ارزیابی می‌شود.",
+                "question": f"در معاینه فیزیکی و ارزیابی بالینی ({topic_name})، مانور یا نشانه «{man}» چگونه انجام می‌شود و چه اهمیتی دارد؟",
+                "answer": f"تکنیک: {tech} ← اهمیت: {sig}",
                 "extra": f"روش و اهمیت بالینی سمیولوژی: {tech} ← {sig}",
                 "tag": f"PhysioPath::{topic_name}::Semiology"
             })
@@ -3154,13 +3435,19 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
             f_pearl = str(fig.get("exam_pearl") or "").strip()
             if f_cap:
                 cards.append({
+                    "card_type": "basic",
                     "text": f"در اطلس تصویری و اسلایدهای تدریس استاد ({f_title})، یافته بالینی/رادیولوژیک کلیدی عبارت است از {{{{c1::{f_cap}}}}}.",
+                    "question": f"در اطلس تصویری تدریس استاد ({f_title})، یافته بالینی/رادیولوژیک کلیدی چیست؟",
+                    "answer": f"{f_cap}",
                     "extra": f"نکته تکمیلی / تله امتحانی: {f_pearl}" if f_pearl else f"تحلیل اطلس تصویری دوره {topic_name}.",
                     "tag": f"PhysioPath::{topic_name}::VisualAtlas"
                 })
             elif f_pearl:
                 cards.append({
+                    "card_type": "basic",
                     "text": f"نکته طلایی استاد در اسلاید بالینی {f_title}: {{{{c1::{f_pearl}}}}}",
+                    "question": f"نکته طلایی استاد در اسلاید بالینی «{f_title}» چیست؟",
+                    "answer": f"{f_pearl}",
                     "extra": f"نکته تشخیصی اطلس تصویری دوره {topic_name}.",
                     "tag": f"PhysioPath::{topic_name}::VisualAtlas"
                 })
@@ -3170,38 +3457,71 @@ def get_or_synthesize_flashcards(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 def build_anki_tsv(data: Dict[str, Any], output_path: str):
     """
     Exports atomic cloze-deletion cards formatted as TSV for direct import into Anki.
-    Adheres strictly to Wozniak's 20 Rules:
-    1. Atomicity (Single fact per card).
-    2. Comprehension before memorization (Mechanism in Extra field).
-    3. Cloze deletion syntax: {{c1::cloze_text}}
+    Includes Anki 2.1+ file directives (#separator:tab, #html:true, #notetype:Cloze).
+    Also exports companion _basic.tsv with (#notetype:Basic) for dedicated Q&A import.
     """
     cards = get_or_synthesize_flashcards(data)
 
-    tsv_lines = []
-    # Header line for Anki import mapping
-    # Field 1: Text (Prompt/Cloze), Field 2: Extra, Field 3: Tags
+    cloze_lines = [
+        "#separator:tab",
+        "#html:true",
+        "#notetype:Cloze",
+        "#tags column:3"
+    ]
+    basic_lines = [
+        "#separator:tab",
+        "#html:true",
+        "#notetype:Basic",
+        "#tags column:4"
+    ]
+
+    has_basic = False
     for card in cards:
         text = str(card.get("text") or card.get("question") or card.get("front") or "").strip()
         if not text:
             continue
         if "{{c" not in text:
-            text = f"{{{{c1::{text}}}}}"
+            # Atomic split on colon if available, otherwise wrap
+            if ":" in text or "：" in text:
+                parts = text.split(":", 1) if ":" in text else text.split("：", 1)
+                text = f"{parts[0].strip()}: {{{{c1::{parts[1].strip()}}}}}"
+            else:
+                text = f"{{{{c1::{text}}}}}"
+
         text_clean = sanitize_anki_html(text).replace("\t", " ").replace("\n", "<br>")
         extra_val = card.get("extra") or card.get("answer") or card.get("back") or ""
         extra = sanitize_anki_html(str(extra_val)).replace("\t", " ").replace("\n", "<br>")
         tag = str(card.get("tag", "PhysioPath::General")).replace(" ", "_").replace("\t", "")
-        tsv_lines.append(f"{text_clean}\t{extra}\t{tag}")
+        cloze_lines.append(f"{text_clean}\t{extra}\t{tag}")
+
+        # Basic card line
+        q = str(card.get("question") or card.get("front") or "").strip()
+        a = str(card.get("answer") or card.get("back") or "").strip()
+        if q and a:
+            has_basic = True
+            q_clean = sanitize_anki_html(q).replace("\t", " ").replace("\n", "<br>")
+            a_clean = sanitize_anki_html(a).replace("\t", " ").replace("\n", "<br>")
+            e_clean = sanitize_anki_html(str(card.get("extra") or "")).replace("\t", " ").replace("\n", "<br>")
+            basic_lines.append(f"{q_clean}\t{a_clean}\t{e_clean}\t{tag}")
 
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(tsv_lines))
-    print(f"[OK] Anki TSV Deck exported successfully: {output_path} ({len(cards)} cards)")
+        f.write("\n".join(cloze_lines))
+    print(f"[OK] Anki Cloze TSV Deck exported successfully: {output_path} ({len(cards)} cards)")
+
+    if has_basic and output_path.endswith(".tsv"):
+        basic_path = output_path[:-4] + "_basic.tsv"
+        with open(basic_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(basic_lines))
+        print(f"[OK] Anki Basic Q&A TSV Deck exported successfully: {basic_path}")
 
 
 def build_anki_apkg(data: Dict[str, Any], output_path: str):
     """
     Packages flashcards into an interactive .apkg file if genanki is installed.
-    Enforces deterministic deck IDs and card GUIDs anchored exclusively to prompt text
-    to prevent card duplication and protect student spaced-repetition schedules.
+    Supports Smart Dual Note Type Architecture:
+    1. PhysioPath Basic Model (Front/Back) with Question/Answer separation & Medical styling.
+    2. PhysioPath Cloze Model (Cloze) with atomic deletions & Emerald highlighting.
+    Enforces deterministic deck IDs and card GUIDs anchored exclusively to prompt text.
     """
     try:
         import genanki
@@ -3214,23 +3534,84 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
         print("[INFO] No flashcards found or synthesizable; skipping .apkg export.")
         return
 
-    # Create Cloze Model with model_type=CLOZE for Anki compatibility
-    model_id = 1607392319
+    # 1. PhysioPath Basic Model (Front / Back / Extra / Source)
+    basic_model = genanki.Model(
+        1607392320,
+        'PhysioPath Basic Model',
+        fields=[
+            {'name': 'Front'},
+            {'name': 'Back'},
+            {'name': 'Extra'},
+            {'name': 'Source'},
+        ],
+        templates=[
+            {
+                'name': 'PhysioPath Clinical Q&A',
+                'qfmt': '''<div class="anki-card-container" dir="rtl">
+  <div class="anki-header-badge">
+    <span>🩺</span> <span>سوال بالینی و سناریوی تشخیصی</span>
+  </div>
+  <div class="anki-front-question">{{Front}}</div>
+  <div class="anki-footer-sub">💡 برای مشاهده پاسخ تشخیصی و تصمیم بالینی کلیک کنید</div>
+</div>''',
+                'afmt': '''<div class="anki-card-container" dir="rtl">
+  <div class="anki-header-badge anki-header-back">
+    <span>🩺</span> <span>سوال بالینی و سناریوی تشخیصی</span>
+  </div>
+  <div class="anki-front-question-compact">{{Front}}</div>
+  <div class="anki-divider"></div>
+  <div class="anki-answer-badge">
+    <span>✅</span> <span>پاسخ تشخیصی و اقدام درمانی:</span>
+  </div>
+  <div class="anki-back-answer">{{Back}}</div>
+  {{#Extra}}
+  <div class="anki-extra-box">
+    <div class="anki-extra-header">💡 مکانیزم پاتوفیزیولوژی / تله امتحانی:</div>
+    <div class="anki-extra-content">{{Extra}}</div>
+  </div>
+  {{/Extra}}
+  <div class="anki-footer">📚 دک هوشمند درسنامه پزشکی | Medical Summary Expert</div>
+</div>''',
+            },
+        ],
+        css=ANKI_MEDICAL_CSS,
+    )
+
+    # 2. PhysioPath Cloze Model (Text / Extra / Source)
     cloze_model = genanki.Model(
-        model_id,
+        1607392319,
         'PhysioPath Cloze Model',
         fields=[
             {'name': 'Text'},
             {'name': 'Extra'},
+            {'name': 'Source'},
         ],
         templates=[
             {
-                'name': 'Cloze Card',
-                'qfmt': '<div dir="rtl" style="font-family: Dubai, Arial; font-size: 20px; text-align: right;">{{cloze:Text}}</div>',
-                'afmt': '<div dir="rtl" style="font-family: Dubai, Arial; font-size: 20px; text-align: right;">{{cloze:Text}}</div><hr><div dir="rtl" style="font-family: Dubai, Arial; font-size: 16px; color: #78281F; text-align: right;">{{Extra}}</div>',
+                'name': 'PhysioPath Cloze Card',
+                'qfmt': '''<div class="anki-card-container" dir="rtl">
+  <div class="anki-header-badge anki-header-cloze">
+    <span>⚡</span> <span>جای‌خالی های‌یلد آزمونی</span>
+  </div>
+  <div class="anki-cloze-prompt">{{cloze:Text}}</div>
+  <div class="anki-footer-sub">🎯 کلیدواژه یا کات‌آف بالینی پنهان‌شده را حدس بزنید</div>
+</div>''',
+                'afmt': '''<div class="anki-card-container" dir="rtl">
+  <div class="anki-header-badge anki-header-cloze">
+    <span>⚡</span> <span>پاسخ جای‌خالی و نکته آزمونی</span>
+  </div>
+  <div class="anki-cloze-prompt">{{cloze:Text}}</div>
+  {{#Extra}}
+  <div class="anki-extra-box">
+    <div class="anki-extra-header">💡 مکانیزم پاتوفیزیولوژی / تله امتحانی:</div>
+    <div class="anki-extra-content">{{Extra}}</div>
+  </div>
+  {{/Extra}}
+  <div class="anki-footer">📚 دک هوشمند درسنامه پزشکی | Medical Summary Expert</div>
+</div>''',
             },
         ],
-        css='.card { font-family: Dubai, Arial; font-size: 18px; text-align: right; color: #262626; background-color: white; } .cloze { font-weight: bold; color: #0E6251; }',
+        css=ANKI_MEDICAL_CSS,
         model_type=genanki.Model.CLOZE
     )
 
@@ -3240,32 +3621,67 @@ def build_anki_apkg(data: Dict[str, Any], output_path: str):
     deck = genanki.Deck(deck_id, deck_name)
 
     for c in cards:
-        text = str(c.get("text") or c.get("question") or c.get("front") or "").strip()
-        if not text:
-            continue
-        # Ensure cloze syntax exists so Anki creates reviewable cards
-        if "{{c" not in text:
-            text = f"{{{{c1::{text}}}}}"
-        text = sanitize_anki_html(text)
-        extra_val = c.get("extra") or c.get("answer") or c.get("back") or ""
-        extra = sanitize_anki_html(str(extra_val))
+        card_type = str(c.get("card_type") or "").strip().lower()
+        has_qa = bool(c.get("question") and c.get("answer")) or bool(c.get("front") and c.get("back"))
+        has_cloze = "{{c" in str(c.get("text") or "")
+
         tags = [str(c.get("tag", "PhysioPath")).replace(" ", "_")]
-        # Deterministic GUID anchored strictly to normalized prompt text
-        norm_prompt = " ".join(text.strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")).replace('\u200c', ' ').split())
-        card_guid = genanki.guid_for(norm_prompt)
-        note = genanki.Note(
-            model=cloze_model,
-            fields=[text, extra],
-            tags=tags,
-            guid=card_guid
-        )
-        deck.add_note(note)
+
+        # If card explicitly declared basic or has Q&A without cloze in text, use basic model
+        if card_type == "basic" and has_qa:
+            q_text = str(c.get("question") or c.get("front") or "").strip()
+            a_text = str(c.get("answer") or c.get("back") or "").strip()
+            e_text = str(c.get("extra") or "").strip()
+
+            q_clean = sanitize_anki_html(q_text)
+            a_clean = sanitize_anki_html(a_text)
+            e_clean = sanitize_anki_html(e_text)
+
+            norm_prompt = " ".join(q_clean.strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")).replace('\u200c', ' ').split())
+            card_guid = genanki.guid_for("basic_" + norm_prompt)
+            note = genanki.Note(
+                model=basic_model,
+                fields=[q_clean, a_clean, e_clean, "PhysioPath"],
+                tags=tags,
+                guid=card_guid
+            )
+            deck.add_note(note)
+        else:
+            # Cloze model note
+            text = str(c.get("text") or "").strip()
+            if not text:
+                if has_qa:
+                    q_text = str(c.get("question") or c.get("front") or "").strip()
+                    a_text = str(c.get("answer") or c.get("back") or "").strip()
+                    text = f"{q_text}: {{{{c1::{a_text}}}}}"
+                else:
+                    continue
+
+            if "{{c" not in text:
+                if ":" in text or "：" in text:
+                    parts = text.split(":", 1) if ":" in text else text.split("：", 1)
+                    text = f"{parts[0].strip()}: {{{{c1::{parts[1].strip()}}}}}"
+                else:
+                    text = f"{{{{c1::{text}}}}}"
+
+            text_clean = sanitize_anki_html(text)
+            extra_val = c.get("extra") or c.get("answer") or c.get("back") or ""
+            extra_clean = sanitize_anki_html(str(extra_val))
+
+            norm_prompt = " ".join(text_clean.strip().translate(str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")).replace('\u200c', ' ').split())
+            card_guid = genanki.guid_for("cloze_" + norm_prompt)
+            note = genanki.Note(
+                model=cloze_model,
+                fields=[text_clean, extra_clean, "PhysioPath"],
+                tags=tags,
+                guid=card_guid
+            )
+            deck.add_note(note)
 
     genanki.Package(deck).write_to_file(output_path)
     print(f"[OK] Anki Native .apkg Package created successfully: {output_path} (Deterministic Deck ID: {deck_id})")
 
 
-# ---------------------------------------------------------------------------
 # HTML & PDF Generation Engine (Playwright + Persian BiDi Stamping)
 # ---------------------------------------------------------------------------
 

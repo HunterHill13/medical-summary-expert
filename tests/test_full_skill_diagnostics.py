@@ -1717,7 +1717,7 @@ def test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack():
     assert "callout-emergency" in html_text, "Emergency callout CSS class missing in HTML!"
 
     with open(out_tsv, "r", encoding="utf-8") as f_tsv:
-        tsv_lines = [l.strip() for l in f_tsv if l.strip()]
+        tsv_lines = [l.strip() for l in f_tsv if l.strip() and not l.startswith("#")]
     assert len(tsv_lines) >= 15, f"Expected >= 15 Anki cloze cards, got {len(tsv_lines)}"
     assert all("{{c1::" in line for line in tsv_lines), "Not all Anki cards contain cloze deletions!"
 
@@ -2916,6 +2916,138 @@ def test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
     print("[PASS] Bug AN Test Passed: Chronological topic pairing and multi-handout TOC, banners, and provenance verified.")
 
 
+
+def test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate():
+    """Bug AP: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling Gate.
+    1. Basic notes must isolate Question on Front and Answer on Back (zero answer leakage).
+    2. Cloze notes must preserve atomic clozes.
+    3. Both models must use ANKI_MEDICAL_CSS with #007A87 border, RTL BiDi, Vazirmatn typography, and dark mode.
+    4. build_anki_tsv must generate Anki directives (#notetype:Cloze) and companion _basic.tsv (#notetype:Basic).
+    5. Database inspection must verify valid card count and model types (Basic=0, Cloze=1).
+    """
+    import zipfile
+    import sqlite3
+    from build_summary_pack import (
+        build_anki_tsv,
+        build_anki_apkg,
+        get_or_synthesize_flashcards,
+        ANKI_MEDICAL_CSS
+    )
+
+    data = {
+        "topic_title": "غدد درون‌ریز پیشرفته",
+        "organ_system": "غدد درون‌ریز",
+        "anki_flashcards": [
+            {
+                "card_type": "basic",
+                "question": "در بیمار مشکوک به آکرومگالی، اقدام تشخیصی نخستین چیست؟",
+                "answer": "سنجش سطح سرمی IGF-1",
+                "extra": "به دلیل نیمه‌عمر طولانی‌تر نسبت به هورمون رشد (GH) و عدم نوسان ضربانی.",
+                "tag": "Endocrinology::Pituitary"
+            },
+            {
+                "card_type": "cloze",
+                "text": "در کم‌کاری تیروئید اولیه، سطح هورمون {{c1::TSH}} در سرم افزایش می‌یابد.",
+                "extra": "ناشی از کاهش فیدبک منفی هورمون‌های تیروئیدی بر هیپوفیز قدامی.",
+                "tag": "Endocrinology::Thyroid"
+            }
+        ],
+        "modules": [
+            {
+                "name": "فئوکروموسیتوما",
+                "diagnostics": {
+                    "best_initial_test": "سنجش متانفرین‌های آزاد پلاسما یا ادرار ۲۴ ساعته",
+                    "gold_standard": "تصویربرداری ام‌آر‌آی یا سی‌تی اسکن شکم و لگن"
+                },
+                "contraindications_and_warnings": [
+                    "تجویز بتابلاکر پیش از آلفابلاکر به دلیل خطر تشدید بحران فشار خون ممنوع است."
+                ],
+                "emergency_management": [
+                    "کنترل بحران فشار خون با فنتولامین یا نیتروپروساید وریدی."
+                ]
+            }
+        ]
+    }
+
+    out_tsv = "dist/diag_test_ap.tsv"
+    out_basic_tsv = "dist/diag_test_ap_basic.tsv"
+    out_apkg = "dist/diag_test_ap.apkg"
+
+    for p in [out_tsv, out_basic_tsv, out_apkg]:
+        if os.path.exists(p):
+            os.remove(p)
+
+    build_anki_tsv(data, out_tsv)
+    build_anki_apkg(data, out_apkg)
+
+    # 1. Assert TSV existence and headers
+    assert os.path.exists(out_tsv), "Main TSV was not created!"
+    with open(out_tsv, "r", encoding="utf-8") as f:
+        tsv_content = f.read()
+    assert "#notetype:Cloze" in tsv_content, "TSV header missing #notetype:Cloze directive!"
+    assert "#separator:tab" in tsv_content, "TSV header missing #separator:tab!"
+
+    assert os.path.exists(out_basic_tsv), "Companion _basic.tsv was not created!"
+    with open(out_basic_tsv, "r", encoding="utf-8") as f:
+        basic_content = f.read()
+    assert "#notetype:Basic" in basic_content, "Companion TSV missing #notetype:Basic directive!"
+    
+    # Assert Front of Basic card does NOT contain Answer
+    for line in basic_content.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        assert len(parts) >= 2, f"Basic line should have at least 2 fields: {line}"
+        front_field = parts[0]
+        back_field = parts[1]
+        assert "سنجش سطح سرمی IGF-1" not in front_field, "BUG DETECTED: Basic card Front contains Answer!"
+        if "آکرومگالی" in front_field:
+            assert "سنجش سطح سرمی IGF-1" in back_field, "Answer missing from Back field!"
+
+    # 2. Assert APKG package and SQLite database models
+    assert os.path.exists(out_apkg), "APKG file was not created!"
+    extract_dir = "dist/apkg_ap_check"
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(out_apkg, 'r') as z:
+        z.extract('collection.anki2', extract_dir)
+
+    conn = sqlite3.connect(os.path.join(extract_dir, 'collection.anki2'))
+    cur = conn.cursor()
+    col = cur.execute('SELECT models FROM col').fetchone()[0]
+    models = json.loads(col)
+
+    has_basic_model = False
+    has_cloze_model = False
+    for mid, mdata in models.items():
+        m_name = mdata.get('name', '')
+        if "Basic" in m_name:
+            has_basic_model = True
+            assert mdata['type'] == 0, f"Basic model type should be 0, got {mdata['type']}"
+            assert any(f['name'] == 'Front' for f in mdata['flds']), "Basic model missing 'Front' field"
+            assert any(f['name'] == 'Back' for f in mdata['flds']), "Basic model missing 'Back' field"
+        elif "Cloze" in m_name:
+            has_cloze_model = True
+            assert mdata['type'] == 1, f"Cloze model type should be 1, got {mdata['type']}"
+            assert any(f['name'] == 'Text' for f in mdata['flds']), "Cloze model missing 'Text' field"
+
+        # CSS verification
+        css = mdata.get('css', '')
+        assert "#007A87" in css, "Model CSS missing medical teal #007A87 border/theme!"
+        assert "Vazirmatn" in css or "Dubai" in css, "Model CSS missing Persian font family!"
+        assert "direction: rtl" in css, "Model CSS missing direction: rtl!"
+        assert "nightMode" in css, "Model CSS missing nightMode / dark mode support!"
+
+    assert has_basic_model, "PhysioPath Basic Model not found in APKG!"
+    assert has_cloze_model, "PhysioPath Cloze Model not found in APKG!"
+
+    card_rows = cur.execute('SELECT id, nid FROM cards').fetchall()
+    note_rows = cur.execute('SELECT id, flds FROM notes').fetchall()
+    conn.close()
+
+    assert len(card_rows) >= len(note_rows), f"Every note must yield at least 1 card! Notes: {len(note_rows)}, Cards: {len(card_rows)}"
+    print(f"[PASS] Bug AP Test Passed: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling verified ({len(note_rows)} notes -> {len(card_rows)} cards).")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3075,6 +3207,138 @@ def test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omis
     print("[PASS] Bug AO Test Passed: Exemplar Full Table-Centric Architecture and Reference Zero-Omission verified.")
 
 
+
+def test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate():
+    """Bug AP: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling Gate.
+    1. Basic notes must isolate Question on Front and Answer on Back (zero answer leakage).
+    2. Cloze notes must preserve atomic clozes.
+    3. Both models must use ANKI_MEDICAL_CSS with #007A87 border, RTL BiDi, Vazirmatn typography, and dark mode.
+    4. build_anki_tsv must generate Anki directives (#notetype:Cloze) and companion _basic.tsv (#notetype:Basic).
+    5. Database inspection must verify valid card count and model types (Basic=0, Cloze=1).
+    """
+    import zipfile
+    import sqlite3
+    from build_summary_pack import (
+        build_anki_tsv,
+        build_anki_apkg,
+        get_or_synthesize_flashcards,
+        ANKI_MEDICAL_CSS
+    )
+
+    data = {
+        "topic_title": "غدد درون‌ریز پیشرفته",
+        "organ_system": "غدد درون‌ریز",
+        "anki_flashcards": [
+            {
+                "card_type": "basic",
+                "question": "در بیمار مشکوک به آکرومگالی، اقدام تشخیصی نخستین چیست؟",
+                "answer": "سنجش سطح سرمی IGF-1",
+                "extra": "به دلیل نیمه‌عمر طولانی‌تر نسبت به هورمون رشد (GH) و عدم نوسان ضربانی.",
+                "tag": "Endocrinology::Pituitary"
+            },
+            {
+                "card_type": "cloze",
+                "text": "در کم‌کاری تیروئید اولیه، سطح هورمون {{c1::TSH}} در سرم افزایش می‌یابد.",
+                "extra": "ناشی از کاهش فیدبک منفی هورمون‌های تیروئیدی بر هیپوفیز قدامی.",
+                "tag": "Endocrinology::Thyroid"
+            }
+        ],
+        "modules": [
+            {
+                "name": "فئوکروموسیتوما",
+                "diagnostics": {
+                    "best_initial_test": "سنجش متانفرین‌های آزاد پلاسما یا ادرار ۲۴ ساعته",
+                    "gold_standard": "تصویربرداری ام‌آر‌آی یا سی‌تی اسکن شکم و لگن"
+                },
+                "contraindications_and_warnings": [
+                    "تجویز بتابلاکر پیش از آلفابلاکر به دلیل خطر تشدید بحران فشار خون ممنوع است."
+                ],
+                "emergency_management": [
+                    "کنترل بحران فشار خون با فنتولامین یا نیتروپروساید وریدی."
+                ]
+            }
+        ]
+    }
+
+    out_tsv = "dist/diag_test_ap.tsv"
+    out_basic_tsv = "dist/diag_test_ap_basic.tsv"
+    out_apkg = "dist/diag_test_ap.apkg"
+
+    for p in [out_tsv, out_basic_tsv, out_apkg]:
+        if os.path.exists(p):
+            os.remove(p)
+
+    build_anki_tsv(data, out_tsv)
+    build_anki_apkg(data, out_apkg)
+
+    # 1. Assert TSV existence and headers
+    assert os.path.exists(out_tsv), "Main TSV was not created!"
+    with open(out_tsv, "r", encoding="utf-8") as f:
+        tsv_content = f.read()
+    assert "#notetype:Cloze" in tsv_content, "TSV header missing #notetype:Cloze directive!"
+    assert "#separator:tab" in tsv_content, "TSV header missing #separator:tab!"
+
+    assert os.path.exists(out_basic_tsv), "Companion _basic.tsv was not created!"
+    with open(out_basic_tsv, "r", encoding="utf-8") as f:
+        basic_content = f.read()
+    assert "#notetype:Basic" in basic_content, "Companion TSV missing #notetype:Basic directive!"
+    
+    # Assert Front of Basic card does NOT contain Answer
+    for line in basic_content.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        assert len(parts) >= 2, f"Basic line should have at least 2 fields: {line}"
+        front_field = parts[0]
+        back_field = parts[1]
+        assert "سنجش سطح سرمی IGF-1" not in front_field, "BUG DETECTED: Basic card Front contains Answer!"
+        if "آکرومگالی" in front_field:
+            assert "سنجش سطح سرمی IGF-1" in back_field, "Answer missing from Back field!"
+
+    # 2. Assert APKG package and SQLite database models
+    assert os.path.exists(out_apkg), "APKG file was not created!"
+    extract_dir = "dist/apkg_ap_check"
+    os.makedirs(extract_dir, exist_ok=True)
+    with zipfile.ZipFile(out_apkg, 'r') as z:
+        z.extract('collection.anki2', extract_dir)
+
+    conn = sqlite3.connect(os.path.join(extract_dir, 'collection.anki2'))
+    cur = conn.cursor()
+    col = cur.execute('SELECT models FROM col').fetchone()[0]
+    models = json.loads(col)
+
+    has_basic_model = False
+    has_cloze_model = False
+    for mid, mdata in models.items():
+        m_name = mdata.get('name', '')
+        if "Basic" in m_name:
+            has_basic_model = True
+            assert mdata['type'] == 0, f"Basic model type should be 0, got {mdata['type']}"
+            assert any(f['name'] == 'Front' for f in mdata['flds']), "Basic model missing 'Front' field"
+            assert any(f['name'] == 'Back' for f in mdata['flds']), "Basic model missing 'Back' field"
+        elif "Cloze" in m_name:
+            has_cloze_model = True
+            assert mdata['type'] == 1, f"Cloze model type should be 1, got {mdata['type']}"
+            assert any(f['name'] == 'Text' for f in mdata['flds']), "Cloze model missing 'Text' field"
+
+        # CSS verification
+        css = mdata.get('css', '')
+        assert "#007A87" in css, "Model CSS missing medical teal #007A87 border/theme!"
+        assert "Vazirmatn" in css or "Dubai" in css, "Model CSS missing Persian font family!"
+        assert "direction: rtl" in css, "Model CSS missing direction: rtl!"
+        assert "nightMode" in css, "Model CSS missing nightMode / dark mode support!"
+
+    assert has_basic_model, "PhysioPath Basic Model not found in APKG!"
+    assert has_cloze_model, "PhysioPath Cloze Model not found in APKG!"
+
+    card_rows = cur.execute('SELECT id, nid FROM cards').fetchall()
+    note_rows = cur.execute('SELECT id, flds FROM notes').fetchall()
+    conn.close()
+
+    assert len(card_rows) >= len(note_rows), f"Every note must yield at least 1 card! Notes: {len(note_rows)}, Cards: {len(card_rows)}"
+    print(f"[PASS] Bug AP Test Passed: Smart Dual Note Type (Basic Q&A + Atomic Cloze) and High-Yield Teal Medical Styling verified ({len(note_rows)} notes -> {len(card_rows)} cards).")
+
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3118,4 +3382,5 @@ if __name__ == "__main__":
     test_bug_am_semantic_binding_and_cutoff_integrity_gates()
     test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
     test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission()
+    test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

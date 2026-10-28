@@ -100,6 +100,17 @@ TABLE_ARCHETYPES = {
 # BiDi & OpenXML Typography Helpers for Word (.docx) & TeX Sanitization
 # ---------------------------------------------------------------------------
 
+
+def sanitize_slide_references(text: str) -> str:
+    """Strips unwanted slide and page citation markers like [اسلاید ۱] or اسلاید ۲: from tables."""
+    if not text:
+        return ""
+    t = str(text)
+    t = re.sub(r'\[\s*اسلاید\s*\d+\s*\]', '', t)
+    t = re.sub(r'\bاسلاید\s*\d+\s*[:\-–—]\s*', '', t)
+    t = re.sub(r'\b(Slide|slide)\s*\d+\s*[:\-–—]?\s*', '', t)
+    return t.strip()
+
 def sanitize_medical_text_symbols(text: str) -> str:
     """
     Sanitizes TeX math delimiters, arrows, comparison operators, and common chemical
@@ -208,8 +219,8 @@ def format_cell_html(text: str) -> str:
         if not l:
             continue
         # Color highlights (Rule 25)
-        l = re.sub(r'==(.*?)==', r'<mark style="background-color: #FEF08A; padding: 1px 4px; border-radius: 3px;">\1</mark>', l)
-        l = re.sub(r'!!(.*?)!!', r'<mark style="background-color: #FEE2E2; color: #991B1B; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', l)
+        l = re.sub(r'==(.*?)==', r'<mark style="background-color: rgba(254, 249, 195, 0.55); border-bottom: 1.5px solid #FDE047; padding: 1px 4px; border-radius: 3px;">\1</mark>', l)
+        l = re.sub(r'!!(.*?)!!', r'<mark style="background-color: rgba(255, 241, 242, 0.65); color: #881337; border-bottom: 1.5px solid #FDA4AF; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', l)
         # In-cell badge replacements with high-contrast colored spans
         l = re.sub(r'(🔴\s*تله\s*(?:بزرگ\s*)?امتحانی(?:\s*:\s*)?)', r'<span class="badge-trap">\1</span>', l)
         l = re.sub(r'(⚠️\s*خطای\s*(?:فاحش\s*|رایج\s*)(?:پزشکی\s*)?(?:\s*:\s*)?)', r'<span class="badge-error">\1</span>', l)
@@ -460,10 +471,10 @@ def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
             rPr.append(parse_xml(r'<w:iCs {}/>'.format(nsdecls('w'))))
 
     if highlight_color == "yellow":
-        rPr.append(parse_xml(r'<w:shd {} w:fill="FEF08A"/>'.format(nsdecls('w'))))
+        rPr.append(parse_xml(r'<w:shd {} w:fill="FEF9C3"/>'.format(nsdecls('w'))))
     elif highlight_color == "red":
-        rPr.append(parse_xml(r'<w:shd {} w:fill="FEE2E2"/>'.format(nsdecls('w'))))
-        rPr.append(parse_xml(r'<w:color {} w:val="991B1B"/>'.format(nsdecls('w'))))
+        rPr.append(parse_xml(r'<w:shd {} w:fill="FFF1F2"/>'.format(nsdecls('w'))))
+        rPr.append(parse_xml(r'<w:color {} w:val="881337"/>'.format(nsdecls('w'))))
 
     return run
 
@@ -723,7 +734,8 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
         p = cell.paragraphs[0]
         set_p_rtl(p, space_before_pt=0, space_after_pt=0)
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        add_r(p, str(h_text), font_name=FONT_DUBAI, size_pt=9.5, bold=True,
+        clean_h = sanitize_slide_references(str(h_text))
+        add_r(p, clean_h, font_name=FONT_DUBAI, size_pt=9.0, bold=True,
               color_rgb=(0xFF, 0xFF, 0xFF), is_rtl=True)
 
     # Data Rows
@@ -750,23 +762,26 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
                 l = line.strip()
                 if not l:
                     continue
+                clean_l = sanitize_slide_references(l)
+                if not clean_l:
+                    continue
                 # In-cell badge recognition
                 badge_color = None
-                if any(k in l for k in ["تله امتحانی", "🔴", "تله بزرگ"]):
+                if any(k in clean_l for k in ["تله امتحانی", "🔴", "تله بزرگ"]):
                     badge_color = COLOR_RUBY_RED
-                elif any(k in l for k in ["خطای رایج", "خطای فاحش", "⚠️"]):
+                elif any(k in clean_l for k in ["خطای رایج", "خطای فاحش", "⚠️"]):
                     badge_color = COLOR_AMBER_ORANGE
-                elif any(k in l for k in ["استاندارد طلایی", "💎"]):
+                elif any(k in clean_l for k in ["استاندارد طلایی", "💎"]):
                     badge_color = COLOR_EMERALD_GREEN
-                elif any(k in l for k in ["نکته", "مهم", "📌"]):
+                elif any(k in clean_l for k in ["نکته", "مهم", "📌"]):
                     badge_color = COLOR_PRIMARY_TEAL
 
                 is_anchor = (col_idx == 0)
                 if badge_color:
-                    add_bidi_text(p, l, font_name=FONT_DUBAI, size_pt=9.0,
+                    add_bidi_text(p, clean_l, font_name=FONT_DUBAI, size_pt=8.5,
                                   bold=True, color_rgb=badge_color)
                 else:
-                    add_bidi_text(p, l, font_name=FONT_DUBAI, size_pt=9.0,
+                    add_bidi_text(p, clean_l, font_name=FONT_DUBAI, size_pt=8.5,
                                   bold=is_anchor, color_rgb=COLOR_PRIMARY_TEAL if is_anchor else COLOR_TEXT_CHARCOAL)
 
     # Set proportional column widths for A4 portrait
@@ -813,7 +828,7 @@ def add_comparison_table(doc, title: str, headers: List[str], rows: List[List[st
     # Header Row
     for col_idx, h_text in enumerate(headers):
         cell = table.cell(0, col_idx)
-        set_cell_margins(cell, top=140, bottom=140, left=140, right=140)
+        set_cell_margins(cell, top=100, bottom=100, left=120, right=120)
         set_cell_shading(cell, COLOR_TABLE_HEADER_BG)
         cell._tc.get_or_add_tcPr().append(parse_xml(
             r'<w:tcBorders {}><w:top w:val="single" w:sz="6" w:color="78281F"/><w:bottom w:val="single" w:sz="12" w:color="78281F"/><w:left w:val="none"/><w:right w:val="none"/></w:tcBorders>'.format(nsdecls('w'))
@@ -821,7 +836,8 @@ def add_comparison_table(doc, title: str, headers: List[str], rows: List[List[st
         p = cell.paragraphs[0]
         set_p_rtl(p, space_before_pt=0, space_after_pt=0)
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        add_r(p, h_text, font_name=FONT_DUBAI, size_pt=10.0, bold=True,
+        clean_hdr = sanitize_slide_references(str(h_text))
+        add_r(p, clean_hdr, font_name=FONT_DUBAI, size_pt=9.0, bold=True,
               color_rgb=(0xFF, 0xFF, 0xFF), is_rtl=True)
 
     # Data Rows
@@ -831,7 +847,7 @@ def add_comparison_table(doc, title: str, headers: List[str], rows: List[List[st
         safe_row = r_data[:len(headers)] if isinstance(r_data, (list, tuple)) else [str(r_data)]
         for col_idx, cell_value in enumerate(safe_row):
             cell = table.cell(row_idx + 1, col_idx)
-            set_cell_margins(cell, top=120, bottom=120, left=140, right=140)
+            set_cell_margins(cell, top=80, bottom=80, left=120, right=120)
             if bg_fill != "FFFFFF":
                 set_cell_shading(cell, bg_fill)
             cell._tc.get_or_add_tcPr().append(parse_xml(
@@ -841,7 +857,8 @@ def add_comparison_table(doc, title: str, headers: List[str], rows: List[List[st
             set_p_rtl(p, space_before_pt=1, space_after_pt=2)
             # Make the first column slightly bolder as the condition/drug anchor
             is_anchor = (col_idx == 0)
-            add_bidi_text(p, str(cell_value), font_name=FONT_DUBAI, size_pt=9.5,
+            clean_cell = sanitize_slide_references(str(cell_value))
+            add_bidi_text(p, clean_cell, font_name=FONT_DUBAI, size_pt=8.5,
                           bold=is_anchor, color_rgb=COLOR_PRIMARY_BURGUNDY if is_anchor else COLOR_TEXT_CHARCOAL)
 
     # Space after table
@@ -1001,6 +1018,28 @@ def render_mermaid_diagram_to_png(
     os.makedirs(os.path.dirname(os.path.abspath(output_png_path)), exist_ok=True)
     clean_code = clean_mermaid_code(mermaid_code)
 
+    # Enrich Mermaid code with 5-color semantic classes if not already present
+    enriched_code = clean_code
+    if "classDef" not in enriched_code:
+        classes_header = """
+    classDef startNode fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#0369A1;
+    classDef organNode fill:#E6FFFA,stroke:#0D9488,stroke-width:2px,color:#115E59;
+    classDef decisionNode fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E;
+    classDef diseaseNode fill:#FFE4E6,stroke:#E11D48,stroke-width:2px,color:#9F1239;
+    classDef actionNode fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#15803D;"""
+        node_ids = re.findall(r'\b([A-Za-z0-9_]+)\[', enriched_code)
+        class_assignments = []
+        for n_idx, nid in enumerate(node_ids):
+            if n_idx == 0:
+                class_assignments.append(f"    class {nid} startNode;")
+            elif n_idx == len(node_ids) - 1:
+                class_assignments.append(f"    class {nid} actionNode;")
+            elif n_idx % 3 == 1:
+                class_assignments.append(f"    class {nid} organNode;")
+            else:
+                class_assignments.append(f"    class {nid} decisionNode;")
+        enriched_code = enriched_code + "\n" + classes_header + "\n" + "\n".join(class_assignments)
+
     edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     exec_path = edge_exe if os.path.exists(edge_exe) else None
 
@@ -1100,7 +1139,7 @@ __CLEAN_CODE__
     </div>
 </body>
 </html>"""
-    html_content = html_template.replace("__TITLE__", title).replace("__CLEAN_CODE__", clean_code)
+    html_content = html_template.replace("__TITLE__", title).replace("__CLEAN_CODE__", enriched_code)
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
@@ -1697,7 +1736,7 @@ def render_docx_section_block(doc, sec: Dict[str, Any], sec_idx: int = 1, chapte
 
     p_sec = doc.add_paragraph()
     set_p_rtl(p_sec, space_before_pt=14, space_after_pt=4)
-    add_r(p_sec, f"■ {sec_title}", font_name=FONT_DUBAI, size_pt=13.0, bold=True,
+    add_r(p_sec, f"■ {sec_title}", font_name=FONT_DUBAI, size_pt=10.5, bold=True,
           color_rgb=COLOR_PRIMARY_TEAL, is_rtl=True)
 
     if sec_headers and sec_rows:
@@ -4388,7 +4427,7 @@ table {
     width: 100%;
     border-collapse: collapse;
     margin: 10px 0;
-    font-size: 9.0pt;
+    font-size: 8.5pt;
     page-break-inside: auto;
     break-inside: auto;
     direction: rtl;
@@ -4408,7 +4447,7 @@ th {
     padding: 7px 10px;
     border: 1px solid #007A87;
     text-align: right;
-    font-size: 9.2pt;
+    font-size: 8.8pt;
     direction: rtl;
 }
 td {
@@ -4416,7 +4455,7 @@ td {
     border: 1px solid #CBD5E1;
     vertical-align: top;
     text-align: right;
-    line-height: 1.55;
+    line-height: 1.38;
     direction: rtl;
 }
 tr:nth-child(even) { background-color: #F0FDFA; }

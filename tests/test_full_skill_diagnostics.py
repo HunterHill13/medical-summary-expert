@@ -3362,9 +3362,9 @@ def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
 
     # Verify highlight XML elements in Word runs
     doc_xml = "".join([p._p.xml for p in doc.paragraphs] + [c._tc.xml for t in doc.tables for r in t.rows for c in r.cells])
-    assert 'w:fill="FEF08A"' in doc_xml, "Yellow highlight FEF08A missing from Word cell runs!"
-    assert 'w:fill="FEE2E2"' in doc_xml, "Red highlight FEE2E2 missing from Word cell runs!"
-    assert 'w:val="991B1B"' in doc_xml, "Dark red font color 991B1B missing from Word cell runs!"
+    assert ('w:fill="FEF9C3"' in doc_xml or 'w:fill="FEF08A"' in doc_xml), "Yellow highlight missing from Word cell runs!"
+    assert ('w:fill="FFF1F2"' in doc_xml or 'w:fill="FEE2E2"' in doc_xml), "Red highlight missing from Word cell runs!"
+    assert ('w:val="881337"' in doc_xml or 'w:val="991B1B"' in doc_xml), "Red font color missing from Word cell runs!"
 
     # 3. Test HTML Rendering with Highlighting
     out_html = "dist/diag_test_ar.html"
@@ -3372,8 +3372,8 @@ def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
     assert os.path.exists(out_html), "HTML was not generated!"
     with open(out_html, "r", encoding="utf-8") as f_html:
         html_content = f_html.read()
-    assert "background-color: #FEF08A" in html_content, "HTML missing yellow mark background!"
-    assert "background-color: #FEE2E2" in html_content, "HTML missing soft red mark background!"
+    assert ("rgba(254, 249, 195" in html_content or "#FEF08A" in html_content), "HTML missing yellow mark background!"
+    assert ("rgba(255, 241, 242" in html_content or "#FEE2E2" in html_content), "HTML missing soft red mark background!"
     assert "کپسول طلایی شب امتحان" not in html_content, "HTML leaked trailing crash sheet!"
 
     # 4. Test Strict Page Budget Audit (4-6 pages)
@@ -3416,6 +3416,104 @@ def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
     assert "==" in BATCH_PROMPT_TEMPLATE and "!!" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE must specify == and !! color highlighting"
 
     print(f"[PASS] Bug AR Test Passed: Pure Table Color Highlighting, Zero Trailing Bloat, and 4-6 Page Budget Gate verified (Est: {opt_res['estimated_a4_pages']} pgs vs Bloated: {bloated_res['estimated_a4_pages']} pgs).")
+
+
+def test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_charts():
+    """Bug AS (v3.9.11 - Rule 26): Compact 8.5pt Table Typography, Slide Ref Sanitization,
+    Subtle Pastel Highlights & Multi-Color Infographic Flowcharts.
+    1. Font size: Word table cell font is 8.5pt (tight margins), headers 9.0pt, section titles 10.5pt.
+    2. Slide reference sanitization: Unwanted slide citations like '[اسلاید ۵]' or 'اسلاید ۱:' are stripped from cells.
+    3. Subtle Pastel Highlights: Word XML contains FEF9C3 (yellow) and FFF1F2 with 881337 (soft red).
+       HTML contains rgba(254, 249, 195) and rgba(255, 241, 242).
+    4. Multi-Color Flowchart: render_mermaid_diagram_to_png automatically injects multi-colored semantic classes
+       (startNode #E0F2FE, organNode #E6FFFA, decisionNode #FEF3C7, actionNode #DCFCE7).
+    5. Prompt directives: BATCH_PROMPT_TEMPLATE strictly bans slide numbers in column 1 and specifies multi-color flowchart palette.
+    """
+    from build_summary_pack import (
+        build_docx_summary,
+        build_html_summary,
+        render_mermaid_diagram_to_png,
+        sanitize_slide_references
+    )
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+    import docx
+    os.makedirs("dist", exist_ok=True)
+
+    # 1. Test Slide Reference Sanitizer Function
+    assert sanitize_slide_references("[اسلاید ۵] کاهش ترشح هورمون") == "کاهش ترشح هورمون"
+    assert sanitize_slide_references("اسلاید ۲: پرولاکتینوما") == "پرولاکتینوما"
+    assert sanitize_slide_references("Slide 12: Pituitary Adenoma") == "Pituitary Adenoma"
+
+    test_data = {
+        "topic_title": "فیزیولوژی غدد و هورمون‌های استروئیدی",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: مسیرهای بیوسنتز و تمایز استروئیدها",
+                "headers": ["مبحث و مفهوم علمی", "مسیر بیوشیمیایی", "نکات کلیدی و تأکیدات آزمونی"],
+                "rows": [
+                    [
+                        "[اسلاید ۳] کلسترول درون‌سلولی",
+                        "کلسترول → پرگننولون توسط آنزیم CYP11A1",
+                        "• ==آنزیم شکستن زنجیره جانبی کلسترول== گام محدودکننده سرعت سنتز است.\n• !!کمبود ۲۱-هیدروکسیلاز شایع‌ترین علت CAH است!!"
+                    ],
+                    [
+                        "اسلاید ۴: کورتیزول و آلدوسترون",
+                        "مسیر زونا گلومرولوزا و فاسیکولاتا",
+                        "• آلدوسترون سنتاز منحصراً در زونا گلومرولوزا بیان می‌شود."
+                    ]
+                ],
+                "flowchart": """flowchart TD
+    A[محرک اولیه ACTH] --> B[غده آدرنال و قشر]
+    B --> C[سنجش سطح کورتیزول پلاسما]
+    C --> D[پاسخ نرمال و مهار ترشح]"""
+            }
+        ]
+    }
+
+    # 2. Build DOCX and inspect typography and slide cleaning
+    out_docx = "dist/diag_test_as.docx"
+    build_docx_summary(test_data, out_docx)
+    assert os.path.exists(out_docx), "DOCX not created!"
+    doc = docx.Document(out_docx)
+
+    # Verify slide references are cleanly stripped from cells
+    docx_text = "\n".join([c.text for t in doc.tables for r in t.rows for c in r.cells])
+    assert "[اسلاید ۳]" not in docx_text, "Slide citation [اسلاید ۳] was not stripped from table!"
+    assert "اسلاید ۴:" not in docx_text, "Slide citation اسلاید ۴: was not stripped from table!"
+    assert "کلسترول درون‌سلولی" in docx_text, "Core entity lost during slide sanitization!"
+
+    # Verify subtle pastel highlight XML in Word runs
+    doc_xml = "".join([p._p.xml for p in doc.paragraphs] + [c._tc.xml for t in doc.tables for r in t.rows for c in r.cells])
+    assert 'w:fill="FEF9C3"' in doc_xml, "Subtle pastel yellow highlight FEF9C3 missing from Word!"
+    assert 'w:fill="FFF1F2"' in doc_xml, "Subtle pastel red highlight FFF1F2 missing from Word!"
+    assert 'w:val="881337"' in doc_xml, "Soft deep berry text color 881337 missing from Word!"
+
+    # 3. Build HTML and inspect table font and highlight CSS
+    out_html = "dist/diag_test_as.html"
+    build_html_summary(test_data, out_html)
+    assert os.path.exists(out_html), "HTML not created!"
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    assert "font-size: 8.5pt" in html_content, "HTML table CSS missing 8.5pt font size!"
+    assert "rgba(254, 249, 195" in html_content, "HTML missing subtle pastel yellow mark!"
+    assert "rgba(255, 241, 242" in html_content, "HTML missing subtle pastel red mark!"
+
+    # 4. Verify Multi-Color Flowchart Rendering
+    out_png = "dist/diag_test_as_flowchart.png"
+    if os.path.exists(out_png):
+        os.remove(out_png)
+    rendered = render_mermaid_diagram_to_png(test_data["sections"][0]["flowchart"], out_png, title="مسیر هورمونی")
+    assert rendered is True, "Flowchart failed to render to PNG!"
+    assert os.path.exists(out_png), "Flowchart PNG was not saved!"
+    assert os.path.getsize(out_png) > 1000, "Flowchart PNG is unexpectedly empty!"
+
+    # 5. Verify BATCH_PROMPT_TEMPLATE Directives
+    assert "منع مطلق درج شماره اسلاید" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE missing strict ban on slide references!"
+    assert "چندرنگ" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE missing multi-color flowchart directive!"
+
+    print("[PASS] Bug AS Test Passed: Compact 8.5pt typography, slide sanitization, subtle pastel highlights, and multi-color infographic flowcharts verified.")
 
 
 if __name__ == "__main__":
@@ -3464,4 +3562,5 @@ if __name__ == "__main__":
     test_bug_ap_anki_smart_dual_note_type_and_medical_styling_gate()
     test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline()
     test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate()
-    print("=== ALL DIAGNOSTIC TESTS (44/44) COMPLETED SUCCESSFULLY ===")
+    test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_charts()
+    print("=== ALL DIAGNOSTIC TESTS (45/45) COMPLETED SUCCESSFULLY ===")

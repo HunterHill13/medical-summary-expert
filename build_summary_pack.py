@@ -742,6 +742,24 @@ def add_thematic_table(doc, headers: List[str], rows: List[List[str]], title: Op
                     add_bidi_text(p, l, font_name=FONT_DUBAI, size_pt=9.0,
                                   bold=is_anchor, color_rgb=COLOR_PRIMARY_TEAL if is_anchor else COLOR_TEXT_CHARCOAL)
 
+    # Set proportional column widths for A4 portrait
+    col_widths = []
+    if len(headers) == 3:
+        col_widths = [Inches(1.5), Inches(2.3), Inches(2.5)]
+    elif len(headers) == 4:
+        col_widths = [Inches(1.3), Inches(1.8), Inches(1.5), Inches(1.7)]
+    elif len(headers) == 5:
+        col_widths = [Inches(1.1), Inches(1.3), Inches(1.3), Inches(1.3), Inches(1.3)]
+    else:
+        col_widths = [Inches(6.3 / max(1, len(headers)))] * len(headers)
+
+    for c_idx, width in enumerate(col_widths):
+        if c_idx < len(table.columns):
+            table.columns[c_idx].width = width
+            for row in table.rows:
+                if c_idx < len(row.cells):
+                    row.cells[c_idx].width = width
+
     # Space after table
     p_after = doc.add_paragraph()
     set_p_rtl(p_after, space_before_pt=0, space_after_pt=6)

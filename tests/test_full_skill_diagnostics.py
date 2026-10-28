@@ -2957,5 +2957,165 @@ if __name__ == "__main__":
     test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
     test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
     test_bug_am_semantic_binding_and_cutoff_integrity_gates()
+
+
+def test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission():
+    """
+    Test Bug AO (v3.9.7): Exemplar Full Table-Centric Architecture (Rule 22) based on 1.pdf:
+    - Standard 3-column & 4-column thematic table sections.
+    - Proportional column width distribution in Word study guide.
+    - 100% zero omission of Harrison notes, class slide pearls, and cutoffs.
+    - Word cantSplit, tblHeader, and universal RTL in HTML/PDF.
+    - End-of-document pharmacology master matrix & morning exam checklist parity.
+    """
+    from build_summary_pack import build_docx_summary, build_markdown_summary, build_html_summary
+    os.makedirs("dist", exist_ok=True)
+    sample_endocrine_data = {
+        "topic_title": "اصول فیزیوپاتولوژی و بیماری‌های غدد درون‌ریز",
+        "topic_title_en": "Principles of Endocrinology & Pathophysiology",
+        "organ_system": "غدد درون‌ریز",
+        "institution": "دانشگاه بق",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: اصول پاتوفیزیولوژی و اتیولوژی بیماری‌های اندوکرین (هاریسون بخش ۱)",
+                "headers": ["مکانیسم پاتوفیزیولوژیک", "علل و اتیولوژی‌های شایع", "نمونه‌های بالینی و نکات امتحانی"],
+                "rows": [
+                    [
+                        "کاهش ترشح (Hypofunction)",
+                        "• تخریب خودایمنی (Autoimmune)\n• آسیب‌های ایاتروژنیک (جراحی، رادیوتراپی)\n• عفونت و التهاب / نقایص ژنتیکی",
+                        "• هاشیموتو، دیابت نوع ۱، نارسایی اولیه آدرنال (آدیسون)\n• هایپوتیروئیدی پس از ید رادیواکتیو یا تیروئیدکتومی\n• 📌 نکته: سل آدرنال و هایپرپلازی مادرزادی آدرنال (CAH)"
+                    ],
+                    [
+                        "افزایش ترشح (Hyperfunction)",
+                        "• نئوپلاسم‌های خوش‌خیم و بدخیم (آدنوم‌ها)\n• تحریک خودایمنی (آنتی‌بادی‌های محرک)\n• مصرف دارویی و ایاتروژنیک",
+                        "• آدنوم هیپوفیز (پرولاکتینوما، کوشینگ، آکرومگالی)، MEN\n• 🔴 تله امتحانی: بیماری گریوز (تحریک مداوم گیرنده TSH با TSI)\n• کوشینگ ایاتروژنیک ناشی از استروئید درازمدت؛ تیروتوکسیکوز ساختگی"
+                    ],
+                    [
+                        "مقاومت هورمونی (End-Organ Resistance)",
+                        "• نقص در ساختار گیرنده سطحی/هسته‌ای\n• نقص در مسیرهای انتقال پیام پس‌گیرنده‌ای",
+                        "• شایع‌ترین نمونه بالینی مقاومت به انسولین در دیابت نوع ۲\n• سندرم مقاومت به هورمون تیروئید (RTH)، مقاومت به آندروژن (AIS)"
+                    ]
+                ]
+            },
+            {
+                "section_id": "sec_02",
+                "title": "بخش ۲: کلاس‌های بیوشیمیایی هورمون‌ها و ویژگی‌های ساختاری",
+                "headers": ["کلاس بیوشیمیایی", "هورمون‌های شاخص", "ویژگی‌های اختصاصی و نکات امتحانی"],
+                "rows": [
+                    [
+                        "مشتقات اسید آمینه",
+                        "تیروزین -> کاتکول‌آمین‌ها، دوپامین، T3 و T4",
+                        "نیمه‌عمر کاتکول‌آمین‌ها بسیار کوتاه؛ برعکس T4 طولانی‌ترین نیمه‌عمر (~۷ روز) است."
+                    ],
+                    [
+                        "نوروپپتیدهای کوچک",
+                        "GnRH, TRH، سوماتواستاتین، وازوپرسین",
+                        "پپتیدهای کوتاه هیپوتالاموسی؛ ترشح ضربانی از طریق سیستم پورتال."
+                    ]
+                ]
+            },
+            {
+                "section_id": "sec_03",
+                "title": "بخش ۳: خانواده گیرنده‌ها، افکتورها و مسیرهای انتقال پیام سلولی",
+                "headers": ["کلاس گیرنده", "مسیر و پیام‌رسان ثانویه", "هورمون‌های الگو", "اهمیت و ارتباط بالینی"],
+                "rows": [
+                    [
+                        "GPCR مسیر Gs",
+                        "تحریک آدنیلیل‌سیکلاز -> cAMP ↑ -> فعال‌سازی PKA",
+                        "LH, FSH, TSH, ACTH, PTH، گلوکاگون",
+                        "موتاسیون فعال‌کننده Gsα در سندرم مک‌کون آلبرایت دیده می‌شود."
+                    ]
+                ]
+            }
+        ],
+        "master_pharmacology_matrix": {
+            "title": "ماتریس جامع داروشناسی غدد",
+            "headers": ["دسته دارویی", "نام دارو", "مکانیسم اثر", "اندیکاسیون", "عوارض", "نکته آزمون"],
+            "rows": [
+                ["آگونیست‌های دوپامین", "کابرگولین (Cabergoline)", "تحریک D2 -> مهار پرولاکتین", "پرولاکتینوما", "تهوع", "تحمل بهتر از بروموکریپتین"]
+            ]
+        },
+        "morning_checklist": [
+            "در Stalk Effect پرولاکتین معمولاً زیر ۱۵۰ ng/mL است در حالی که در پرولاکتینوما بالای ۲۰۰ است.",
+            "بررسی اثربخشی لووتیروکسین حداقل ۶ تا ۸ هفته بعد انجام می‌شود."
+        ]
+    }
+
+    # 1. Build DOCX
+    out_docx = "dist/diag_test_ao.docx"
+    build_docx_summary(sample_endocrine_data, out_docx)
+    assert os.path.exists(out_docx), "Exemplar Full Table-Centric DOCX not generated!"
+    d = docx.Document(out_docx)
+    assert len(d.tables) >= 3, f"Expected at least 3 tables, found {len(d.tables)}"
+    docx_text = "\n".join([p.text for p in d.paragraphs] + [c.text for t in d.tables for r in t.rows for c in r.cells])
+    assert "بخش ۱: اصول پاتوفیزیولوژی" in docx_text
+    assert "کاهش ترشح" in docx_text and "Hypofunction" in docx_text
+    assert "مک‌کون آلبرایت" in docx_text
+    assert "کابرگولین" in docx_text
+
+    # 2. Build Markdown
+    out_md = "dist/diag_test_ao.md"
+    build_markdown_summary(sample_endocrine_data, out_md)
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "بخش ۱: اصول پاتوفیزیولوژی" in md_text
+    assert "مکانیسم پاتوفیزیولوژیک" in md_text
+    assert "کابرگولین" in md_text
+
+    # 3. Build HTML
+    out_html = "dist/diag_test_ao.html"
+    build_html_summary(sample_endocrine_data, out_html)
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert 'dir="rtl"' in html_text
+    assert "بخش ۱: اصول پاتوفیزیولوژی" in html_text
+    assert "کلاس گیرنده" in html_text
+
+    print("[PASS] Bug AO Test Passed: Exemplar Full Table-Centric Architecture and Reference Zero-Omission verified.")
+
+
+if __name__ == "__main__":
+    print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
+    test_bug_a_apkg_synthesis_when_empty()
+    test_bug_b_persian_units_and_prefixes()
+    test_bug_c_table_column_overflow()
+    test_bug_d_pharmacology_keys_interoperability()
+    test_bug_e_null_diagnostics_no_orphan_headers()
+    test_bug_f_sdt_content_control_unrolling()
+    test_bug_g_none_resilience_across_all_builders()
+    test_bug_h_merge_batches_resilience()
+    test_bug_i_anki_cloze_model_type_and_card_generation()
+    test_bug_j_partition_empty_and_markdown_tables()
+    test_bug_k_decimal_sentence_splitting_and_exact_number_matching()
+    test_bug_l_empty_callout_box_suppression()
+    test_bug_m_word_break_and_tab_preservation()
+    test_bug_n_master_matrices_word_markdown_parity()
+    test_bug_o_contraindication_false_negative_prevention()
+    test_bug_p_thousands_and_arabic_decimal_commas()
+    test_bug_q_anki_contraindication_and_alert_synthesis()
+    test_bug_r_table_cell_textbox_preservation()
+    test_bug_s_english_prose_stop_words_in_entity_recall()
+    test_bug_t_html_and_pdf_generation_with_bidi_stamping()
+    test_bug_u_anti_pharmacology_skew_illness_script_integrity()
+    test_bug_v_clinical_semiology_track_and_anki_synthesis()
+    test_bug_w_morning_exam_checklist_and_comparative_matrices()
+    test_bug_x_pdf_designer_engine_dual_pass_and_geometry()
+    test_bug_y_comprehensive_course_bundling()
+    test_bug_z_polymorphic_modules_and_balanced_coverage()
+    test_bug_aa_high_compression_ratio_and_anti_bloat_audit()
+    test_bug_ab_ensure_master_matrices_polymorphic_parity_and_checklist()
+    test_bug_ac_staging_classification_and_diagnostic_criteria_support()
+    test_bug_ad_emergency_and_special_populations_support()
+    test_bug_ae_universal_dynamic_syndrome_and_disease_detection()
+    test_bug_af_end_to_end_compact_high_yield_comprehensive_quad_pack()
+    test_bug_ag_visual_diagram_and_multimodal_atlas_pipeline()
+    test_bug_ah_latex_bidi_markdown_and_flowchart_legibility_gates()
+    test_bug_ai_table_first_hybrid_teal_architecture()
+    test_bug_aj_chronological_sequence_and_strict_rtl_compliance()
+    test_bug_ak_genanki_html_escaping_and_pdf_lock_and_table_xml_gates()
+    test_bug_al_telegraphic_syntax_and_deduplication_and_batch_prompt_gates()
+    test_bug_am_semantic_binding_and_cutoff_integrity_gates()
     test_bug_an_chronological_topic_pairing_and_multi_handout_toc_segmentation()
+    test_bug_ao_exemplar_full_table_centric_architecture_and_reference_zero_omission()
     print("=== ALL DIAGNOSTIC TESTS COMPLETED SUCCESSFULLY ===")

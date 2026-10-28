@@ -3516,6 +3516,95 @@ def test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_
     print("[PASS] Bug AS Test Passed: Compact 8.5pt typography, slide sanitization, subtle pastel highlights, and multi-color infographic flowcharts verified.")
 
 
+
+def test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding():
+    """Bug AT (v3.9.12 - Rule 27): Session Summary Folder, Semantic 5-Color Flowcharts,
+    and Chronological Source Grounding.
+    1. Output Directory: resolve_summary_output_dir routes outputs to dedicated 'خلاصه' folder in session path.
+    2. Flowchart Enrichment: enrich_mermaid_flowchart parses all node shapes and injects 5 semantic classes.
+    3. Diagram Embedding: build_html_summary embeds High-DPI diagram images inside .diagram-card.
+    4. Chronological & Grounding Audit: audit_chronological_sequence and audit_source_grounding verify source fidelity.
+    """
+    from run_summary_pipeline import resolve_summary_output_dir, BATCH_PROMPT_TEMPLATE
+    from build_summary_pack import enrich_mermaid_flowchart, build_docx_summary, build_html_summary
+    from audit_summary_coverage import audit_chronological_sequence, audit_source_grounding
+
+    # 1. Output Directory Routing to 'خلاصه'
+    test_session_path = os.path.join("tests", "fixtures", "test_session", "session_lecture.docx")
+    resolved_dir = resolve_summary_output_dir(test_session_path)
+    expected_tail = os.path.join("tests", "fixtures", "test_session", "خلاصه")
+    assert resolved_dir.endswith(expected_tail), f"Expected tail '{expected_tail}', got '{resolved_dir}'"
+
+    default_dir = resolve_summary_output_dir()
+    assert default_dir.endswith("خلاصه"), f"Default dir must end with 'خلاصه', got '{default_dir}'"
+
+    # 2. Semantic 5-Color Flowchart Parser
+    test_flowchart = """flowchart TD
+    A[بیمار با تظاهرات پرکاری تیروئید] --> B{سنجش سطح سرمی TSH}
+    B -->|کمتر از 0.1| C[اندازه گیری Free T4 و T3]
+    B -->|نرمال یا بالا| D[رد تیروتوکسیکوز اولیه]
+    C -->|افزایش FT4/T3| E[تیروتوکسیکوز آشکار: گریوز]
+    E --> F[درمان با متی مازول]"""
+
+    enriched = enrich_mermaid_flowchart(test_flowchart, title="رویکرد به تیروتوکسیکوز")
+    assert "classDef startNode" in enriched, "startNode classDef missing!"
+    assert "classDef decisionNode" in enriched, "decisionNode classDef missing!"
+    assert "classDef diseaseNode" in enriched, "diseaseNode classDef missing!"
+    assert "classDef actionNode" in enriched, "actionNode classDef missing!"
+    assert "class A startNode;" in enriched, "Node A should be startNode!"
+    assert "class B decisionNode;" in enriched, "Node B should be decisionNode!"
+    assert "class E diseaseNode;" in enriched, "Node E should be diseaseNode!"
+    assert "class F actionNode;" in enriched, "Node F should be actionNode!"
+
+    # 3. HTML & DOCX Compilation with High-DPI Diagram Embedding
+    out_dir = os.path.join("dist", "test_at_summary_folder")
+    os.makedirs(out_dir, exist_ok=True)
+    test_data = {
+        "topic_title": "فیزیوپاتولوژی تیروتوکسیکوز و گریوز",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: رویکرد تشخیصی به تیروتوکسیکوز",
+                "headers": ["مبحث", "پاتوفیزیولوژی", "نکات کلیدی"],
+                "rows": [
+                    ["بیماری گریوز", "تحریک مداوم گیرنده TSH توسط TSI", "• ==شایع‌ترین علت هیپرتیروئیدی== در جوانان"]
+                ],
+                "flowchart": test_flowchart
+            }
+        ]
+    }
+    html_file = os.path.join(out_dir, "test_at_view.html")
+    docx_file = os.path.join(out_dir, "test_at_doc.docx")
+    build_html_summary(test_data, html_file)
+    build_docx_summary(test_data, docx_file)
+
+    assert os.path.exists(html_file), "HTML summary not generated!"
+    assert os.path.exists(docx_file), "Word study guide not generated!"
+    with open(html_file, "r", encoding="utf-8") as hf:
+        html_code = hf.read()
+    assert "diagram-card" in html_code, "diagram-card class missing in HTML!"
+    assert "diagram-header" in html_code, "diagram-header missing in HTML!"
+
+    # 4. Chronological Progression & Source Fidelity Audit
+    source_lecture_text = """
+    مقدمه بر غدد درون‌ریز و تیروئید.
+    اولاً در مورد بیماری گریوز بحث می‌کنیم که تحریک گیرنده TSH است.
+    سپس به سراغ ندول‌های تیروئید و سونوگرافی می‌رویم.
+    در نهایت کات‌آف TSH کمتر از 0.1 mIU/L و درمان با متی مازول بررسی می‌شود.
+    """
+    chrono_res = audit_chronological_sequence(source_lecture_text, test_data)
+    assert chrono_res["is_chronological"] is True, f"Chronological audit failed: {chrono_res}"
+
+    ground_res = audit_source_grounding(source_lecture_text, test_data)
+    assert ground_res["is_source_grounded"] is True, f"Source grounding audit failed: {ground_res}"
+
+    # 5. Prompt Directives Verification
+    assert "Strict 100% Source Grounding" in BATCH_PROMPT_TEMPLATE, "Prompt must enforce 100% source grounding!"
+    assert "Strict Chronological Flow" in BATCH_PROMPT_TEMPLATE, "Prompt must enforce strict chronological flow!"
+    assert "Verbatim Numerical Precision" in BATCH_PROMPT_TEMPLATE, "Prompt must enforce verbatim numerical precision!"
+    print("[PASS] Bug AT Test Passed: Session summary folder, semantic flowcharts, and source grounding verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3563,4 +3652,5 @@ if __name__ == "__main__":
     test_bug_aq_pure_table_dynamic_schema_and_graphic_chart_pipeline()
     test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate()
     test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_charts()
-    print("=== ALL DIAGNOSTIC TESTS (45/45) COMPLETED SUCCESSFULLY ===")
+    test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
+    print("=== ALL DIAGNOSTIC TESTS (46/46) COMPLETED SUCCESSFULLY ===")

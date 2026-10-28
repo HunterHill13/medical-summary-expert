@@ -997,6 +997,82 @@ def clean_mermaid_code(code: str) -> str:
     return "\n".join(sanitized_lines)
 
 
+
+def enrich_mermaid_flowchart(code: str, title: str = "") -> str:
+    """
+    Enriches Mermaid flowchart code with vibrant, content-aware semantic 5-color classes:
+    1. startNode (#E0F2FE blue border #0284C7): Triggers, initial presentations, entry points
+    2. organNode (#E6FFFA mint border #0D9488): Organs, glands, hormones, syntheses
+    3. decisionNode (#FEF3C7 amber border #D97706): Tests, evaluations, assays, differential dilemmas, '?'
+    4. diseaseNode (#FFE4E6 rose border #E11D48): Pathologies, syndromes, abnormal cutoffs, emergencies, alert triggers
+    5. actionNode (#DCFCE7 emerald border #16A34A): Treatments, normal results, therapeutic interventions, definitive outcomes
+    """
+    clean = clean_mermaid_code(code)
+    if not clean or not str(clean).strip():
+        return clean
+    if "classDef" in clean:
+        return clean
+
+    classes_header = """
+    classDef startNode fill:#E0F2FE,stroke:#0284C7,stroke-width:2.5px,color:#0369A1,rx:12px,ry:12px;
+    classDef organNode fill:#E6FFFA,stroke:#0D9488,stroke-width:2.5px,color:#115E59,rx:12px,ry:12px;
+    classDef decisionNode fill:#FEF3C7,stroke:#D97706,stroke-width:2.5px,color:#92400E,rx:12px,ry:12px;
+    classDef diseaseNode fill:#FFE4E6,stroke:#E11D48,stroke-width:2.5px,color:#9F1239,rx:12px,ry:12px;
+    classDef actionNode fill:#DCFCE7,stroke:#16A34A,stroke-width:2.5px,color:#15803D,rx:12px,ry:12px;"""
+
+    node_pattern = re.compile(
+        r'(?<![A-Za-z0-9_])([A-Za-z0-9_]+)\s*(\[[^\]]+\]|\{[^\}]+\}|\([^\)]+\)|\[\([^\)]+\)\]|\[\[[^\]]+\]\])'
+    )
+    matches = node_pattern.findall(clean)
+    if not matches:
+        return clean
+
+    DECISION_KW = [
+        'تست', 'سنجش', 'بررسی', 'آزمایش', 'غربالگری', 'اندازه‌گیری', 'اندازه گیری',
+        'معیار', '؟', '?', 'تشخیص افتراقی', 'کتون', 'قند', 'pH', 'TSH', 'ACTH', 'سرم',
+        'FT4', 'T3', 'سونوگرافی', 'اسمولالیته', 'بیوپسی', 'سی تی', 'MRI', 'الکترولیت'
+    ]
+    ACTION_KW = [
+        'درمان', 'تجویز', 'جراحی', 'دارو', 'پاسخ', 'طبیعی', 'نرمال', 'رژیم', 'کنترل',
+        'موفق', 'رد ', 'منفی', 'بهبود', 'تزریق', 'هیدراتاسیون', 'انسولین', 'استاتین'
+    ]
+    DISEASE_KW = [
+        'بیماری', 'سندروم', 'سندرم', 'پاتولوژی', 'کوشینگ', 'آدیسون', 'هاشیموتو', 'گریوز',
+        'تومور', 'آدنوم', 'کارسینوم', 'مقاومت', 'غیرطبیعی', 'مثبت', 'اختلال', 'نارسایی',
+        'شوک', 'خطر', 'تیروتوکسیکوز', 'هایپرتیروئیدی', 'هیپوتیروئیدی', 'DKA', 'HHS',
+        'مرگبار', 'کما', 'کتواسیدوز'
+    ]
+    ORGAN_KW = [
+        'غده', 'هیپوفیز', 'تیروئید', 'آدرنال', 'پانکراس', 'کبد', 'کلیه', 'هورمون',
+        'سنتز', 'ترشح', 'محور', 'پاراتیروئید', 'گناد', 'تخمدان', 'بیضه'
+    ]
+    START_KW = ['بیمار با', 'مراجعه', 'ارزیابی اولیه', 'ورودی', 'تظاهر اصلی', 'مشکوک']
+
+    palette_cycle = ['organNode', 'decisionNode', 'diseaseNode', 'actionNode']
+    class_assignments = []
+    for idx, (nid, shape) in enumerate(matches):
+        content = shape[1:-1]
+        is_decision_shape = shape.startswith('{') and shape.endswith('}')
+
+        if idx == 0 or any(k in content for k in START_KW):
+            cls = 'startNode'
+        elif any(k in content for k in ACTION_KW):
+            cls = 'actionNode'
+        elif is_decision_shape or any(k in content for k in DECISION_KW):
+            cls = 'decisionNode'
+        elif any(k in content for k in DISEASE_KW):
+            cls = 'diseaseNode'
+        elif any(k in content for k in ORGAN_KW):
+            cls = 'organNode'
+        else:
+            cls = 'decisionNode' if is_decision_shape else (
+                'actionNode' if idx == len(matches) - 1 else palette_cycle[idx % len(palette_cycle)]
+            )
+        class_assignments.append(f"    class {nid} {cls};")
+
+    return clean + "\n" + classes_header + "\n" + "\n".join(class_assignments)
+
+
 def render_mermaid_diagram_to_png(
     mermaid_code: str,
     output_png_path: str,
@@ -1018,27 +1094,8 @@ def render_mermaid_diagram_to_png(
     os.makedirs(os.path.dirname(os.path.abspath(output_png_path)), exist_ok=True)
     clean_code = clean_mermaid_code(mermaid_code)
 
-    # Enrich Mermaid code with 5-color semantic classes if not already present
-    enriched_code = clean_code
-    if "classDef" not in enriched_code:
-        classes_header = """
-    classDef startNode fill:#E0F2FE,stroke:#0284C7,stroke-width:2px,color:#0369A1;
-    classDef organNode fill:#E6FFFA,stroke:#0D9488,stroke-width:2px,color:#115E59;
-    classDef decisionNode fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#92400E;
-    classDef diseaseNode fill:#FFE4E6,stroke:#E11D48,stroke-width:2px,color:#9F1239;
-    classDef actionNode fill:#DCFCE7,stroke:#16A34A,stroke-width:2px,color:#15803D;"""
-        node_ids = re.findall(r'\b([A-Za-z0-9_]+)\[', enriched_code)
-        class_assignments = []
-        for n_idx, nid in enumerate(node_ids):
-            if n_idx == 0:
-                class_assignments.append(f"    class {nid} startNode;")
-            elif n_idx == len(node_ids) - 1:
-                class_assignments.append(f"    class {nid} actionNode;")
-            elif n_idx % 3 == 1:
-                class_assignments.append(f"    class {nid} organNode;")
-            else:
-                class_assignments.append(f"    class {nid} decisionNode;")
-        enriched_code = enriched_code + "\n" + classes_header + "\n" + "\n".join(class_assignments)
+    # Enrich Mermaid code with vibrant, content-aware 5-color semantic classes
+    enriched_code = enrich_mermaid_flowchart(clean_code, title=title)
 
     edge_exe = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
     exec_path = edge_exe if os.path.exists(edge_exe) else None
@@ -1110,11 +1167,11 @@ def render_mermaid_diagram_to_png(
         .node rect, .node circle, .node polygon {
             rx: 10px !important;
             ry: 10px !important;
-            filter: drop-shadow(0 3px 6px rgba(0, 122, 135, 0.12)) !important;
+            filter: drop-shadow(0 4px 10px rgba(0, 122, 135, 0.15)) !important;
         }
         .edgePath path {
-            stroke-width: 2.2px !important;
-            stroke: #007A87 !important;
+            stroke-width: 2.4px !important;
+            stroke: #0284C7 !important;
         }
         .edgeLabel {
             font-weight: 600 !important;
@@ -1722,7 +1779,7 @@ def render_docx_table_of_contents(doc, chapters: List[Dict[str, Any]], title: st
     set_p_rtl(p_sp, space_before_pt=0, space_after_pt=8)
 
 
-def render_docx_section_block(doc, sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = ""):
+def render_docx_section_block(doc, sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = "", out_dir: str = ""):
     """Renders a single thematic section (table, flowchart, callouts) into Word."""
     if not isinstance(sec, dict):
         return
@@ -1744,8 +1801,11 @@ def render_docx_section_block(doc, sec: Dict[str, Any], sec_idx: int = 1, chapte
 
     sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
     if sec_flowchart:
+        target_dir = out_dir if out_dir else os.path.join(os.getcwd(), "خلاصه")
+        diag_dir = os.path.join(target_dir, "diagrams")
+        os.makedirs(diag_dir, exist_ok=True)
         m_hash = hashlib.md5(sec_flowchart.strip().encode("utf-8")).hexdigest()[:10]
-        candidate_png = os.path.join("dist", "diagrams", f"diag_sec_{m_hash}.png")
+        candidate_png = os.path.join(diag_dir, f"diag_sec_{m_hash}.png")
         if render_mermaid_diagram_to_png(sec_flowchart, candidate_png, title=f"الگوریتم {sec_title}"):
             add_diagram_picture_block(doc, candidate_png, title=f"الگوریتم بالینی {sec_title}")
 
@@ -2186,17 +2246,17 @@ def render_docx_module_block(doc, mod: Dict[str, Any], mod_idx: int = 1, covered
         add_clinical_vignettes(doc, mod["clinical_vignettes"])
 
 
-def render_docx_flow_item(doc, item: Dict[str, Any], idx: int, covered_entities: Set[str]):
+def render_docx_flow_item(doc, item: Dict[str, Any], idx: int, covered_entities: Set[str], out_dir: str = ""):
     """Renders a chronological flow item (topic, section_only, or module_only) into Word."""
     i_type = item.get("type")
     c_badge = item.get("chapter_badge", "")
     if i_type == "topic":
         if item.get("section"):
-            render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge)
+            render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge, out_dir=out_dir)
         if item.get("module"):
             render_docx_module_block(doc, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
     elif i_type == "section_only":
-        render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge)
+        render_docx_section_block(doc, item["section"], sec_idx=idx, chapter_badge=c_badge, out_dir=out_dir)
     elif i_type == "module_only":
         render_docx_module_block(doc, item["module"], mod_idx=idx, covered_entities=covered_entities, chapter_badge=c_badge)
 
@@ -3828,7 +3888,7 @@ def render_html_table_of_contents(html_parts: List[str], chapters: List[Dict[str
     """)
 
 
-def render_html_section_block(html_parts: List[str], sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = ""):
+def render_html_section_block(html_parts: List[str], sec: Dict[str, Any], sec_idx: int = 1, chapter_badge: str = "", out_dir: str = ""):
     """Renders a single thematic section (table, flowchart, callouts) into HTML."""
     if not isinstance(sec, dict):
         return
@@ -3856,7 +3916,21 @@ def render_html_section_block(html_parts: List[str], sec: Dict[str, Any], sec_id
 
     sec_flowchart = sec.get("flowchart") or sec.get("mermaid_code")
     if sec_flowchart:
-        html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><pre class="mermaid">{clean_mermaid_code(sec_flowchart.strip())}</pre></div>')
+        target_dir = out_dir if out_dir else os.path.join(os.getcwd(), "خلاصه")
+        diag_dir = os.path.join(target_dir, "diagrams")
+        os.makedirs(diag_dir, exist_ok=True)
+        m_hash = hashlib.md5(sec_flowchart.strip().encode("utf-8")).hexdigest()[:10]
+        png_path = os.path.join(diag_dir, f"diag_sec_{m_hash}.png")
+        if not os.path.exists(png_path) or os.path.getsize(png_path) < 1000:
+            render_mermaid_diagram_to_png(sec_flowchart, png_path, title=f"الگوریتم {sec_title}")
+
+        enriched_m = enrich_mermaid_flowchart(sec_flowchart, title=sec_title)
+        if os.path.exists(png_path) and os.path.getsize(png_path) > 1000:
+            rel_png = os.path.relpath(png_path, target_dir) if target_dir else png_path
+            rel_png = rel_png.replace("\\", "/")
+            html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><img class="diagram-img" src="{rel_png}" alt="الگوریتم بالینی {sec_title}"><div style="display:none;" class="mermaid">{enriched_m}</div></div>')
+        else:
+            html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><div class="mermaid">{enriched_m}</div></div>')
 
     sec_callouts = sec.get("callouts") or []
     if sec_callouts:
@@ -4741,7 +4815,22 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
 <script>
     document.addEventListener("DOMContentLoaded", function() {
         if (window.mermaid) {
-            mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+            mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                fontFamily: 'Dubai, Vazirmatn, Segoe UI, Tahoma, sans-serif',
+                primaryColor: '#F0FDFA',
+                primaryBorderColor: '#007A87',
+                primaryTextColor: '#0F172A',
+                lineColor: '#0284C7',
+                secondaryColor: '#FEF3C7',
+                tertiaryColor: '#FFE4E6',
+                edgeLabelBackground: '#FFFFFF',
+                fontSize: '15px'
+            },
+            securityLevel: 'loose'
+        });
         }
     });
 </script>

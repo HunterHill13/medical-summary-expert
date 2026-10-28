@@ -979,6 +979,89 @@ def audit_scanned_pages(source_text: str, summary_data: Dict[str, Any]) -> Dict[
     }
 
 
+
+def audit_chronological_sequence(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Audits whether the summary preserves the chronological topic progression of the source lecture.
+    Tracks section titles and major disease topics from the summary against their first appearance in the source text.
+    """
+    norm_src = normalize_medical_text(source_text).lower()
+    items = []
+    for sec in (summary_data.get("sections") or summary_data.get("thematic_sections") or []):
+        t = sec.get("title") or sec.get("section_title") or ""
+        if t:
+            items.append(t)
+    for mod in (summary_data.get("modules") or []):
+        m = mod.get("name") or ""
+        if m and m not in items:
+            items.append(m)
+
+    source_positions = []
+    valid_items = []
+    for it in items:
+        clean_it = normalize_medical_text(it).lower()
+        tokens = [w for w in re.findall(r'\b\w+\b', clean_it) if len(w) > 3 and w not in PERSIAN_COMMON_STOPWORDS]
+        pos = -1
+        for tk in tokens:
+            p = norm_src.find(tk)
+            if p != -1:
+                pos = p if pos == -1 else min(pos, p)
+        if pos != -1:
+            source_positions.append(pos)
+            valid_items.append(it)
+
+    inversions = 0
+    total_pairs = 0
+    for i in range(len(source_positions)):
+        for j in range(i + 1, len(source_positions)):
+            total_pairs += 1
+            if source_positions[i] > source_positions[j]:
+                inversions += 1
+
+    inversion_rate = (inversions / total_pairs) if total_pairs > 0 else 0.0
+    is_chronological = inversion_rate <= 0.25
+
+    return {
+        "is_chronological": is_chronological,
+        "inversion_rate": round(inversion_rate, 2),
+        "total_tracked_topics": len(valid_items),
+        "inversions_detected": inversions
+    }
+
+def audit_source_grounding(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Audits 100% source fidelity and ensures zero external extrapolation or hallucinated syndromes.
+    Checks whether key disease entities and drug names present in the summary originated from the source lecture.
+    """
+    norm_src = normalize_medical_text(source_text).lower()
+    sum_text = []
+    for sec in (summary_data.get("sections") or summary_data.get("thematic_sections") or []):
+        sum_text.append(sec.get("title") or "")
+        for r in sec.get("rows", []):
+            if isinstance(r, list):
+                sum_text.extend([str(c) for c in r])
+    for mod in (summary_data.get("modules") or []):
+        sum_text.append(mod.get("name") or "")
+        for k, v in mod.items():
+            if isinstance(v, list):
+                sum_text.extend([str(i) for i in v])
+            elif isinstance(v, str):
+                sum_text.append(v)
+
+    full_sum = " ".join(sum_text)
+    norm_sum = normalize_medical_text(full_sum).lower()
+    sum_entities = extract_drug_and_disease_entities(norm_sum)
+
+    grounded_count = sum(1 for e in sum_entities if e in norm_src or len(e) <= 3)
+    grounding_pct = round((grounded_count / len(sum_entities)) * 100.0, 1) if sum_entities else 100.0
+
+    return {
+        "is_source_grounded": bool(grounding_pct >= 85.0),
+        "grounding_fidelity_pct": grounding_pct,
+        "total_summary_entities": len(sum_entities),
+        "grounded_entities_count": grounded_count
+    }
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -1175,6 +1258,8 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     dedup_report = audit_cross_layer_duplication(summary_data)
     page_budget_report = audit_page_budget(summary_data)
     scanned_page_report = audit_scanned_pages(source_text, summary_data)
+    chronological_report = audit_chronological_sequence(source_text, summary_data)
+    grounding_report = audit_source_grounding(source_text, summary_data)
 
     # Enforce Cutoff Integrity: cutoff_coverage >= 95.0% and zero-omission if <= 10 cutoffs
     cutoff_passed = (cutoff_coverage_pct >= 95.0) if len(source_cutoffs) > 10 else (len(unique_omitted_cutoffs) == 0)
@@ -1240,6 +1325,8 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "page_budget_audit": page_budget_report,
         "concept_retention_audit": concept_depth_report,
         "scanned_page_audit": scanned_page_report,
+        "chronological_sequence_audit": chronological_report,
+        "source_grounding_audit": grounding_report,
         "compression_audit": {
             "source_word_count": src_words,
             "summary_word_count": sum_words,

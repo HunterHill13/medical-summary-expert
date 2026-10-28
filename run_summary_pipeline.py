@@ -15,7 +15,7 @@ import sys
 import json
 import argparse
 import subprocess
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union, Tuple
 
 # Force UTF-8 encoding in stdout/stderr for Windows compatibility
 if sys.stdout.encoding != 'utf-8':
@@ -41,6 +41,23 @@ from build_summary_pack import (
     build_pdf_summary,
     ensure_master_matrices
 )
+
+
+def resolve_summary_output_dir(input_path: Optional[str] = None, explicit_out_dir: Optional[str] = None) -> str:
+    """
+    Resolves the dedicated 'خلاصه' output directory in the designated session/handout folder.
+    If an explicit out_dir other than 'dist' or 'خلاصه' is given, uses that.
+    Otherwise creates a folder named 'خلاصه' in the session folder (input file parent directory).
+    """
+    if explicit_out_dir and explicit_out_dir not in ("dist", "خلاصه", ""):
+        return explicit_out_dir
+    if input_path:
+        abs_in = os.path.abspath(input_path)
+        parent = os.path.dirname(abs_in)
+        if os.path.basename(parent) == "خلاصه":
+            return parent
+        return os.path.join(parent, "خلاصه")
+    return os.path.join(os.getcwd(), "خلاصه")
 
 def cmd_ingest(args):
     raw_inputs = []
@@ -101,6 +118,12 @@ BATCH_PROMPT_TEMPLATE = """# دستور کار سنتز خلاصه پزشکی ف
 6. **فلش‌کارت‌های دوگانه آنکی (`anki_flashcards`):**
    - هم کارت‌های سوال/جواب بالینی (`"card_type": "basic"`) با تفکیک دقیق `question` و `answer` بدون نشت پاسخ به روی کارت.
    - هم کارت‌های جای‌خالی اتمیک (`"card_type": "cloze"`) با قرار دادن انحصاری کات‌آف‌ها یا اسامی کلیدی درون `{{c1::...}}`.
+7. **وفاداری ۱۰۰٪ به منبع و منع مطلق افزودن اطلاعات (Strict 100% Source Grounding):**
+   - همه محتوای خلاصه منحصراً از متن همین بخش جزوه استخراج شود. تحت هیچ شرایطی از حافظه بیرونی بیماری، دارو یا کات‌آفی خارج از متن جزوه اضافه نکنید.
+8. **حفظ مو‌به‌مو توالی زمانی و سرفصل‌ها (Strict Chronological Flow):**
+   - ترتیب قرارگیری ردیف‌ها و جداول باید دقیقاً منطبق بر توالی اسلایدها و روند تدریس جزوه اصلی باشد بدون جابه‌جایی یا پس‌وپیش کردن مباحث.
+9. **دقت کامل و بدون افت کات‌آف‌ها و اعداد (Verbatim Numerical Precision):**
+   - تمامی اعداد، مقادیر نرمال آزمایشگاهی، کات‌آف‌های تشخیصی، واحدها (mg/dL، ng/mL، درصد، mmHg، ساعت) و علامت‌های نامساوی (≥، ≤، >، <) باید دقیقاً و بدون گرد کردن یا کلی‌گویی در سلول‌های جدول منعکس شوند.
 
 ---
 
@@ -345,13 +368,15 @@ def cmd_build(args):
     with open(args.summary, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    docx_path = os.path.join(args.out_dir, f"{args.prefix}.docx")
-    html_path = os.path.join(args.out_dir, f"{args.prefix}.html")
-    pdf_path = os.path.join(args.out_dir, f"{args.prefix}.pdf")
-    md_path = os.path.join(args.out_dir, f"{args.prefix}.md")
-    tsv_path = os.path.join(args.out_dir, f"{args.prefix}_anki.tsv")
-    apkg_path = os.path.join(args.out_dir, f"{args.prefix}_anki.apkg")
+    out_dir = resolve_summary_output_dir(args.summary, args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    print(f"[INFO] Target output directory set to session summary folder: {out_dir}")
+    docx_path = os.path.join(out_dir, f"{args.prefix}.docx")
+    html_path = os.path.join(out_dir, f"{args.prefix}.html")
+    pdf_path = os.path.join(out_dir, f"{args.prefix}.pdf")
+    md_path = os.path.join(out_dir, f"{args.prefix}.md")
+    tsv_path = os.path.join(out_dir, f"{args.prefix}_anki.tsv")
+    apkg_path = os.path.join(out_dir, f"{args.prefix}_anki.apkg")
 
     build_docx_summary(data, docx_path)
     build_html_summary(data, html_path)
@@ -360,7 +385,7 @@ def cmd_build(args):
     build_markdown_summary(data, md_path)
     build_anki_tsv(data, tsv_path)
     build_anki_apkg(data, apkg_path)
-    print(f"[OK] Build complete! Deliverables (DOCX, HTML, PDF, MD, TSV, APKG) ready in '{args.out_dir}/'.")
+    print(f"[OK] Build complete! Deliverables (DOCX, HTML, PDF, MD, TSV, APKG) ready in '{out_dir}/'.")
 
 def cmd_bundle(args):
     """
@@ -479,8 +504,10 @@ def cmd_bundle(args):
 
 def cmd_auto(args):
     print(f"=== [AUTO] Running End-to-End Medical Summary Pipeline ===")
-    out_dir = args.out_dir or "dist"
+    target_inp = args.input or (args.inputs[0] if getattr(args, 'inputs', None) else None)
+    out_dir = resolve_summary_output_dir(target_inp, args.out_dir)
     os.makedirs(out_dir, exist_ok=True)
+    print(f"[INFO] Target output directory set to session summary folder: {out_dir}")
     ingested_file = os.path.join(out_dir, "ingested_lecture.json")
     audit_report = os.path.join(out_dir, "coverage_audit_report.json")
 
@@ -534,7 +561,7 @@ def main():
     # Build
     p_build = subparsers.add_parser("build", help="Compile Word, Markdown, and Anki files")
     p_build.add_argument("--summary", required=True, help="Summary JSON path")
-    p_build.add_argument("--out-dir", default="dist", help="Output directory")
+    p_build.add_argument("--out-dir", default="خلاصه", help="Output directory (defaults to 'خلاصه' in session folder)")
     p_build.add_argument("--prefix", default="summary_pack", help="File prefix")
     p_build.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
 
@@ -551,7 +578,7 @@ def main():
     p_auto.add_argument("--input", default=None, help="Input lecture file path")
     p_auto.add_argument("--inputs", nargs="*", default=None, help="Multiple input lecture file paths or wildcards")
     p_auto.add_argument("--summary-json", default=None, help="Pre-synthesized summary JSON")
-    p_auto.add_argument("--out-dir", default="dist", help="Output directory")
+    p_auto.add_argument("--out-dir", default="خلاصه", help="Output directory (defaults to 'خلاصه' in session folder)")
     p_auto.add_argument("--prefix", default="summary_pack", help="File prefix")
     p_auto.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
 

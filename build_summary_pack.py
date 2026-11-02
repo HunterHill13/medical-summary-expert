@@ -1451,11 +1451,12 @@ def ensure_master_matrices(data: Dict[str, Any]):
     Ensures both master_pharmacology_matrix and last_minute_crash_sheet
     are synthesized if missing, ensuring 100% content parity across Word and Markdown.
     Skips duplicate pharmacology matrix if already comprehensively covered in thematic sections.
+    In Rule 28 (v3.9.13), trailing matrices are strictly suppressed by default when sections are present.
     """
     sections = data.get("sections") or data.get("thematic_sections") or []
     modules = data.get("modules") or []
-    # In pure table mode (sections present and no modules), do NOT synthesize trailing matrices!
-    if sections and not modules:
+    # In pure table mode (sections present) or if suppress_trailing_matrices is True, do NOT synthesize trailing matrices!
+    if sections or data.get("suppress_trailing_matrices", False):
         return
 
     # 1. Master Pharmacology Matrix
@@ -2338,10 +2339,14 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     if data.get("clinical_semiology") and isinstance(data["clinical_semiology"], list):
         add_semiology_box(doc, data["clinical_semiology"])
 
+    # Rule 28 Zero Trailing Bloat: If sections present or suppress_trailing_matrices is True, suppress all trailing tables!
+    has_sections = bool(data.get("sections") or data.get("thematic_sections"))
+    render_trailing = not data.get("suppress_trailing_matrices", False)
+
     # -----------------------------------------------------------------------
     # Master Pharmacology Matrix (ماتریس جامع داروشناسی بالینی)
     # -----------------------------------------------------------------------
-    if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
+    if render_trailing and data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
         matrix = data["master_pharmacology_matrix"]
         p_matrix_head = doc.add_paragraph()
         set_p_rtl(p_matrix_head, space_before_pt=18, space_after_pt=6)
@@ -2355,7 +2360,7 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     # -----------------------------------------------------------------------
     # Dual-Speed Review: Last-Minute Crash Sheet (جدول کپسولی شب امتحان)
     # -----------------------------------------------------------------------
-    if data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
+    if render_trailing and data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
         crash = data["last_minute_crash_sheet"]
         p_crash_head = doc.add_paragraph()
         set_p_rtl(p_crash_head, space_before_pt=18, space_after_pt=6)
@@ -2374,13 +2379,13 @@ def build_docx_summary(data: Dict[str, Any], output_path: str):
     # -----------------------------------------------------------------------
     # Comparative Matrices (ماتریس‌های تطبیقی جامع تخصصی)
     # -----------------------------------------------------------------------
-    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+    if render_trailing and data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
         add_comparative_matrices(doc, data["comparative_matrices"])
 
     # -----------------------------------------------------------------------
     # 30-Point Morning-of-Exam Capsule (چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون)
     # -----------------------------------------------------------------------
-    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+    if render_trailing and data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
         add_morning_exam_checklist(doc, data["morning_exam_checklist"])
 
     # -----------------------------------------------------------------------
@@ -2958,8 +2963,11 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
             lines.append(f"| **{m_sign}** | {m_tech} | {m_sig} | *{m_path}* |")
         lines.append("")
 
+    has_sections = bool(data.get("sections") or data.get("thematic_sections"))
+    render_trailing = not data.get("suppress_trailing_matrices", False)
+
     # Master Pharmacology Matrix
-    if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
+    if render_trailing and data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
         matrix = data["master_pharmacology_matrix"]
         lines.append(f"## 💊 {matrix.get('title', 'ماتریس جامع مقایسه داروشناسی بالینی (Master Pharmacology Matrix)')}\n")
         headers = matrix.get("headers", [])
@@ -2970,7 +2978,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         lines.append("")
 
     # Crash Sheet
-    if data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
+    if render_trailing and data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
         lines.append("## 🚀 کپسول طلایی شب امتحان (Last-Minute High-Yield Cheat Sheet)")
         crash = data["last_minute_crash_sheet"]
         headers = crash.get("headers", [])
@@ -2981,7 +2989,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
         lines.append("")
 
     # Comparative Matrices (ماتریس‌های تطبیقی جامع تخصصی)
-    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+    if render_trailing and data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
         for mat in data["comparative_matrices"]:
             if not isinstance(mat, dict):
                 continue
@@ -2997,7 +3005,7 @@ def build_markdown_summary(data: Dict[str, Any], output_path: str):
                 lines.append("")
 
     # 30-Point Morning-of-Exam Capsule (چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون)
-    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+    if render_trailing and data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
         lines.append("## 📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)\n")
         lines.append("> نکات کلیدی جهت مرور سریع ۱۰ دقیقه‌ای قبل از ورود به جلسه امتحان:\n")
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
@@ -4892,8 +4900,11 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                 html_parts.append(f'<div style="margin-bottom: 6px;">{format_inline_markdown(line)}</div>')
         html_parts.append('</div></div>')
 
+    has_sections = bool(data.get("sections") or data.get("thematic_sections"))
+    render_trailing = not data.get("suppress_trailing_matrices", False)
+
     # Master Pharmacology Matrix
-    if data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
+    if render_trailing and data.get("master_pharmacology_matrix") and isinstance(data["master_pharmacology_matrix"], dict):
         matrix = data["master_pharmacology_matrix"]
         m_title = matrix.get("title", "ماتریس جامع مقایسه داروشناسی بالینی")
         headers = matrix.get("headers", [])
@@ -4912,7 +4923,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             html_parts.append('</tbody></table>')
 
     # Comparative Matrices
-    if data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
+    if render_trailing and data.get("comparative_matrices") and isinstance(data["comparative_matrices"], list):
         for mat in data["comparative_matrices"]:
             if isinstance(mat, dict):
                 c_title = mat.get("title", "ماتریس مقایسه‌ای تخصصی")
@@ -4932,7 +4943,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
                     html_parts.append('</tbody></table>')
 
     # Crash Sheet
-    if data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
+    if render_trailing and data.get("last_minute_crash_sheet") and isinstance(data["last_minute_crash_sheet"], dict):
         crash = data["last_minute_crash_sheet"]
         headers = crash.get("headers", [])
         rows = crash.get("rows", [])
@@ -4950,7 +4961,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             html_parts.append('</tbody></table>')
 
     # Morning Exam Checklist
-    if data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
+    if render_trailing and data.get("morning_exam_checklist") and isinstance(data["morning_exam_checklist"], list):
         html_parts.append('<h2 style="color: #007A87; border-bottom: 2px solid #007A87; padding-bottom: 6px; margin-top: 30px;">📋 چک‌لیست طلایی ۳۰ نکته‌ای صبح آزمون (Last-Minute High-Yield Capsule)</h2>')
         for idx, item in enumerate(data["morning_exam_checklist"], 1):
             html_parts.append(f'<div class="checklist-item"><span class="box">☐</span> <span><b>نکته {idx}:</b> {format_inline_markdown(item)}</span></div>')

@@ -3605,6 +3605,105 @@ def test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
     assert "Verbatim Numerical Precision" in BATCH_PROMPT_TEMPLATE, "Prompt must enforce verbatim numerical precision!"
     print("[PASS] Bug AT Test Passed: Session summary folder, semantic flowcharts, and source grounding verified.")
 
+
+
+def test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices():
+    """Bug AU (v3.9.13 - Rule 28): First-Pass Mechanistic Pedagogy & Strict Zero Trailing Bloat.
+    1. Trailing Matrix Elimination: When suppress_trailing_matrices is True, master_pharmacology_matrix,
+       last_minute_crash_sheet, and morning_exam_checklist are completely omitted from DOCX, MD, and HTML.
+    2. First-Pass Mechanistic Pedagogy: Table cells contain structured causal triads
+       ([Trigger/Baseline] -> [Mechanistic 'Why' Cascade] -> [Clinical/Drug Rationale]) with expanded acronyms.
+    3. Audit Calibration: audit_table_cell_bloat allows up to 65 words for causal explanatory cells without false bloat alerts.
+    4. Mechanistic Audit: audit_mechanistic_pedagogy validates presence of causal connectors and high explanatory density.
+    5. Prompt Enforcement: BATCH_PROMPT_TEMPLATE enforces Rule 28 First-Pass Pedagogy and forbids trailing matrix generation.
+    """
+    from build_summary_pack import build_docx_summary, build_markdown_summary, build_html_summary, ensure_master_matrices
+    from audit_summary_coverage import audit_table_cell_bloat, audit_mechanistic_pedagogy
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+
+    test_data = {
+        "topic_title": "فیزیوپاتولوژی اختلالات غده تیروئید و محور هیپوتالاموس-هیپوفیز",
+        "organ_system": "غدد درون‌ریز",
+        "suppress_trailing_matrices": True,
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: تیروتوکسیکوز، بیماری گریوز و تنظیم هورمونی",
+                "headers": ["عنوان بیماری / اختلال", "مبنای پاتوفیزیولوژی و چرایی مکانیسم", "تظاهرات بالینی، کات‌آف و منطق درمان"],
+                "rows": [
+                    [
+                        "بیماری گریوز (Graves' Disease)",
+                        "• تحریک خودایمنی: تولید اتوآنتی‌بادی محرک گیرنده TSH بنام TSI (Thyroid-Stimulating Immunoglobulin)\n• زنجیره چرایی: اتصال TSI به گیرنده TSH برخلاف TSH طبیعی از فیدبک منفی هورمون‌های تیروئید تبعیت نمی‌کند → تحریک مداوم آدنیلات سیکلاز و رشد سلول‌های فولیکولی → سنتز و ترشح خودمختار T4 و T3",
+                        "• علائم بالینی: گواتر منتشر پرعروق؛ افتالموپاتی و درماتوپاتی پره‌تیبیال ناشی از بیان گیرنده TSH روی فیبروبلاست‌ها و تجمع گلیکوزآمینوگلیکان‌ها\n• کات‌آف تشخیصی: TSH شدیداً سرکوب‌شده (< 0.1 mIU/L) همراه با افزایش FT4/FT3\n• درمان انتخابی: متی‌مازول با مهار آنزیم تیروپروکسیداز (TPO) مانع سنتز هورمون می‌شود."
+                    ]
+                ]
+            }
+        ],
+        # Legacy trailing keys injected to verify complete suppression in builders:
+        "master_pharmacology_matrix": {
+            "title": "ماتریس جامع داروشناسی غدد",
+            "headers": ["دسته دارویی", "نام دارو", "مکانیسم"],
+            "rows": [["ضد تیروئید", "متی‌مازول", "مهار TPO"]]
+        },
+        "last_minute_crash_sheet": {
+            "title": "کپسول شب امتحان",
+            "headers": ["بیماری", "نکته کلیدی"],
+            "rows": [["گریوز", "TSI مثبت"]]
+        },
+        "morning_exam_checklist": [
+            "کات‌آف TSH کمتر از 0.1 است.",
+            "متی‌مازول خط اول درمان گریوز است."
+        ]
+    }
+
+    # 1. Verify ensure_master_matrices suppression
+    ensure_master_matrices(test_data)
+
+    # 2. Build DOCX, MD, and HTML
+    out_docx = "dist/diag_test_au.docx"
+    out_md = "dist/diag_test_au.md"
+    out_html = "dist/diag_test_au.html"
+
+    build_docx_summary(test_data, out_docx)
+    build_markdown_summary(test_data, out_md)
+    build_html_summary(test_data, out_html)
+
+    # Assert trailing matrices are 100% suppressed
+    import docx
+    d = docx.Document(out_docx)
+    docx_text = "\n".join([p.text for p in d.paragraphs] + [c.text for t in d.tables for r in t.rows for c in r.cells])
+    assert "ماتریس جامع داروشناسی غدد" not in docx_text, "Master pharm matrix leaked into DOCX!"
+    assert "کپسول طلایی شب امتحان" not in docx_text, "Crash sheet leaked into DOCX!"
+    assert "چک‌لیست طلایی ۳۰ نکته‌ای" not in docx_text, "Morning checklist leaked into DOCX!"
+
+    with open(out_md, "r", encoding="utf-8") as f:
+        md_text = f.read()
+    assert "ماتریس جامع داروشناسی غدد" not in md_text, "Master pharm matrix leaked into Markdown!"
+    assert "کپسول طلایی شب امتحان" not in md_text, "Crash sheet leaked into Markdown!"
+    assert "چک‌لیست ۳۰ نکته‌ای" not in md_text, "Morning checklist leaked into Markdown!"
+
+    with open(out_html, "r", encoding="utf-8") as f:
+        html_text = f.read()
+    assert "ماتریس جامع داروشناسی غدد" not in html_text, "Master pharm matrix leaked into HTML!"
+    assert "کپسول طلایی شب امتحان" not in html_text, "Crash sheet leaked into HTML!"
+    assert "چک‌لیست ۳۰ نکته‌ای" not in html_text, "Morning checklist leaked into HTML!"
+
+    # 3. Verify First-Pass Mechanistic Pedagogy & Cell Bloat
+    pedagogy_audit = audit_mechanistic_pedagogy(test_data)
+    assert pedagogy_audit["passed"] is True, f"Pedagogy audit failed: {pedagogy_audit}"
+    assert pedagogy_audit["mechanistic_cells_count"] >= 2, f"Expected causal cells, got {pedagogy_audit}"
+
+    bloat_audit = audit_table_cell_bloat(test_data)
+    assert bloat_audit["cell_bloat_detected"] is False, f"Explanatory cells falsely flagged as bloat: {bloat_audit}"
+    assert bloat_audit["status"] == "OPTIMAL_TELEGRAPHIC_CELLS"
+    assert bloat_audit["total_cells_audited"] >= 2
+
+    # 4. Verify BATCH_PROMPT_TEMPLATE Directives
+    assert "First-Pass Mechanistic Pedagogy" in BATCH_PROMPT_TEMPLATE, "Prompt missing First-Pass Mechanistic Pedagogy directive!"
+    assert "Zero Trailing Bloat" in BATCH_PROMPT_TEMPLATE and "master_pharmacology_matrix" in BATCH_PROMPT_TEMPLATE, "Prompt missing strict trailing matrix prohibition!"
+
+    print("[PASS] Bug AU Test Passed: First-pass mechanistic pedagogy and strict zero trailing bloat verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3653,4 +3752,5 @@ if __name__ == "__main__":
     test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate()
     test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_charts()
     test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
-    print("=== ALL DIAGNOSTIC TESTS (46/46) COMPLETED SUCCESSFULLY ===")
+    test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices()
+    print("=== ALL DIAGNOSTIC TESTS (47/47) COMPLETED SUCCESSFULLY ===")

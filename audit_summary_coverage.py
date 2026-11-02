@@ -700,15 +700,17 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     inflated_cells = []
     word_counts = []
     EXCEPTION_MARKERS = ["مگر اینکه", "به استثنای", "استثنا", "در صورت", "به جز", "شرط", "معیار", "except", "unless", "criteria", "stage", "grade"]
+    PEDAGOGY_MARKERS = ["مکانیسم", "ناشی از", "به دلیل", "علت", "منجر به", "تحریک", "مهار", "گیرنده", "فیدبک", "سنتز", "آنزیم", "مسیر", "→", "->", "داروی", "درمان"]
 
     for c in all_cells:
         w_cnt = len(c.split())
         word_counts.append(w_cnt)
         has_telegraphic = ("**" in c) or ("•" in c) or ("->" in c) or ("→" in c) or ("\n" in c)
         has_exceptions_or_criteria = any(kw in c for kw in EXCEPTION_MARKERS)
+        has_pedagogy_markers = any(kw in c for kw in PEDAGOGY_MARKERS)
 
-        # Flexible bound: allow multi-criteria/exception cells up to 55 words without penalty
-        cell_word_limit = 55 if (has_telegraphic or has_exceptions_or_criteria) else 35
+        # Rule 28 First-Pass Mechanistic Pedagogy: allow causal & multi-criteria cells up to 65 words without penalty
+        cell_word_limit = 65 if (has_telegraphic and (has_pedagogy_markers or has_exceptions_or_criteria)) else (55 if has_telegraphic else 35)
         if w_cnt > cell_word_limit:
             inflated_cells.append({
                 "preview": c[:80] + ("..." if len(c) > 80 else ""),
@@ -719,7 +721,7 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
 
     avg_words = round(sum(word_counts) / max(1, len(word_counts)), 1)
     has_sub_bullets = any("•" in c or "\n" in c for c in all_cells)
-    avg_threshold = 35.0 if has_sub_bullets else 28.0
+    avg_threshold = 42.0 if has_sub_bullets else 28.0
     cell_bloat_detected = bool((len(all_cells) >= 6 and avg_words > avg_threshold) or len(inflated_cells) >= 1)
 
     return {
@@ -1062,6 +1064,40 @@ def audit_source_grounding(source_text: str, summary_data: Dict[str, Any]) -> Di
         "grounded_entities_count": grounded_count
     }
 
+
+def audit_mechanistic_pedagogy(summary_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Rule 28 (FIRST_PASS_PEDAGOGY_GATE):
+    Audits that table cells provide self-sufficient mechanistic storytelling ('Why' and causal links)
+    rather than fragmented isolated tokens, enabling a first-time reader to understand the lecture.
+    """
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    causal_markers = ["→", "->", "ناشی از", "به دلیل", "علت", "منجر به", "مهار", "تحریک", "مکانیسم", "گیرنده", "فیدبک", "پاسخ"]
+
+    total_cells = 0
+    mechanistic_cells = 0
+    for sec in sections:
+        if isinstance(sec, dict):
+            for row in (sec.get("rows") or []):
+                if isinstance(row, (list, tuple)):
+                    for cell in row:
+                        c_str = str(cell).strip()
+                        if len(c_str.split()) >= 5:
+                            total_cells += 1
+                            if any(m in c_str for m in causal_markers):
+                                mechanistic_cells += 1
+
+    pedagogy_ratio = (mechanistic_cells / max(1, total_cells)) if total_cells > 0 else 1.0
+    passed = bool(pedagogy_ratio >= 0.35 or total_cells < 4)
+
+    return {
+        "passed": passed,
+        "mechanistic_cells_count": mechanistic_cells,
+        "total_evaluated_cells": total_cells,
+        "pedagogy_ratio": round(pedagogy_ratio, 2),
+        "status": "PASSED_FIRST_PASS_PEDAGOGY" if passed else "WARNING_CRYPTIC_TOKENS_DETECTED"
+    }
+
 def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """Compares source text against generated summary data with zero-omission enforcement."""
     norm_source = normalize_medical_text(source_text)
@@ -1260,6 +1296,7 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     scanned_page_report = audit_scanned_pages(source_text, summary_data)
     chronological_report = audit_chronological_sequence(source_text, summary_data)
     grounding_report = audit_source_grounding(source_text, summary_data)
+    pedagogy_report = audit_mechanistic_pedagogy(summary_data)
 
     # Enforce Cutoff Integrity: cutoff_coverage >= 95.0% and zero-omission if <= 10 cutoffs
     cutoff_passed = (cutoff_coverage_pct >= 95.0) if len(source_cutoffs) > 10 else (len(unique_omitted_cutoffs) == 0)
@@ -1327,6 +1364,7 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         "scanned_page_audit": scanned_page_report,
         "chronological_sequence_audit": chronological_report,
         "source_grounding_audit": grounding_report,
+        "mechanistic_pedagogy_audit": pedagogy_report,
         "compression_audit": {
             "source_word_count": src_words,
             "summary_word_count": sum_words,

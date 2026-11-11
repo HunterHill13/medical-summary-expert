@@ -3792,6 +3792,101 @@ def test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit():
 
     print("[PASS] Bug AV Test Passed: Strict zero parametric extrapolation and source grounding audit gate verified.")
 
+def test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering():
+    """Bug AW (v3.9.15 - Rule 30): Self-Contained Base64 Diagrams & Immune PDF Rendering Gate.
+    1. Base64 Data URI Embedding: In build_html_summary, diagrams and clinical figures
+       are encoded into self-contained Base64 Data URIs (data:image/png;base64,...)
+       so that the HTML file is 100% portable and never breaks when moved.
+    2. Print Media CSS Rules: @media print contains explicit constraints:
+       - .diagram-card and .figure-card have page-break-inside: avoid !important
+       - .diagram-img has max-height: 440px !important and object-fit: contain !important
+    3. Playwright Chromium file:/// Navigation: build_pdf_summary navigates via page.goto(file_url)
+       ensuring local assets resolve without broken image icons.
+    4. Portability Verification: Moving the HTML file to an isolated directory without the diagrams/ folder
+       still renders all images cleanly with naturalWidth > 0 in headless Chromium.
+    5. Rule 30 in SKILL.md: Formally documented.
+    """
+    from build_summary_pack import build_html_summary, build_pdf_summary, render_mermaid_diagram_to_png
+    import shutil
+    import tempfile
+    from playwright.sync_api import sync_playwright
+
+    test_out_dir = os.path.join("dist", "test_aw_diagram_render")
+    os.makedirs(test_out_dir, exist_ok=True)
+    html_path = os.path.join(test_out_dir, "summary_with_diagram.html")
+    pdf_path = os.path.join(test_out_dir, "summary_with_diagram.pdf")
+
+    sample_data = {
+        "topic_title": "الگوریتم تشخیصی ندول تیروئید",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: رویکرد به ندول تیروئید",
+                "headers": ["گام بالینی", "اقدام و معیار", "توجیه پاتوفیزیولوژی"],
+                "rows": [
+                    ["سنجش TSH", "• کات‌آف اولیه: اگر TSH سرکوب باشد، اسکن تیروئید انجام شود.", "• تفکیک ندول عملکردی (گرم) از غیرعملکردی (سرد)"],
+                    ["سونوگرافی و FNA", "• اگر ندول سفت و هیپواکو با میکروکلسیفیکاسیون باشد، FNA توصیه می‌شود.", "• رد قطعی بدخیمی کارسینوم پاپیلاری"]
+                ],
+                "flowchart": (
+                    "flowchart TD\n"
+                    "A[بیمار با ندول تیروئید] --> B[سنجش سطح سرمی TSH]\n"
+                    "B -->|TSH نرمال یا بالا| C[سونوگرافی با رزولوشن بالا و بیوپسی FNA]\n"
+                    "B -->|TSH پایین و سرکوب| D[اسکن ایزوتوپ تیروئید 123-I]\n"
+                    "D -->|ندول سرد| C\n"
+                    "D -->|ندول گرم| E[تیروئیدوتوکسیکوز و ندول اتونوم]"
+                )
+            }
+        ]
+    }
+
+    # 1. Generate HTML Summary
+    build_html_summary(sample_data, html_path)
+    assert os.path.exists(html_path), "HTML summary was not generated!"
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    # 2. Assert Base64 Data URI in HTML
+    assert "data:image/png;base64," in html_content, "Diagram image was not embedded as Base64 Data URI!"
+    assert 'class="diagram-img"' in html_content, "Diagram img element missing!"
+
+    # 3. Assert @media print CSS rules
+    assert "page-break-inside: avoid !important" in html_content, "Missing page-break-inside constraint in @media print!"
+    assert "max-height: 440px !important" in html_content, "Missing max-height constraint for diagrams in @media print!"
+    assert "object-fit: contain !important" in html_content, "Missing object-fit constraint in @media print!"
+
+    # 4. Portability Check: Move HTML to isolated folder without diagrams/ folder
+    with tempfile.TemporaryDirectory() as iso_dir:
+        isolated_html = os.path.join(iso_dir, "isolated_summary.html")
+        shutil.copy2(html_path, isolated_html)
+
+        # Launch Chromium and verify img loads with naturalWidth > 0
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            file_url = "file:///" + os.path.abspath(isolated_html).replace(os.sep, "/")
+            page.goto(file_url, wait_until="networkidle")
+
+            img_count = page.locator(".diagram-img").count()
+            assert img_count >= 1, f"Expected at least 1 diagram img, found {img_count}"
+
+            natural_w = page.evaluate("() => document.querySelector('.diagram-img').naturalWidth")
+            natural_h = page.evaluate("() => document.querySelector('.diagram-img').naturalHeight")
+            assert natural_w > 0 and natural_h > 0, f"BROKEN IMAGE DETECTED! naturalWidth={natural_w}, naturalHeight={natural_h}"
+            browser.close()
+
+    # 5. Generate PDF via Playwright
+    build_pdf_summary(html_path, pdf_path, course_name="فیزیوپاتولوژی غدد")
+    assert os.path.exists(pdf_path), "PDF was not generated!"
+    assert os.path.getsize(pdf_path) > 5000, "Generated PDF is unexpectedly small or corrupt!"
+
+    # 6. Verify Rule 30 in SKILL.md
+    with open("SKILL.md", "r", encoding="utf-8") as f_sk:
+        skill_text = f_sk.read()
+    assert "Rule 30: خودکفایی ۱۰۰ درصدی تصاویر و دیاگرام‌ها با Data URI" in skill_text, "Rule 30 missing from SKILL.md!"
+
+    print("[PASS] Bug AW Test Passed: Self-contained Base64 diagrams and immune PDF rendering verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3842,4 +3937,5 @@ if __name__ == "__main__":
     test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
     test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices()
     test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit()
-    print("=== ALL DIAGNOSTIC TESTS (48/48) COMPLETED SUCCESSFULLY ===")
+    test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering()
+    print("=== ALL DIAGNOSTIC TESTS (49/49) COMPLETED SUCCESSFULLY ===")

@@ -1222,6 +1222,25 @@ __CLEAN_CODE__
         print(f"[WARN] Mermaid diagram render fallback: {ex}")
         return False
 
+def encode_image_to_base64_uri(img_path: str) -> Optional[str]:
+    """
+    Rule 30 (SELF_CONTAINED_HTML_AND_PDF_DIAGRAM_RENDER_GATE - v3.9.15):
+    Encodes local diagram and clinical figure images into self-contained Base64 Data URIs.
+    Guarantees 100% self-containment in HTML and immune, synchronous rendering in Playwright PDF
+    without broken image icons.
+    """
+    if not img_path or not os.path.exists(img_path) or os.path.getsize(img_path) < 10:
+        return None
+    try:
+        import base64
+        ext = os.path.splitext(img_path)[1].lower().replace('.', '')
+        mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else 'image/png' if ext == 'png' else 'image/svg+xml' if ext == 'svg' else 'image/png'
+        with open(img_path, 'rb') as f_img:
+            b64_data = base64.b64encode(f_img.read()).decode('utf-8')
+        return f"data:{mime};base64,{b64_data}"
+    except Exception:
+        return None
+
 def add_clinical_vignettes(doc, vignettes: List[Dict[str, Any]]):
     """Renders active recall case scenarios with choices, correct answers and pathophysiological rationale."""
     if not vignettes:
@@ -3934,9 +3953,13 @@ def render_html_section_block(html_parts: List[str], sec: Dict[str, Any], sec_id
 
         enriched_m = enrich_mermaid_flowchart(sec_flowchart, title=sec_title)
         if os.path.exists(png_path) and os.path.getsize(png_path) > 1000:
-            rel_png = os.path.relpath(png_path, target_dir) if target_dir else png_path
-            rel_png = rel_png.replace("\\", "/")
-            html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><img class="diagram-img" src="{rel_png}" alt="الگوریتم بالینی {sec_title}"><div style="display:none;" class="mermaid">{enriched_m}</div></div>')
+            b64_uri = encode_image_to_base64_uri(png_path)
+            if b64_uri:
+                img_src = b64_uri
+            else:
+                rel_png = os.path.relpath(png_path, target_dir) if target_dir else png_path
+                img_src = rel_png.replace("\\", "/")
+            html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><img class="diagram-img" src="{img_src}" alt="الگوریتم بالینی {sec_title}"><div style="display:none;" class="mermaid">{enriched_m}</div></div>')
         else:
             html_parts.append(f'<div class="diagram-card"><div class="diagram-header">🧭 الگوریتم بالینی: {sec_title}</div><div class="mermaid">{enriched_m}</div></div>')
 
@@ -4311,7 +4334,9 @@ def render_html_module_block(html_parts: List[str], mod: Dict[str, Any], mod_idx
         html_parts.append('<div class="diagram-card">')
         html_parts.append(f'<div class="diagram-header">🧬 {d_title}</div>')
         if d_img and os.path.exists(d_img):
-            html_parts.append(f'<img class="diagram-img" src="{d_img}" alt="{d_title}" />')
+            b64_d = encode_image_to_base64_uri(d_img)
+            img_src = b64_d if b64_d else d_img.replace("\\", "/")
+            html_parts.append(f'<img class="diagram-img" src="{img_src}" alt="{d_title}" />')
         elif d_code:
             clean_mermaid = clean_mermaid_code(d_code)
             html_parts.append(f'<div class="mermaid">{clean_mermaid}</div>')
@@ -4330,7 +4355,11 @@ def render_html_module_block(html_parts: List[str], mod: Dict[str, Any], mod_idx
             f_pearl = fig.get("exam_pearl") or ""
             html_parts.append('<div class="figure-card">')
             html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
-            if f_p:
+            if f_p and os.path.exists(f_p):
+                b64_f = encode_image_to_base64_uri(f_p)
+                f_src = b64_f if b64_f else f_p.replace("\\", "/")
+                html_parts.append(f'<img class="figure-img" src="{f_src}" alt="{f_title}" />')
+            elif f_p:
                 html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
             if f_cap:
                 html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {f_cap}</div>')
@@ -4393,6 +4422,22 @@ def build_html_summary(data: Dict[str, Any], output_path: Optional[str] = None) 
     .no-break {
         page-break-inside: avoid;
         break-inside: avoid;
+    }
+    .diagram-card, .figure-card {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin: 10px 0 !important;
+        padding: 8px !important;
+    }
+    .diagram-img {
+        max-width: 95% !important;
+        max-height: 440px !important;
+        object-fit: contain !important;
+    }
+    .figure-img {
+        max-width: 90% !important;
+        max-height: 400px !important;
+        object-fit: contain !important;
     }
 }
 body {
@@ -4979,7 +5024,11 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
             f_pearl = fig.get("exam_pearl") or ""
             html_parts.append('<div class="figure-card">')
             html_parts.append(f'<div class="figure-header">📷 {f_title}</div>')
-            if f_p:
+            if f_p and os.path.exists(f_p):
+                b64_f = encode_image_to_base64_uri(f_p)
+                f_src = b64_f if b64_f else f_p.replace("\\", "/")
+                html_parts.append(f'<img class="figure-img" src="{f_src}" alt="{f_title}" />')
+            elif f_p:
                 html_parts.append(f'<img class="figure-img" src="{f_p}" alt="{f_title}" />')
             if f_cap:
                 html_parts.append(f'<div class="figure-caption"><b>• تحلیل یافته‌های بالینی و رادیولوژیک:</b> {format_inline_markdown(f_cap)}</div>')
@@ -5163,7 +5212,11 @@ def build_pdf_summary(data_or_html: Union[Dict[str, Any], str], output_pdf_path:
             return ""
 
         page = browser.new_page()
-        page.set_content(html_content, wait_until="networkidle")
+        file_url = "file:///" + os.path.abspath(html_path).replace(os.sep, "/")
+        try:
+            page.goto(file_url, wait_until="networkidle")
+        except Exception:
+            page.set_content(html_content, wait_until="networkidle")
         raw_pdf_bytes = page.pdf(
             format="A4",
             print_background=True,

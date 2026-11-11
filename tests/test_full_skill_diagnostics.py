@@ -639,7 +639,7 @@ def test_bug_r_table_cell_textbox_preservation():
 def test_bug_s_english_prose_stop_words_in_entity_recall():
     """Bug S: English sentence-starting prose words (When, Because, During, Other, First) must not trigger false omission warnings."""
     src = (
-        "When managing Heart Failure, Especially during acute decompensation, First evaluate volume status. "
+        "When managing Heart Failure (نارسایی قلبی), Especially during acute decompensation, First evaluate volume status. "
         "Because ARNI and empagliflozin improve survival, After stabilizing, initiate therapy. "
         "Other considerations include checking BNP and eGFR. Avoid verapamil."
     )
@@ -3589,7 +3589,7 @@ def test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
     # 4. Chronological Progression & Source Fidelity Audit
     source_lecture_text = """
     مقدمه بر غدد درون‌ریز و تیروئید.
-    اولاً در مورد بیماری گریوز بحث می‌کنیم که تحریک گیرنده TSH است.
+    اولاً در مورد بیماری گریوز بحث می‌کنیم که تحریک گیرنده TSH با آنتی‌بادی محرک TSI است.
     سپس به سراغ ندول‌های تیروئید و سونوگرافی می‌رویم.
     در نهایت کات‌آف TSH کمتر از 0.1 mIU/L و درمان با متی مازول بررسی می‌شود.
     """
@@ -3704,6 +3704,94 @@ def test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices():
 
     print("[PASS] Bug AU Test Passed: First-pass mechanistic pedagogy and strict zero trailing bloat verified.")
 
+
+
+def test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit():
+    """Bug AV (v3.9.14 - Rule 29): Strict Zero Parametric Extrapolation & Grounding Audit Gate.
+    1. Grounding Failure Detection: When a summary injects external syndromes/drugs from parametric memory
+       (e.g., Cushing, Thyroid Storm, Pheochromocytoma into a Hashimoto lecture), audit_source_grounding
+       returns is_source_grounded=False with ungrounded_entities listed.
+    2. Audit Coverage Blocker: audit_coverage fails with WARNING_UNGROUNDED_EXTERNAL_ENTITIES_DETECTED
+       when ungrounded entities are present.
+    3. Grounded Success: 100% grounded summaries pass audit_source_grounding and audit_coverage cleanly.
+    4. Prompt & Schema Guardrails: BATCH_PROMPT_TEMPLATE enforces Zero Parametric Extrapolation Law,
+       Precedence of Zero-Extrapolation over Pedagogy, and completely purges '(هاریسون)'.
+    5. Rule 29 in SKILL.md: Formally documented and active.
+    """
+    from audit_summary_coverage import audit_source_grounding, audit_coverage
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+
+    source_lecture = """
+    مقدمه بر فیزیوپاتولوژی بیماری‌های غده تیروئید و کم‌کاری آن.
+    بیماری هاشیموتو Hashimoto Thyroiditis شایع‌ترین علت هیپوتیروئیدی در مناطق بدون کمبود ید است.
+    استاد تأکید کردند: آنتی‌بادی ضد تیروپروکسیداز Anti-TPO در ۹۵ درصد بیماران مثبت است.
+    درمان انتخابی قرص لووتیروکسین Levothyroxine با دوز 1.6 میکروگرم بر کیلوگرم روزانه است.
+    کات‌آف تشخیصی TSH بالای 10 mIU/L اندیکاسیون قطعی شروع درمان است حتی اگر FT4 نرمال باشد.
+    """
+
+    # 1. Hallucinated Summary (Injected from Parametric Memory)
+    hallucinated_summary = {
+        "topic_title": "هیپوتیروئیدی و اختلالات تیروئید",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: هیپوتیروئیدی",
+                "headers": ["بیماری", "پاتوفیزیولوژی", "درمان و کات‌آف"],
+                "rows": [
+                    ["بیماری هاشیموتو (Hashimoto Thyroiditis)", "• استاد تأکید کردند: تخریب خودایمنی تیروئید با Anti-TPO در ۹۵ درصد مثبت است.", "• لووتیروکسین Levothyroxine با دوز 1.6 mcg/kg | کات‌آف TSH > 10 (با FT4 نرمال)"],
+                    ["سندروم کوشینگ (Cushing Syndrome)", "• ترشح خودمختار کورتیزول از آدنوم", "• درمان با کتوکونازول و جراحی آدرنالکتومی"],
+                    ["طوفان تیروئیدی (Thyroid Storm)", "• رهایش ناگهانی هورمون‌های تیروئید", "• پروپرانولول و هیدروکورتیزون و فنوباربیتال"]
+                ]
+            }
+        ]
+    }
+
+    # Verify audit_source_grounding catches the hallucinations
+    grounding_fail = audit_source_grounding(source_lecture, hallucinated_summary)
+    assert grounding_fail["is_source_grounded"] is False, f"Expected grounding failure, got {grounding_fail}"
+    assert len(grounding_fail["ungrounded_entities"]) >= 1, "Expected ungrounded entities to be captured!"
+    assert any("کوشینگ" in e or "Cushing" in e or "طوفان" in e for e in grounding_fail["ungrounded_entities"]), f"Expected Cushing or Thyroid Storm in ungrounded: {grounding_fail['ungrounded_entities']}"
+
+    # Verify audit_coverage is blocked by ungrounded entities
+    cov_fail = audit_coverage(source_lecture, hallucinated_summary)
+    assert cov_fail["verdict"] == "WARNING_UNGROUNDED_EXTERNAL_ENTITIES_DETECTED", f"Expected WARNING_UNGROUNDED_EXTERNAL_ENTITIES_DETECTED, got {cov_fail['verdict']}"
+
+    # 2. Fully Grounded Summary
+    grounded_summary = {
+        "topic_title": "هیپوتیروئیدی و هاشیموتو",
+        "organ_system": "غدد درون‌ریز",
+        "sections": [
+            {
+                "section_id": "sec_01",
+                "title": "بخش ۱: هیپوتیروئیدی و بیماری هاشیموتو",
+                "headers": ["بیماری", "پاتوفیزیولوژی", "درمان و کات‌آف"],
+                "rows": [
+                    ["بیماری هاشیموتو (Hashimoto Thyroiditis)", "• استاد تأکید کردند: تخریب خودایمنی با آنتی‌بادی Anti-TPO در ۹۵ درصد بیماران مثبت است.", "• درمان انتخابی قرص لووتیروکسین Levothyroxine با دوز 1.6 mcg/kg | کات‌آف TSH > 10 mIU/L (حتی با FT4 نرمال)"]
+                ]
+            }
+        ]
+    }
+
+    grounding_pass = audit_source_grounding(source_lecture, grounded_summary)
+    assert grounding_pass["is_source_grounded"] is True, f"Expected 100% grounded, got: {grounding_pass}"
+    assert len(grounding_pass["ungrounded_entities"]) == 0
+
+    cov_pass = audit_coverage(source_lecture, grounded_summary)
+    assert cov_pass["verdict"] == "PASSED", f"Expected PASSED, got: {cov_pass['verdict']}"
+
+    # 3. Prompt & Schema Verifications
+    assert "Zero Parametric Extrapolation Law" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE missing Zero Parametric Extrapolation Law!"
+    assert "Precedence of Zero-Extrapolation over Pedagogy" in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE missing Precedence of Zero-Extrapolation over Pedagogy!"
+    assert "(هاریسون)" not in BATCH_PROMPT_TEMPLATE, "BATCH_PROMPT_TEMPLATE still contains '(هاریسون)'!"
+
+    # 4. SKILL.md Verification
+    with open("SKILL.md", "r", encoding="utf-8") as f_sk:
+        skill_text = f_sk.read()
+    assert "Rule 29: تقدم قطعی وفاداری به منبع بر تکمیل آموزشی" in skill_text, "Rule 29 missing from SKILL.md!"
+
+    print("[PASS] Bug AV Test Passed: Strict zero parametric extrapolation and source grounding audit gate verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3753,4 +3841,5 @@ if __name__ == "__main__":
     test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_charts()
     test_bug_at_session_summary_folder_vibrant_flowcharts_and_source_grounding()
     test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices()
-    print("=== ALL DIAGNOSTIC TESTS (47/47) COMPLETED SUCCESSFULLY ===")
+    test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit()
+    print("=== ALL DIAGNOSTIC TESTS (48/48) COMPLETED SUCCESSFULLY ===")

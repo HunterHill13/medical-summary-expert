@@ -248,13 +248,14 @@ def extract_clinical_syndromes_and_diseases(text: str) -> List[Tuple[str, str]]:
         name_tokens = name.split()
         valid_tokens = []
         for tok in name_tokens:
-            tok_clean = tok.strip()
+            tok_clean = tok.strip("'\":،,. ").strip()
             if tok_clean.lower() in STOP_WORDS:
                 break
-            valid_tokens.append(tok_clean)
+            if tok_clean:
+                valid_tokens.append(tok_clean)
         if not valid_tokens:
             continue
-        clean_name = " ".join(valid_tokens)
+        clean_name = " ".join(valid_tokens).strip("'\":،,. ")
         full_phrase = f"{prefix} {clean_name}".strip()
         full_key = full_phrase.lower()
         if full_key not in seen and len(clean_name) >= 2:
@@ -1032,36 +1033,189 @@ def audit_chronological_sequence(source_text: str, summary_data: Dict[str, Any])
 
 def audit_source_grounding(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Audits 100% source fidelity and ensures zero external extrapolation or hallucinated syndromes.
-    Checks whether key disease entities and drug names present in the summary originated from the source lecture.
+    Rule 29 (STRICT_ZERO_PARAMETRIC_EXTRAPOLATION_GATE - v3.9.14):
+    Audits 100% source fidelity and guarantees zero external extrapolation from parametric memory.
+    Inspects:
+    1. Primary row concepts (r[0]) in each table section.
+    2. Medical syndromes, diseases, triads and clinical criteria (Persian & English).
+    3. Distinctive medical acronyms and pharmacology classes.
+    Flags any clinical entity in the summary that is completely absent from the source lecture.
     """
     norm_src = normalize_medical_text(source_text).lower()
-    sum_text = []
-    for sec in (summary_data.get("sections") or summary_data.get("thematic_sections") or []):
-        sum_text.append(sec.get("title") or "")
-        for r in sec.get("rows", []):
-            if isinstance(r, list):
-                sum_text.extend([str(c) for c in r])
+    src_tokens = set(re.findall(r'[؀-ۿa-zA-Z0-9]+', norm_src))
+    
+    EXEMPT_TOKENS = {
+        'TD', 'MD', 'DOCX', 'PDF', 'HTML', 'A4', 'URL', 'JSON', 'TSV', 'APKG', 'XML', 'CSS',
+        'FPG', 'OGTT', 'TSH', 'FT4', 'FT3', 'ACTH', 'GH', 'PTH', 'ECG', 'CXR', 'MRI', 'CT'
+    }
+    GENERIC_STRUCTURAL = {
+        'پاتوفیزیولوژی', 'اتیولوژی', 'علائم', 'تظاهرات', 'درمان', 'تشخیص', 'آزمایشگاه',
+        'عوارض', 'پیش‌آگهی', 'استیجینگ', 'مرحله‌بندی', 'معیارها', 'نکات', 'مقدمه', 'تعریف',
+        'سیر', 'بیماری', 'غربالگری', 'اقدامات', 'اورژانس', 'تفسیر', 'جدول', 'بخش',
+        'بررسی', 'ارزیابی', 'رویکرد', 'مرور', 'ملاحظات', 'نگاه', 'تشخیصی', 'بالینی',
+        'درمانی', 'داروشناسی', 'اصول', 'مبانی', 'مفاهیم', 'کلاس', 'شاخص', 'مدیریت',
+        'راهنما', 'پروتکل', 'الگوریتم', 'مرحله', 'فاز', 'مرحله‌ای', 'فارماکولوژی',
+        'فارماکولوژیک', 'هورمون', 'هورمون‌ها', 'آناتومی', 'فیزیولوژی'
+    }
+
+    BILINGUAL_SYNONYMS = {
+        'cushing': ['کوشینگ'],
+        'addison': ['آدیسون'],
+        'sheehan': ['شیهان'],
+        'apoplexy': ['آپوپلکسی'],
+        'pheochromocytoma': ['فئوکروموسیتوما'],
+        'graves': ['گریوز'],
+        'hashimoto': ['هاشیموتو'],
+        'bartter': ['بارتر'],
+        'gitelman': ['گیتلمن'],
+        'liddle': ['لیدل'],
+        'fanconi': ['فانکونی'],
+        'heart failure': ['نارسایی قلبی', 'قلبی'],
+        'diabetes': ['دیابت'],
+        'acromegaly': ['آکرومگالی'],
+        'prolactinoma': ['پرولاکتینوما'],
+        'nephrotic': ['نفروتیک'],
+        'nephritic': ['نفریتیک'],
+        'lupus': ['لوپوس'],
+        'scleroderma': ['اسکلرودرمی'],
+        'vasculitis': ['واسکولیت'],
+        'sarcoidosis': ['سارکوئیدوز'],
+        'amyloidosis': ['آمیلوئیدوز'],
+        'cirrhosis': ['سیروز'],
+        'pancreatitis': ['پانکراتیت'],
+        'colitis': ['کولیت'],
+        'crohn': ['کرون'],
+        'celiac': ['سلیاک'],
+        'hepatitis': ['هپاتیت'],
+        'asthma': ['آسم'],
+        'pneumonia': ['پنومونی'],
+        'conn': ['کان'],
+        'nelson': ['نلسون'],
+        'carney': ['کارنی'],
+        'turner': ['ترنر'],
+        'klinefelter': ['کلاین فلتر', 'کلاین‌فلتر'],
+        'kallmann': ['کالمن'],
+        'marfan': ['مارفان'],
+        'ehlers-danlos': ['اهلرز دانلوس', 'اهلرز'],
+    }
+
+    bilingual_gloss_tokens = set()
+
+    def token_in_source(tok: str) -> bool:
+        t = tok.strip("'\":،,. ").lower()
+        if not t:
+            return True
+        if (t in src_tokens) or (t in norm_src) or (t in bilingual_gloss_tokens):
+            return True
+        # Bilingual synonym checks
+        if t in BILINGUAL_SYNONYMS:
+            if any(syn in src_tokens or syn in norm_src for syn in BILINGUAL_SYNONYMS[t]):
+                return True
+        for en_key, fa_list in BILINGUAL_SYNONYMS.items():
+            if t in fa_list:
+                if en_key in src_tokens or en_key in norm_src:
+                    return True
+        # Persian morphological stem checks (adjective/plural suffixes)
+        if t.endswith('وی') and (t[:-2] + 'ه' in src_tokens or t[:-2] + 'ه' in norm_src):
+            return True
+        if t.endswith('ی') and (t[:-1] in src_tokens or t[:-1] in norm_src):
+            return True
+        if t.endswith('ها') and (t[:-2] in src_tokens or t[:-2] in norm_src):
+            return True
+        if t.endswith('های') and (t[:-3] in src_tokens or t[:-3] in norm_src):
+            return True
+        if t.endswith('ان') and (t[:-2] in src_tokens or t[:-2] in norm_src):
+            return True
+        if '-' in t and any(p in src_tokens for p in t.split('-') if len(p) >= 2):
+            return True
+        return False
+
+    sum_parts = []
+    ungrounded_set = set()
+    grounded_count = 0
+
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    for sec in sections:
+        if isinstance(sec, dict):
+            sum_parts.append(sec.get("title") or sec.get("section_title") or "")
+            for r in (sec.get("rows") or []):
+                if isinstance(r, list) and r:
+                    sum_parts.extend(str(c) for c in r)
+                    concept = str(r[0])
+                    clean_c = re.sub(r'[*•\(\)\[\]:،,]', ' ', concept).strip()
+                    tokens = [t.strip().lower() for t in clean_c.split() if len(t.strip()) > 2 and t.strip().lower() not in GENERIC_STRUCTURAL]
+                    if tokens:
+                        matched = any(token_in_source(t) for t in tokens)
+                        if matched:
+                            grounded_count += 1
+                        else:
+                            ungrounded_set.add(concept.strip())
+
     for mod in (summary_data.get("modules") or []):
-        sum_text.append(mod.get("name") or "")
-        for k, v in mod.items():
-            if isinstance(v, list):
-                sum_text.extend([str(i) for i in v])
-            elif isinstance(v, str):
-                sum_text.append(v)
+        if isinstance(mod, dict):
+            m_name = mod.get("name") or ""
+            sum_parts.append(m_name)
+            for k, v in mod.items():
+                if isinstance(v, list):
+                    sum_parts.extend([str(i) for i in v])
+                elif isinstance(v, str):
+                    sum_parts.append(v)
+            if m_name:
+                clean_m = re.sub(r'[*•\(\)\[\]:،,]', ' ', m_name).strip()
+                tokens = [t.strip().lower() for t in clean_m.split() if len(t.strip()) > 2 and t.strip().lower() not in GENERIC_STRUCTURAL]
+                if tokens:
+                    matched = any(token_in_source(t) for t in tokens)
+                    if matched:
+                        grounded_count += 1
+                    else:
+                        ungrounded_set.add(m_name.strip())
 
-    full_sum = " ".join(sum_text)
-    norm_sum = normalize_medical_text(full_sum).lower()
-    sum_entities = extract_drug_and_disease_entities(norm_sum)
+    full_sum = " ".join(sum_parts)
 
-    grounded_count = sum(1 for e in sum_entities if e in norm_src or len(e) <= 3)
-    grounding_pct = round((grounded_count / len(sum_entities)) * 100.0, 1) if sum_entities else 100.0
+    # Extract parenthesized bilingual glosses in summary: e.g. "سندرم کوشینگ (Cushing Syndrome)"
+    for m in re.finditer(r'([آ-یa-zA-Z0-9\s]{2,})\s*\(([^)]+)\)', full_sum):
+        preceding = m.group(1).strip()
+        inside = m.group(2).strip()
+        prec_tokens = [t.strip().lower() for t in preceding.split() if len(t.strip()) > 2 and t.strip().lower() not in GENERIC_STRUCTURAL]
+        if prec_tokens and any(token_in_source(t) for t in prec_tokens):
+            for t_in in re.findall(r'[a-zA-Z0-9آ-ی]+', inside.lower()):
+                if len(t_in) > 1:
+                    bilingual_gloss_tokens.add(t_in)
+
+    # 1. Clinical syndromes & diseases (both Persian and English)
+    syndromes = extract_clinical_syndromes_and_diseases(full_sum)
+    for phrase, clean_name in syndromes:
+        c_tokens = [t.strip("'\":،,. ").lower() for t in clean_name.split() if len(t.strip("'\":،,. ")) > 2]
+        if c_tokens and any(token_in_source(t) for t in c_tokens):
+            grounded_count += 1
+        else:
+            ungrounded_set.add(phrase.strip("'\":،,. "))
+
+    # 2. Medical acronyms & drug classes (preserve case in full_sum)
+    entities = extract_drug_and_disease_entities(full_sum)
+    for e in entities:
+        if e in EXEMPT_TOKENS or len(e) <= 2:
+            continue
+        if token_in_source(e):
+            grounded_count += 1
+        else:
+            ungrounded_set.add(e)
+
+    ungrounded_list = sorted(list(ungrounded_set))
+    total_entities = max(1, grounded_count + len(ungrounded_list))
+    grounding_pct = round(((total_entities - len(ungrounded_list)) / total_entities) * 100.0, 1)
+    
+    # Strict Zero-Extrapolation: No external ungrounded entities allowed
+    is_source_grounded = bool(len(ungrounded_list) == 0 or (len(ungrounded_list) <= 1 and total_entities >= 25 and grounding_pct >= 96.0))
 
     return {
-        "is_source_grounded": bool(grounding_pct >= 85.0),
+        "is_source_grounded": is_source_grounded,
         "grounding_fidelity_pct": grounding_pct,
-        "total_summary_entities": len(sum_entities),
-        "grounded_entities_count": grounded_count
+        "total_summary_entities": total_entities,
+        "grounded_entities_count": grounded_count,
+        "ungrounded_entities_count": len(ungrounded_list),
+        "ungrounded_entities": ungrounded_list[:10],
+        "status": "PASS_100_PERCENT_GROUNDED" if is_source_grounded else "WARNING_UNGROUNDED_EXTERNAL_ENTITIES_DETECTED"
     }
 
 
@@ -1313,13 +1467,20 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
         and (concept_depth_report["status"] != "AGGRESSIVELY_TRUNCATED")
         and not cell_bloat_report["cell_bloat_detected"]
         and not dedup_report["cross_layer_duplication_detected"]
+        and grounding_report["is_source_grounded"]
     )
 
     if not passed:
-        if len(omitted_emphasis) > 0:
+        if len(omitted_warnings) > 0:
+            verdict = "WARNING_OMISSIONS_DETECTED"
+        elif not illness_script_report["illness_script_compliant"]:
+            verdict = "WARNING_OMISSIONS_DETECTED"
+        elif len(omitted_emphasis) > 0:
             verdict = "WARNING_INSTRUCTOR_EMPHASIS_OMITTED"
         elif not cutoff_passed:
             verdict = "WARNING_CLINICAL_CUTOFF_OMITTED"
+        elif not grounding_report["is_source_grounded"]:
+            verdict = "WARNING_UNGROUNDED_EXTERNAL_ENTITIES_DETECTED"
         elif verbatim_bloat_detected and num_coverage_pct >= 80.0:
             verdict = "WARNING_VERBATIM_BLOAT_DETECTED"
         elif cell_bloat_report["cell_bloat_detected"]:

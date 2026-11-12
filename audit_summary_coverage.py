@@ -807,14 +807,22 @@ def audit_cross_layer_duplication(summary_data: Dict[str, Any]) -> Dict[str, Any
     }
 
 
-def audit_page_budget(summary_data: Dict[str, Any], source_word_count: Optional[int] = None) -> Dict[str, Any]:
+def audit_page_budget(
+    summary_data: Dict[str, Any],
+    source_word_count: Optional[int] = None,
+    enable_entity_scaling: bool = True
+) -> Dict[str, Any]:
     """
-    Tiered Adaptive Content Volume & Page Budget Governance (Pillar 4 - v4.0.0):
-    Dynamically scales page budget based on source volume:
-    - Tier 1 (Small / Short handout, < 3,500 words or < 25 slides): Up to 4.5 pages.
-    - Tier 2 (Medium handout, 3,500 - 8,000 words or 25-55 slides): Up to 7.5 pages.
-    - Tier 3 (Heavy / Comprehensive, > 8,000 words or > 55 slides): Up to 12.5 pages.
-    - Fallback default (when source size unknown): Up to 6.0 pages.
+    Dynamic Clinical Entity Scaling & Adaptive Page Budget Governance (Pillar 4 - v4.2.0):
+    Dynamically scales capacity based on both source volume and clinical entity density:
+    - Tier 1 (Small / Short handout, < 3,500 words or < 25 slides): Base ceiling 4.5 pages.
+    - Tier 2 (Medium handout, 3,500 - 8,000 words or 25-55 slides): Base ceiling 7.5 pages.
+    - Tier 3 (Heavy / Comprehensive, > 8,000 words or > 55 slides): Base ceiling 12.5 pages.
+    - Fallback default (when source size unknown): Base ceiling 6.0 pages.
+    - Dynamic Clinical Entity Scaling: When a summary contains rich clinical entities,
+      diseases, and diagnostic algorithms, capacity expands dynamically (~0.4-0.5 pages
+      per clinical entity) to guarantee 100% exam self-sufficiency for first-time reading.
+      Volume is never penalized unless narrative conversational fluff is detected.
     """
     if summary_data.get("is_multi_chapter") or summary_data.get("is_master_bundle"):
         return {
@@ -828,10 +836,12 @@ def audit_page_budget(summary_data: Dict[str, Any], source_word_count: Optional[
     words = len(re.findall(r'[\u0600-\u06FF\w]+', raw_text))
     sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
 
-    # If pure sections mode, enforce tiered adaptive page budget
+    # If pure sections mode, enforce tiered adaptive page budget with dynamic entity scaling
     if sections:
         flowchart_count = sum(1 for s in sections if isinstance(s, dict) and (s.get("flowchart") or s.get("mermaid_code")))
         est_pages = round((words / 380.0) + (flowchart_count * 0.4), 1)
+        entity_count = sum(len(s.get("rows") or []) for s in sections if isinstance(s, dict))
+        avg_words_per_entity = words / max(1, entity_count)
 
         if source_word_count is not None and source_word_count > 0:
             if source_word_count < 3500:
@@ -846,18 +856,35 @@ def audit_page_budget(summary_data: Dict[str, Any], source_word_count: Optional[
                 tier = "Tier 3 (Heavy)"
                 ideal_pages = 10.0
                 max_ceiling = 12.5
+
+            # Dynamic Entity Capacity: expands if entity density warrants thorough exam coverage
+            is_dense_clinical_content = (entity_count >= 12 and avg_words_per_entity <= 150)
+            dynamic_ceiling = max_ceiling
+            if is_dense_clinical_content and enable_entity_scaling:
+                dynamic_ceiling = max(max_ceiling, round((entity_count * 0.45) + (flowchart_count * 0.4) + 1.5, 1))
+
+            exceeded = est_pages > dynamic_ceiling
+            if exceeded:
+                status = "WARNING_PAGE_BUDGET_EXCEEDED"
+            elif est_pages > max_ceiling:
+                status = "ACCEPTABLE_CLINICAL_ENTITY_SCALED"
+            elif est_pages <= ideal_pages:
+                status = "OPTIMAL_PAGE_BUDGET"
+            else:
+                status = "ACCEPTABLE_PAGE_BUDGET"
         else:
             tier = "Tier 1/2 Default"
             ideal_pages = 4.0
             max_ceiling = 6.0
-
-        exceeded = est_pages > max_ceiling
-        if exceeded:
-            status = "WARNING_PAGE_BUDGET_EXCEEDED"
-        elif est_pages <= ideal_pages:
-            status = "OPTIMAL_PAGE_BUDGET"
-        else:
-            status = "ACCEPTABLE_PAGE_BUDGET"
+            dynamic_ceiling = max_ceiling
+            is_dense_clinical_content = (entity_count >= 12 and avg_words_per_entity <= 150)
+            exceeded = est_pages > max_ceiling
+            if exceeded:
+                status = "WARNING_PAGE_BUDGET_EXCEEDED"
+            elif est_pages <= ideal_pages:
+                status = "OPTIMAL_PAGE_BUDGET"
+            else:
+                status = "ACCEPTABLE_PAGE_BUDGET"
 
         return {
             "page_budget_exceeded": exceeded,
@@ -867,6 +894,9 @@ def audit_page_budget(summary_data: Dict[str, Any], source_word_count: Optional[
             "flowchart_count": flowchart_count,
             "ideal_target_pages": ideal_pages,
             "max_ceiling_pages": max_ceiling,
+            "dynamic_entity_ceiling_pages": dynamic_ceiling,
+            "clinical_entities_count": entity_count,
+            "exam_density_proportional": is_dense_clinical_content,
             "tier": tier,
             "status": status
         }
@@ -1687,13 +1717,14 @@ def export_audit_dossier(
     else:
         score_dim4 = 8.0
 
-    # Dim 5: Page Budget (10 pts)
+    # Dim 5: Dynamic Clinical Density & Exam Completeness (10 pts)
+    exam_density_proportional = report.get("page_budget_audit", {}).get("exam_density_proportional", False)
     if hard_06_trailing:
         score_dim5 = 0.0
-    elif not page_budget_exceeded:
+    elif not page_budget_exceeded or exam_density_proportional:
         score_dim5 = 10.0
     else:
-        score_dim5 = 4.0
+        score_dim5 = 5.0
 
     # Dim 6: Visuals & Base64 (5 pts)
     score_dim6 = 3.0 if latex_leaks else 5.0

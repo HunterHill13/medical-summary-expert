@@ -4094,6 +4094,125 @@ def test_bug_ay_isolated_auditor_egm_swarm():
 
     print("[PASS] Bug AY Test Passed: EGM Isolated Auditor Swarm, Rubric & SRO Verdict Synthesis Gate verified.")
 
+def test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling():
+    """Bug AZ (v4.2.0): Compiler Hard Blocker Gatekeeper & Dynamic Clinical Entity Scaling.
+    1. Dynamic Clinical Entity Scaling (audit_page_budget & export_audit_dossier):
+       - Summary with 24 dense disease/clinical rows reaching 8.6 pages (> 7.5 max ceiling for medium source)
+         is approved without budget penalty because dynamic entity ceiling scales to ~12.7 pages.
+       - Dimension 5 in export_audit_dossier receives full 10.0 pts.
+       - Status is ACCEPTABLE_CLINICAL_ENTITY_SCALED, page_budget_exceeded is False.
+    2. Compiler Hard Blocker Gatekeeper (cmd_build):
+       - Attempting cmd_build without SUMMARY_AUDIT_DOSSIER.json or AUDIT_REPORT.md raises SystemExit(1).
+       - Passing --force-unverified allows cmd_build to compile deliverables even without an audit dossier.
+       - Passing valid dossier with APPROVED_HIGH_YIELD_READY compiles deliverables successfully.
+    3. Documentation & Prompt Synchrony:
+       - BATCH_PROMPT_TEMPLATE articulates 'چگالی بالینی پویا' and 'خودکفایی ۱۰۰٪ آزمونی'.
+       - SKILL.md articulates 'چگالی بالینی پویا و خودکفایی ۱۰۰٪ در آزمون' and 'پروتکل الزامی فراخوانی چند ایجنتی'.
+    """
+    from audit_summary_coverage import audit_page_budget, export_audit_dossier
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE, cmd_build
+    import argparse
+
+    # 1. Test Dynamic Clinical Entity Scaling
+    dense_summary = {
+        "sections": [
+            {
+                "title": f"بخش {s}: مبحث بیماری‌های تیروئید و غدد",
+                "headers": ["نام اختلال بالینی", "معیار و کات‌آف تشخیصی", "پاتوفیزیولوژی و درمان"],
+                "rows": [
+                    [
+                        f"بیماری شماره {s}_{r}: شرح تفصیلی نام اختلال بالینی و علائم اولیه بیماری",
+                        f"• کات‌آف تشخیصی: TSH < {0.1 * r:.1f} mIU/L و سونوگرافی نودول > {r}cm با میکروکلسیفیکاسیون شدید " * 3,
+                        f"• علت پایه و مکانیسم: تحریک اتوایمیون گیرنده TSH → افزایش سنتز هورمون و تیروتوکسیکوز → تجویز داروی متی‌مازول " * 3
+                    ]
+                    for r in range(1, 7)
+                ],
+                "flowchart": "flowchart TD\n  A --> B" if s == 1 else None
+            }
+            for s in range(1, 5)
+        ]
+    }
+    # 24 rows, with ~3,100 words -> ~8.5 pages. In medium source (5000 words), static ceiling is 7.5.
+    res_dense = audit_page_budget(dense_summary, source_word_count=5000)
+    assert res_dense["clinical_entities_count"] == 24, f"Expected 24 entities, got {res_dense['clinical_entities_count']}"
+    assert res_dense["dynamic_entity_ceiling_pages"] > 7.5, "Dynamic ceiling should expand beyond base 7.5"
+    assert res_dense["page_budget_exceeded"] is False, f"Dense clinical summary should not exceed dynamic budget, got {res_dense}"
+    assert res_dense["status"] in ("ACCEPTABLE_CLINICAL_ENTITY_SCALED", "OPTIMAL_PAGE_BUDGET", "ACCEPTABLE_PAGE_BUDGET")
+    assert res_dense["exam_density_proportional"] is True, "Should recognize high clinical entity density"
+
+    # Verify export_audit_dossier awards full 10 pts for Dim 5
+    source_dense_text = "ندول تیروئید و بیماری‌های غدد " * 300
+    dense_dossier = export_audit_dossier(source_dense_text, dense_summary)
+    assert dense_dossier["dimension_scores"]["dim5_tiered_page_budget"] == 10.0, f"Expected 10.0 pts for Dim 5, got {dense_dossier['dimension_scores']}"
+
+    # 2. Test Compiler Hard Blocker Gatekeeper (cmd_build)
+    test_build_dir = os.path.join("dist", "test_az_gatekeeper")
+    os.makedirs(test_build_dir, exist_ok=True)
+    test_sum_file = os.path.join(test_build_dir, "test_summary.json")
+    with open(test_sum_file, "w", encoding="utf-8") as f:
+        json.dump({"topic_title": "تست گیت‌کیپر", "sections": []}, f, ensure_ascii=False)
+
+    # 2a. Unverified attempt must raise SystemExit(1)
+    args_blocked = argparse.Namespace(
+        summary=test_sum_file,
+        out_dir=test_build_dir,
+        prefix="test_pack_blocked",
+        institution="دانشگاه بق",
+        force_unverified=False,
+        dossier=None,
+        audit_md=None
+    )
+    try:
+        cmd_build(args_blocked)
+        assert False, "cmd_build should have raised SystemExit when unverified!"
+    except SystemExit as e:
+        assert e.code == 1, f"Expected exit code 1, got {e.code}"
+
+    # 2b. With --force-unverified, compilation succeeds
+    args_forced = argparse.Namespace(
+        summary=test_sum_file,
+        out_dir=test_build_dir,
+        prefix="test_pack_forced",
+        institution="دانشگاه بق",
+        force_unverified=True,
+        dossier=None,
+        audit_md=None
+    )
+    cmd_build(args_forced)
+    assert os.path.exists(os.path.join(test_build_dir, "test_pack_forced.docx")), "DOCX should be created with --force-unverified"
+
+    # 2c. With verified dossier, compilation succeeds without force flag
+    dossier_data = {
+        "verdict": "APPROVED_HIGH_YIELD_READY",
+        "hard_violations_count": 0,
+        "composite_score": 95.0
+    }
+    with open(os.path.join(test_build_dir, "SUMMARY_AUDIT_DOSSIER.json"), "w", encoding="utf-8") as fd:
+        json.dump(dossier_data, fd, ensure_ascii=False)
+
+    args_verified = argparse.Namespace(
+        summary=test_sum_file,
+        out_dir=test_build_dir,
+        prefix="test_pack_verified",
+        institution="دانشگاه بق",
+        force_unverified=False,
+        dossier=None,
+        audit_md=None
+    )
+    cmd_build(args_verified)
+    assert os.path.exists(os.path.join(test_build_dir, "test_pack_verified.docx")), "DOCX should be created when verified dossier exists"
+
+    # 3. Documentation & Prompt Assertions
+    assert "چگالی بالینی پویا" in BATCH_PROMPT_TEMPLATE, "Dynamic clinical density missing from BATCH_PROMPT_TEMPLATE"
+    assert "خودکفایی ۱۰۰٪ آزمونی" in BATCH_PROMPT_TEMPLATE, "Exam self-sufficiency missing from BATCH_PROMPT_TEMPLATE"
+
+    with open("SKILL.md", "r", encoding="utf-8") as f_sk:
+        sk_text = f_sk.read()
+    assert "چگالی بالینی پویا و خودکفایی ۱۰۰٪ در آزمون" in sk_text, "Dynamic density missing from SKILL.md"
+    assert "پروتکل الزامی فراخوانی چند ایجنتی" in sk_text, "Multi-agent swarm protocol missing from SKILL.md"
+
+    print("[PASS] Bug AZ Test Passed: Compiler Hard Blocker Gatekeeper & Dynamic Clinical Entity Scaling verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -4147,4 +4266,5 @@ if __name__ == "__main__":
     test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering()
     test_bug_ax_unified_six_pillars_and_tiered_volume_governance()
     test_bug_ay_isolated_auditor_egm_swarm()
-    print("=== ALL DIAGNOSTIC TESTS (51/51) COMPLETED SUCCESSFULLY ===")
+    test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling()
+    print("=== ALL DIAGNOSTIC TESTS (52/52) COMPLETED SUCCESSFULLY ===")

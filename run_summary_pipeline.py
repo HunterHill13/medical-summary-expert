@@ -97,13 +97,14 @@ BATCH_PROMPT_TEMPLATE = """# دستور کار سنتز خلاصه پزشکی ف
 وظیفه شما تبدیل متن خام این بخش به یک فایل JSON معتبر ساختاریافته به نام `summary_shard_{batch_idx:02d}.json` است.
 
 ## 📋 اصول بنیادین خلاصه‌نویسی یکپارچه و بودجه‌بندی پله‌ای صفحات (Unified Six Pillars & Tiered Adaptive Engine)
-1. **بودجه‌بندی حجم پله‌ای متناسب با جزوه و نگارش ساختاریافته (Tiered Adaptive Page Budget & Structured Syntax):**
-   - نگارش سلول‌ها کاملاً ساختاریافته، متراکم و هدفمند (TELEGRAPHIC & FLUENT)، بدون حشو و بدون اطناب، با بولت‌های تمیز `•` و نمادهای `→`، `↑`، `↓`.
-   - بودجه‌بندی حجم سند دقیقاً متناسب با طول و تعداد اسلایدهای جزوه منبع است:
-     * **جزوه کوچک (زیر ۲۵ اسلاید / زیر ۳,۵۰۰ کلمه):** تا سقف ۴ صفحه A4 (ایده‌آل ۴ صفحه).
-     * **جزوه متوسط (۲۵ تا ۵۵ اسلاید / ۳,۵۰۰ تا ۸,۰۰۰ کلمه):** ۵ تا ۷ صفحه A4 (حداکثر سقف ۶ الی ۷ صفحه A4).
-     * **جزوه سنگین و مفصل (بالای ۵۵ اسلاید / بالای ۸,۰۰۰ کلمه):** ۸ تا ۱۲ صفحه A4.
-   - از هرگونه نقل‌قول کلامی استاد («استاد در دقیقه فلان فرمودند...»، «با اشاره به اسلاید...»)، حشو، مقدمه‌چینی، و توضیحات انشایی طولانی اکیداً خودداری کنید تا خلاصه متورم نشود.
+1. **چگالی بالینی پویا، خودکفایی ۱۰۰٪ آزمونی و بودجه‌بندی حجم پله‌ای (Dynamic Clinical Entity Scaling & Tiered Volume Engine):**
+   - **اصل خودکفایی آموزشی-آزمونی برای دور اول مطالعه:** خلاصه باید به گونه‌ای جامع و مفهومی تدوین شود که دانشجویی که برای **بار اول** مبحث را می‌خواند و جزوه اصلی را باز نکرده است، منطق پاتوفیزیولوژی، علائم بالینی، کرایتری‌ها و مقادیر کات‌آف، و خطوط درمان را به طور کامل متوجه شود و برای آزمون ۱۰۰٪ بی‌نیاز از هر منبع دیگری باشد.
+   - **منع مطلق حذف مطالب بالینی به بهانه متراژ:** هرگز و تحت هیچ شرایطی، بیماری‌ها، سندرم‌ها، مکانیسم‌های سلولی، کات‌آف‌های آزمایشگاهی، تله‌های امتحانی یا اندیکاسیون‌های دارویی را برای کوتاه کردن سند حذف یا فشرده‌سازی افراطی نکنید! طول نهایی سند تابع طبیعی تعداد موجودیت‌های بالینی (Clinical Entities) جزوه است.
+   - **بودجه‌بندی حجم پله‌ای منعطف متناسب با اسلایدهای جزوه:**
+     * **جزوه کوچک (زیر ۲۵ اسلاید / کمتر از ۲۵ اسلاید / زیر ۳,۵۰۰ کلمه):** ۳ تا ۴.۵ صفحه A4.
+     * **جزوه متوسط (۲۵ تا ۵۵ اسلاید / ۳,۵۰۰ تا ۸,۰۰۰ کلمه):** ۵ تا ۷.۵ صفحه A4 (در صورت تعدد موجودیت‌های بالینی، متناسب با تعداد بیماری‌ها تا سقف چگالی پویا گسترش می‌یابد).
+     * **جزوه سنگین و مفصل (بالای ۵۵ اسلاید / بالای ۸,۰۰۰ کلمه):** ۸ تا ۱۲.۵ صفحه A4.
+   - **نگارش متراکم ساختاریافته (TELEGRAPHIC & FLUENT):** ایجاز متن از طریق ساختاربندی با بولت‌های تمیز `•` و نمادهای پیکانی `→`، `↑`، `↓` حاصل می‌شود. از هرگونه نقل‌قول کلامی استاد («استاد در دقیقه فلان فرمودند...»، «با اشاره به اسلاید...»)، حشو، مقدمه‌چینی‌های انشایی و توضیحات داستان‌گونه اکیداً خودداری کنید تا خلاصه متورم نشود.
 2. **هایلایت رنگی درون‌سلولی (حذف کامل برچسب‌های متنی):**
    - به هیچ وجه از برچسب‌های متنی مانند `[مهم]`، `[تله امتحانی]`، `[خطای رایج]` یا `[نکته آزمونی]` استفاده نکنید چون حجم متن را زیاد می‌کنند!
    - به جای آن، مستقیماً از نشانه‌گذاری‌های هایلایت رنگی استفاده کنید:
@@ -386,14 +387,79 @@ def cmd_build(args):
         print(f"[ERROR] Summary JSON file not found: {args.summary}")
         sys.exit(1)
 
+    out_dir = resolve_summary_output_dir(args.summary, args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Rule 31 (EGM Governance Gatekeeper): Verify that summary has passed EGM isolated audit
+    force_unverified = getattr(args, "force_unverified", False)
+    if not force_unverified:
+        dossier_candidates = [
+            getattr(args, "dossier", None),
+            os.path.join(out_dir, "SUMMARY_AUDIT_DOSSIER.json"),
+            os.path.join(os.path.dirname(os.path.abspath(args.summary)), "SUMMARY_AUDIT_DOSSIER.json"),
+            os.path.join("dist", "SUMMARY_AUDIT_DOSSIER.json"),
+            os.path.join("خلاصه", "SUMMARY_AUDIT_DOSSIER.json")
+        ]
+        audit_md_candidates = [
+            getattr(args, "audit_md", None),
+            os.path.join(out_dir, "AUDIT_REPORT.md"),
+            os.path.join(os.path.dirname(os.path.abspath(args.summary)), "AUDIT_REPORT.md"),
+            os.path.join("dist", "AUDIT_REPORT.md"),
+            os.path.join("خلاصه", "AUDIT_REPORT.md")
+        ]
+
+        dossier_file = next((p for p in dossier_candidates if p and os.path.exists(p)), None)
+        audit_md_file = next((p for p in audit_md_candidates if p and os.path.exists(p)), None)
+
+        verified = False
+        rejection_reason = ""
+
+        if dossier_file:
+            try:
+                with open(dossier_file, "r", encoding="utf-8") as fd:
+                    d_data = json.load(fd)
+                verdict = d_data.get("verdict", "")
+                hard_viol = d_data.get("hard_violations_count", 1)
+                score = d_data.get("composite_score", 0.0)
+                if verdict == "APPROVED_HIGH_YIELD_READY" and hard_viol == 0 and score >= 90.0:
+                    verified = True
+                else:
+                    rejection_reason = f"Dossier verdict is '{verdict}' with {hard_viol} hard violations and composite score {score}."
+            except Exception as e:
+                rejection_reason = f"Failed to parse dossier ({dossier_file}): {e}"
+        elif audit_md_file:
+            try:
+                with open(audit_md_file, "r", encoding="utf-8") as fm:
+                    md_text = fm.read()
+                if "APPROVED_HIGH_YIELD_READY" in md_text:
+                    verified = True
+                else:
+                    rejection_reason = f"AUDIT_REPORT.md ({audit_md_file}) does not contain APPROVED_HIGH_YIELD_READY."
+            except Exception as e:
+                rejection_reason = f"Failed to read {audit_md_file}: {e}"
+        else:
+            rejection_reason = "No SUMMARY_AUDIT_DOSSIER.json or AUDIT_REPORT.md found. Unverified drafts cannot be compiled."
+
+        if not verified:
+            print("\n" + "="*80)
+            print("[BLOCKED] COMPILATION HALTED BY EGM ISOLATED AUDITOR GATEKEEPER")
+            print("="*80)
+            print(f"Reason: {rejection_reason}")
+            print("\nTo maintain 100% exam fidelity, zero parametric extrapolation, and full clinical cutoffs,")
+            print("all deliverables MUST be audited by the EGM Isolated Auditor Swarm prior to compilation:")
+            print("  1. Run audit: python run_summary_pipeline.py audit --source <lecture> --summary <draft_json>")
+            print("  2. Call subagents via invoke_subagent: medical-summary-grounding-auditor, omission, pedagogy")
+            print("  3. Obtain SRO approval via medical-summary-panel-sro")
+            print("\nTo bypass this gate only if explicitly instructed by user, pass: --force-unverified")
+            print("="*80 + "\n")
+            sys.exit(1)
+
     with open(args.summary, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     # Rule 28: Enforce zero trailing bloat by default
     data["suppress_trailing_matrices"] = True
 
-    out_dir = resolve_summary_output_dir(args.summary, args.out_dir)
-    os.makedirs(out_dir, exist_ok=True)
     print(f"[INFO] Target output directory set to session summary folder: {out_dir}")
     docx_path = os.path.join(out_dir, f"{args.prefix}.docx")
     html_path = os.path.join(out_dir, f"{args.prefix}.html")
@@ -592,6 +658,9 @@ def main():
     p_build.add_argument("--out-dir", default="خلاصه", help="Output directory (defaults to 'خلاصه' in session folder)")
     p_build.add_argument("--prefix", default="summary_pack", help="File prefix")
     p_build.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
+    p_build.add_argument("--force-unverified", action="store_true", default=False, help="Bypass EGM auditor verification gatekeeper")
+    p_build.add_argument("--dossier", default=None, help="Optional path to SUMMARY_AUDIT_DOSSIER.json")
+    p_build.add_argument("--audit-md", default=None, help="Optional path to AUDIT_REPORT.md")
 
     # Bundle
     p_bundle = subparsers.add_parser("bundle", help="Bundle multiple session JSONs into a comprehensive master course booklet")
@@ -609,6 +678,7 @@ def main():
     p_auto.add_argument("--out-dir", default="خلاصه", help="Output directory (defaults to 'خلاصه' in session folder)")
     p_auto.add_argument("--prefix", default="summary_pack", help="File prefix")
     p_auto.add_argument("--institution", default="دانشگاه بق", help="Institution name for PDF header stamping")
+    p_auto.add_argument("--force-unverified", action="store_true", default=False, help="Bypass EGM auditor verification gatekeeper")
 
     args = parser.parse_args()
 

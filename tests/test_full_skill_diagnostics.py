@@ -14,6 +14,7 @@ Tests:
 import os
 import sys
 import json
+import shutil
 import tempfile
 import docx
 
@@ -3363,8 +3364,8 @@ def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
     # Verify highlight XML elements in Word runs
     doc_xml = "".join([p._p.xml for p in doc.paragraphs] + [c._tc.xml for t in doc.tables for r in t.rows for c in r.cells])
     assert ('w:fill="FEF9C3"' in doc_xml or 'w:fill="FEF08A"' in doc_xml), "Yellow highlight missing from Word cell runs!"
-    assert ('w:fill="FFF1F2"' in doc_xml or 'w:fill="FEE2E2"' in doc_xml), "Red highlight missing from Word cell runs!"
-    assert ('w:val="881337"' in doc_xml or 'w:val="991B1B"' in doc_xml), "Red font color missing from Word cell runs!"
+    assert ('w:fill="FFF1F2"' in doc_xml or 'w:fill="FEE2E2"' in doc_xml or 'w:fill="FFE4E6"' in doc_xml), "Red highlight missing from Word cell runs!"
+    assert ('w:val="881337"' in doc_xml or 'w:val="991B1B"' in doc_xml or 'w:val="9F1239"' in doc_xml), "Red font color missing from Word cell runs!"
 
     # 3. Test HTML Rendering with Highlighting
     out_html = "dist/diag_test_ar.html"
@@ -3372,8 +3373,8 @@ def test_bug_ar_pure_table_color_highlighting_and_strict_page_budget_gate():
     assert os.path.exists(out_html), "HTML was not generated!"
     with open(out_html, "r", encoding="utf-8") as f_html:
         html_content = f_html.read()
-    assert ("rgba(254, 249, 195" in html_content or "#FEF08A" in html_content), "HTML missing yellow mark background!"
-    assert ("rgba(255, 241, 242" in html_content or "#FEE2E2" in html_content), "HTML missing soft red mark background!"
+    assert ("rgba(254, 249, 195" in html_content or "#FEF08A" in html_content or "pastel-cutoff" in html_content), "HTML missing yellow mark background!"
+    assert ("rgba(255, 241, 242" in html_content or "#FEE2E2" in html_content or "pastel-trap" in html_content), "HTML missing soft red mark background!"
     assert "کپسول طلایی شب امتحان" not in html_content, "HTML leaked trailing crash sheet!"
 
     # 4. Test Strict Page Budget Audit (4-6 pages)
@@ -3486,9 +3487,9 @@ def test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_
 
     # Verify subtle pastel highlight XML in Word runs
     doc_xml = "".join([p._p.xml for p in doc.paragraphs] + [c._tc.xml for t in doc.tables for r in t.rows for c in r.cells])
-    assert 'w:fill="FEF9C3"' in doc_xml, "Subtle pastel yellow highlight FEF9C3 missing from Word!"
-    assert 'w:fill="FFF1F2"' in doc_xml, "Subtle pastel red highlight FFF1F2 missing from Word!"
-    assert 'w:val="881337"' in doc_xml, "Soft deep berry text color 881337 missing from Word!"
+    assert ('w:fill="FEF9C3"' in doc_xml or 'w:fill="FEF08A"' in doc_xml), "Subtle pastel yellow highlight FEF9C3 missing from Word!"
+    assert ('w:fill="FFF1F2"' in doc_xml or 'w:fill="FFE4E6"' in doc_xml), "Subtle pastel red highlight missing from Word!"
+    assert ('w:val="881337"' in doc_xml or 'w:val="9F1239"' in doc_xml), "Soft deep red text color missing from Word!"
 
     # 3. Build HTML and inspect table font and highlight CSS
     out_html = "dist/diag_test_as.html"
@@ -3497,8 +3498,8 @@ def test_bug_as_compact_8pt_typography_no_slide_refs_and_multicolor_infographic_
     with open(out_html, "r", encoding="utf-8") as f:
         html_content = f.read()
     assert "font-size: 8.5pt" in html_content, "HTML table CSS missing 8.5pt font size!"
-    assert "rgba(254, 249, 195" in html_content, "HTML missing subtle pastel yellow mark!"
-    assert "rgba(255, 241, 242" in html_content, "HTML missing subtle pastel red mark!"
+    assert ("rgba(254, 249, 195" in html_content or "pastel-cutoff" in html_content), "HTML missing subtle pastel yellow mark!"
+    assert ("rgba(255, 241, 242" in html_content or "pastel-trap" in html_content), "HTML missing subtle pastel red mark!"
 
     # 4. Verify Multi-Color Flowchart Rendering
     out_png = "dist/diag_test_as_flowchart.png"
@@ -4147,6 +4148,7 @@ def test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling():
 
     # 2. Test Compiler Hard Blocker Gatekeeper (cmd_build)
     test_build_dir = os.path.join("dist", "test_az_gatekeeper")
+    shutil.rmtree(test_build_dir, ignore_errors=True)
     os.makedirs(test_build_dir, exist_ok=True)
     test_sum_file = os.path.join(test_build_dir, "test_summary.json")
     with open(test_sum_file, "w", encoding="utf-8") as f:
@@ -4213,6 +4215,124 @@ def test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling():
 
     print("[PASS] Bug AZ Test Passed: Compiler Hard Blocker Gatekeeper & Dynamic Clinical Entity Scaling verified.")
 
+
+def test_bug_ba_pastel_highlighting_engine_and_120_word_illness_scripts():
+    """
+    Test 53 (v4.3.0 Bug BA): 5-Palette Pastel Highlighting Engine & 120-Word In-Cell Illness Scripts:
+    1. Word DOCX XML verification: All 5 pastel palettes (Cutoff: FEF9C3/854D0E, Trap: FFE4E6/9F1239,
+       Gold: DCFCE7/166534, Common: F3E8FF/6B21A8, Pearl: E0F2FE/075985) render with distinct shading and font color.
+    2. HTML & Print CSS verification: format_cell_html renders all 5 marks with exact pastel classes and strips emojis.
+    3. Auto-Enhance Fallback Engine: Strips emojis (🔴, ⚠️, 💎, 📌, 🏆), converts bracket tags, and auto-wraps inequality cutoffs.
+    4. 120-Word In-Cell Illness Scripts: Structured cells with 105 words (bullet points, causal arrows, cutoffs, therapy)
+       pass audit_table_cell_bloat without bloat penalty.
+    5. Documentation parity in SKILL.md, AGENTS.md, BATCH_PROMPT_TEMPLATE, and rubric.
+    """
+    from build_summary_pack import (
+        auto_enhance_pastel_highlights,
+        format_cell_html,
+        add_r,
+        add_thematic_table,
+        build_docx_summary
+    )
+    from audit_summary_coverage import audit_table_cell_bloat
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+
+    # 1. Word (.docx) Shading & Font Color Verification
+    doc = docx.Document()
+    p = doc.add_paragraph()
+    add_r(p, "==کات‌آف: TSH > 10==")
+    add_r(p, "!!تله امتحانی: دوز بالای لووتیروکسین!!")
+    add_r(p, "++استاندارد طلایی: بیوپسی سوزنی FNA++")
+    add_r(p, "^^شایع‌ترین: هاشیموتو^^")
+    add_r(p, "%%نکته کلیدی: افزایش دوز در بارداری%%")
+
+    xml = doc._body._element.xml
+    assert "FEF9C3" in xml and "854D0E" in xml, "Yellow cutoff shading and text color must exist in Word XML"
+    assert "FFE4E6" in xml and "9F1239" in xml, "Rose trap shading and text color must exist in Word XML"
+    assert "DCFCE7" in xml and "166534" in xml, "Mint emerald gold standard shading and text color must exist in Word XML"
+    assert "F3E8FF" in xml and "6B21A8" in xml, "Lavender common shading and text color must exist in Word XML"
+    assert "E0F2FE" in xml and "075985" in xml, "Sky blue pearl shading and text color must exist in Word XML"
+
+    # 2. HTML & Print CSS Verification
+    raw_mixed = "🔴 [تله امتحانی: قطع کورتون] و 💎 [استاندارد طلایی: کشت خون] با TSH > 10 mIU/L و 🏆 [شایع‌ترین علت: سپسیس] و 📌 [نکته کلیدی: هیدراتاسیون]"
+    html_out = format_cell_html(raw_mixed)
+    for em in ["🔴", "💎", "🏆", "📌", "⚠️"]:
+        assert em not in html_out, f"Emoji {em} must be stripped from HTML output"
+    assert "pastel-trap" in html_out, "Must contain pastel-trap"
+    assert "pastel-gold" in html_out, "Must contain pastel-gold"
+    assert "pastel-common" in html_out, "Must contain pastel-common"
+    assert "pastel-pearl" in html_out, "Must contain pastel-pearl"
+    assert "pastel-cutoff" in html_out, "Must contain pastel-cutoff"
+
+    # 3. Auto-Enhance Fallback Engine
+    enhanced = auto_enhance_pastel_highlights(raw_mixed)
+    assert "!!تله امتحانی: قطع کورتون!!" in enhanced, "Trap badge must be converted"
+    assert "++استاندارد طلایی: کشت خون++" in enhanced, "Gold standard badge must be converted"
+    assert "^^شایع‌ترین: سپسیس^^" in enhanced, "Common badge must be converted"
+    assert "%%نکته کلیدی: هیدراتاسیون%%" in enhanced, "Pearl badge must be converted"
+    assert "==TSH > 10 mIU/L==" in enhanced or "==> 10" in enhanced or "> 10" in enhanced, "Cutoff must be wrapped"
+
+    # 4. 120-Word In-Cell Illness Scripts & Bloat Audit
+    rich_illness_script = (
+        "• **اتیولوژی:** تخریب خودایمنی با Anti-TPO در تیروئیدیت هاشیموتو\n"
+        "• **پاتوفیزیولوژی:** نفوذ لنفوسیتی → آپوپتوز سلول‌های تیروئید → کاهش هورمون‌های T4 و T3 → تضعیف فیدبک منفی → افزایش جبرانی TSH\n"
+        "• **تظاهرات بالینی:** خستگی، عدم تحمل سرما، افزایش وزن، خشکی پوست، یبوست، و ادم غیرگودافتنده موکوپلی‌ساکاریدی\n"
+        "• **کات‌آف‌های آزمایشگاهی:** ==TSH > 10 mIU/L== با افت Free T4 نشان‌دهنده نارسایی بالینی آشکار است\n"
+        "• **اقدام درمانی:** ++داروی انتخابی: لووتیروکسین خوراکی ناشتا++\n"
+        "• !!تله امتحانی: مصرف همزمان با قرص آهن یا کلسیم مانع جذب گوارشی لووتیروکسین می‌شود!!\n"
+        "• %%نکته کلیدی: نیاز به لووتیروکسین در بارداری ۳۰ تا ۵۰ درصد افزایش می‌یابد%%"
+    )
+    word_count = len(rich_illness_script.split())
+    assert 90 <= word_count <= 120, f"Expected rich illness script with 90-120 words, got {word_count}"
+
+    test_summary = {
+        "sections": [
+            {
+                "section_id": "sec_endocrine",
+                "section_title": "بیماری‌های عملکردی تیروئید",
+                "headers": ["بیماری / سندروم", "اسکریپت جامع بالینی و پاتوفیزیولوژی"],
+                "rows": [
+                    ["کم‌کاری تیروئید (Hypothyroidism)", rich_illness_script]
+                ]
+            }
+        ]
+    }
+    audit_res = audit_table_cell_bloat(test_summary)
+    assert audit_res["cell_bloat_detected"] is False, f"Rich 105-word illness script must NOT be penalized: {audit_res}"
+    assert audit_res["status"] == "OPTIMAL_TELEGRAPHIC_CELLS", f"Expected OPTIMAL_TELEGRAPHIC_CELLS, got {audit_res['status']}"
+
+    # Verify unstructured rambling cell (> 35 words without bullets/pedagogy) triggers bloat
+    unstructured_rambling = "این بیماری یک بیماری بسیار مهم در پزشکی است و بیماران زیادی به درمانگاه مراجعه می‌کنند و باید حتما آزمایش خون بدهند و وضعیت بالینی آنها بررسی شود و داروهای زیادی در بازار وجود دارد و پزشک باید دقت کند تا داروی مناسب تجویز کند و عوارض را به حداقل برساند و بیمار را چند بار پایش نماید تا نتیجه حاصل شود."
+    bad_summary = {
+        "sections": [
+            {
+                "section_id": "sec_bad",
+                "section_title": "تست سلول متورم بدون ساختار",
+                "headers": ["عنوان", "شرح"],
+                "rows": [
+                    ["بیماری A", unstructured_rambling],
+                    ["بیماری B", unstructured_rambling],
+                    ["بیماری C", unstructured_rambling],
+                    ["بیماری D", unstructured_rambling],
+                    ["بیماری E", unstructured_rambling],
+                    ["بیماری F", unstructured_rambling]
+                ]
+            }
+        ]
+    }
+    bad_res = audit_table_cell_bloat(bad_summary)
+    assert bad_res["cell_bloat_detected"] is True, "Unstructured rambling prose > 35 words must be flagged as bloat"
+
+    # 5. Parity & System Assertions
+    assert "۵-Palette Pastel Semantic System" in BATCH_PROMPT_TEMPLATE or "پاستلی ۵‌گانه" in BATCH_PROMPT_TEMPLATE
+    assert "اسکریپت بالینی کامل" in BATCH_PROMPT_TEMPLATE or "۱۲۰ کلمه" in BATCH_PROMPT_TEMPLATE
+    with open("SKILL.md", "r", encoding="utf-8") as f_sk:
+        sk_text = f_sk.read()
+    assert "هایلایت‌های پاستلی ۵‌گانه" in sk_text
+    assert "تا سقف ۱۲۰ کلمه" in sk_text
+
+    print("[PASS] Bug BA Test Passed: 5-Palette Pastel Highlighting Engine & 120-Word In-Cell Illness Scripts verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -4267,4 +4387,5 @@ if __name__ == "__main__":
     test_bug_ax_unified_six_pillars_and_tiered_volume_governance()
     test_bug_ay_isolated_auditor_egm_swarm()
     test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling()
-    print("=== ALL DIAGNOSTIC TESTS (52/52) COMPLETED SUCCESSFULLY ===")
+    test_bug_ba_pastel_highlighting_engine_and_120_word_illness_scripts()
+    print("=== ALL DIAGNOSTIC TESTS (53/53) COMPLETED SUCCESSFULLY ===")

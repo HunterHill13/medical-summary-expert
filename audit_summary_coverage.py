@@ -657,12 +657,11 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Rule 17 (TELEGRAPHIC_SYNTAX_AND_CELL_COMPRESSION_GATE):
     Audits table cells for narrative prose bloat vs. concise telegraphic syntax.
-    Enforces:
-    - Maximum word limit per cell: ideally <= 25-30 words.
-    - Flexible bound (up to 50-55 words) for cells with structured sub-bullets ('•', '**', '\n')
-      or clinical exceptions/criteria ('مگر اینکه', 'به جز', 'در صورت', 'استثنا', 'شرط').
-    - Flags cells with > 35 words lacking telegraphic or exception markers.
-    - Flags average words per cell > 35.0 (with sub-bullets) or > 28.0 (plain cells) when at least 6 cells exist.
+    Enforces (v4.3.0 Exam Sufficiency & In-Cell Illness Script Standard):
+    - Maximum word limit per structured cell: up to 120 words for rich clinical scripts
+      with sub-bullets ('•'), newlines ('\n'), causal arrows ('→', '->'), or pedagogical/exception markers.
+    - Plain unstructured single-block cells remain bounded at <= 35 words.
+    - Flags structured average words per cell > 85.0 (or > 32.0 for plain cells) when at least 6 cells exist.
     """
     sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
     modules = summary_data.get("modules") or []
@@ -710,8 +709,11 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
         has_exceptions_or_criteria = any(kw in c for kw in EXCEPTION_MARKERS)
         has_pedagogy_markers = any(kw in c for kw in PEDAGOGY_MARKERS)
 
-        # Rule 28 First-Pass Mechanistic Pedagogy: allow causal & multi-criteria cells up to 65 words without penalty
-        cell_word_limit = 65 if (has_telegraphic and (has_pedagogy_markers or has_exceptions_or_criteria)) else (55 if has_telegraphic else 35)
+        # Rule 28 First-Pass Mechanistic Pedagogy & Exam Sufficiency (v4.3.0):
+        # Structured illness script cells with bullet points ('•'), newlines ('\n'), causal arrows ('→', '->'),
+        # or pedagogical/exception markers allow up to 120 words per cell without bloat penalty to ensure
+        # 100% exam sufficiency and zero clinical omissions. Plain unstructured cells remain 35 words.
+        cell_word_limit = 120 if (has_telegraphic and (has_pedagogy_markers or has_exceptions_or_criteria or "\n" in c or "•" in c)) else (55 if has_telegraphic else 35)
         if w_cnt > cell_word_limit:
             inflated_cells.append({
                 "preview": c[:80] + ("..." if len(c) > 80 else ""),
@@ -721,8 +723,8 @@ def audit_table_cell_bloat(summary_data: Dict[str, Any]) -> Dict[str, Any]:
             })
 
     avg_words = round(sum(word_counts) / max(1, len(word_counts)), 1)
-    has_sub_bullets = any("•" in c or "\n" in c for c in all_cells)
-    avg_threshold = 42.0 if has_sub_bullets else 28.0
+    has_sub_bullets = any("•" in c or "\n" in c or "→" in c for c in all_cells)
+    avg_threshold = 85.0 if has_sub_bullets else 32.0
     cell_bloat_detected = bool((len(all_cells) >= 6 and avg_words > avg_threshold) or len(inflated_cells) >= 1)
 
     return {

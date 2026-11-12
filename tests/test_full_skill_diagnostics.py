@@ -3993,6 +3993,107 @@ def test_bug_ax_unified_six_pillars_and_tiered_volume_governance():
 
     print("[PASS] Bug AX Test Passed: Unified Six Pillars & Tiered Adaptive Volume Governance verified.")
 
+def test_bug_ay_isolated_auditor_egm_swarm():
+    """Bug AY (v4.1.0): Zero-Context Isolated Auditor Swarm, Rubric & SRO Verdict Synthesis Gate.
+    1. Agent Files & Invariants Verification:
+       - .agents/agents/medical-summary-grounding-auditor.md: read_file, HARD-01, HARD-02.
+       - .agents/agents/medical-summary-omission-auditor.md: read_file, HARD-03, HARD-04.
+       - .agents/agents/medical-summary-pedagogy-auditor.md: read_file, HARD-05, HARD-06.
+       - .agents/agents/medical-summary-panel-sro.md: read_file, APPROVED_HIGH_YIELD_READY, SURGICAL_REVISION_REQUIRED, HARD_FAIL_REJECTED.
+       - .agents/agents/medical-summary-expert.md: Three Pillars of Reading, Two-Point Creative Gates.
+       - AGENTS.md: Governance architecture, EGM Auditor Swarm.
+       - resources/rubrics/medical-summary-rubric.md: Hard constraints HARD-01 to HARD-06 and 100-point rubric.
+    2. Computational Bridge & Dossier Export (export_audit_dossier):
+       - Valid optimal summary yields APPROVED_HIGH_YIELD_READY with composite_score >= 90.0, has_hard_fail == False.
+       - Produces valid SUMMARY_AUDIT_DOSSIER.json and AUDIT_REPORT.md in output folder.
+    3. Adversarial Hard Red Line Triggers:
+       - HARD-01 / HARD-02: Extrapolated ungrounded entity -> HARD_FAIL_REJECTED.
+       - HARD-05: Slide number in column 1 (e.g. "اسلاید ۱: نارسایی") -> HARD_FAIL_REJECTED.
+       - HARD-06: Trailing pharmacology matrix -> HARD_FAIL_REJECTED.
+    4. Surgical Revision Trigger:
+       - Summary with low pedagogy/omission scores (score 70-89) yields SURGICAL_REVISION_REQUIRED with action directives.
+    """
+    from audit_summary_coverage import export_audit_dossier
+
+    # 1. Verify physical agent files & rubrics
+    agents_dir = os.path.join(".agents", "agents")
+    required_files = {
+        os.path.join(agents_dir, "medical-summary-grounding-auditor.md"): ["HARD-01", "HARD-02", "read_file"],
+        os.path.join(agents_dir, "medical-summary-omission-auditor.md"): ["HARD-03", "HARD-04", "read_file"],
+        os.path.join(agents_dir, "medical-summary-pedagogy-auditor.md"): ["HARD-05", "HARD-06", "read_file"],
+        os.path.join(agents_dir, "medical-summary-panel-sro.md"): ["APPROVED_HIGH_YIELD_READY", "SURGICAL_REVISION_REQUIRED", "HARD_FAIL_REJECTED", "read_file"],
+        os.path.join(agents_dir, "medical-summary-expert.md"): ["Three Pillars of Reading", "Two-Point Creative Gates"],
+        "AGENTS.md": ["EGM ISOLATED AUDITOR SWARM", "HARD-01", "HARD-06"],
+        os.path.join("resources", "rubrics", "medical-summary-rubric.md"): ["HARD-01", "HARD-02", "HARD-03", "HARD-04", "HARD-05", "HARD-06", "100-Point Weighted Dimensions"]
+    }
+
+    for path, expected_tokens in required_files.items():
+        assert os.path.exists(path), f"Required EGM architecture file missing: {path}"
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        for tok in expected_tokens:
+            assert tok in content, f"Token '{tok}' missing from file: {path}"
+
+    # 2. Test export_audit_dossier with clean valid summary
+    source_text = (
+        "ندول منفرد تیروئید: شایع‌ترین علت تومور پاپیلاری است. "
+        "در ارزیابی اولیه، سطح سرمی TSH اندازه‌گیری می‌شود. "
+        "اگر TSH کمتر از ۰.۵ mIU/L و سرکوب باشد، اسکن ایزوتوپ با ید-۱۲۳ انجام می‌شود. "
+        "اگر TSH نرمال باشد و ندول سفت و قطر بیش از ۱ سانتی‌متر با میکروکلسیفیکاسیون باشد، بیوپسی FNA لازم است. "
+        "استاد تأکید کردند سونوگرافی دقیق روش تصویربرداری ارجح است و لووتیروکسین در ندول سمی ممنوع است."
+    )
+    clean_summary = {
+        "topic_title": "ندول تیروئید",
+        "sections": [
+            {
+                "title": "بخش ۱: رویکرد به ندول تیروئید",
+                "headers": ["گام بالینی", "اقدام و کات‌آف عددی", "توجیه پاتوفیزیولوژی"],
+                "rows": [
+                    ["سنجش اولیه TSH", "• کات‌آف اولیه: اگر TSH کمتر از ۰.۵ mIU/L باشد، اسکن ید-۱۲۳ انجام شود.", "• علت: تفکیک ندول سمی و پرکار از ندول سرد و غیرفعال."],
+                    ["سونوگرافی و FNA", "• اگر قطر بیش از ۱ سانتی‌متر و با میکروکلسیفیکاسیون باشد، بیوپسی FNA انجام شود.", "• علت: رد قطعی تومور پاپیلاری به عنوان شایع‌ترین بدخیمی."],
+                    ["نکته استاد و منع مصرف", "• استاد تأکید کردند سونوگرافی دقیق روش تصویربرداری ارجح است. لووتیروکسین در ندول سمی ممنوع است.", "• مکانیسم: تشدید تیروتوکسیکوز ناشی از هورمون اگزوژن."]
+                ],
+                "flowchart": "flowchart TD\n  A[ندول تیروئید] --> B[سنجش TSH]"
+            }
+        ]
+    }
+    test_dossier_path = os.path.join("dist", "test_ay_dossier.json")
+    test_report_md_path = os.path.join("dist", "test_ay_report.md")
+    dossier = export_audit_dossier(source_text, clean_summary, dossier_path=test_dossier_path, report_md_path=test_report_md_path)
+
+    assert os.path.exists(test_dossier_path), "SUMMARY_AUDIT_DOSSIER.json was not created!"
+    assert os.path.exists(test_report_md_path), "AUDIT_REPORT.md was not created!"
+    assert dossier["verdict"] == "APPROVED_HIGH_YIELD_READY", f"Expected APPROVED_HIGH_YIELD_READY, got {dossier['verdict']}"
+    assert dossier["composite_score"] >= 90.0, f"Expected score >= 90, got {dossier['composite_score']}"
+    assert dossier["has_hard_fail"] is False, f"Expected no hard fail, got {dossier['hard_constraints_check']}"
+
+    # 3. Test Adversarial Triggers:
+    # 3a. HARD-01: Extrapolated clinical entity
+    extrapolated_summary = json.loads(json.dumps(clean_summary))
+    extrapolated_summary["sections"][0]["rows"].append(
+        ["فئوکروموسیتومای بدخیم", "• تجویز داروی فنتانیل تزریقی", "• علت: بحران کاتکول‌آمین"]
+    )
+    dossier_extrap = export_audit_dossier(source_text, extrapolated_summary)
+    assert dossier_extrap["verdict"] == "HARD_FAIL_REJECTED", f"Expected HARD_FAIL_REJECTED for ungrounded entity, got {dossier_extrap['verdict']}"
+    assert dossier_extrap["has_hard_fail"] is True
+    assert len(dossier_extrap["hard_constraints_check"]["HARD_01_extrapolated_entities"]) > 0
+
+    # 3b. HARD-05: Slide number leak in column 1
+    slide_leak_summary = json.loads(json.dumps(clean_summary))
+    slide_leak_summary["sections"][0]["rows"][0][0] = "اسلاید ۴: سنجش TSH"
+    dossier_slide = export_audit_dossier(source_text, slide_leak_summary)
+    assert dossier_slide["verdict"] == "HARD_FAIL_REJECTED", f"Expected HARD_FAIL_REJECTED for slide leak, got {dossier_slide['verdict']}"
+    assert len(dossier_slide["hard_constraints_check"]["HARD_05_slide_reference_leaks"]) > 0
+
+    # 3c. HARD-06: Trailing matrix bloat
+    trailing_summary = json.loads(json.dumps(clean_summary))
+    trailing_summary["master_pharmacology_matrix"] = [{"drug": "لووتیروکسین", "dose": "50mcg"}]
+    dossier_trailing = export_audit_dossier(source_text, trailing_summary)
+    assert dossier_trailing["verdict"] == "HARD_FAIL_REJECTED", f"Expected HARD_FAIL_REJECTED for trailing matrix, got {dossier_trailing['verdict']}"
+    assert dossier_trailing["hard_constraints_check"]["HARD_06_trailing_matrices_detected"] is True
+
+    print("[PASS] Bug AY Test Passed: EGM Isolated Auditor Swarm, Rubric & SRO Verdict Synthesis Gate verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -4045,4 +4146,5 @@ if __name__ == "__main__":
     test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit()
     test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering()
     test_bug_ax_unified_six_pillars_and_tiered_volume_governance()
-    print("=== ALL DIAGNOSTIC TESTS (50/50) COMPLETED SUCCESSFULLY ===")
+    test_bug_ay_isolated_auditor_egm_swarm()
+    print("=== ALL DIAGNOSTIC TESTS (51/51) COMPLETED SUCCESSFULLY ===")

@@ -1577,11 +1577,256 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     }
     return report
 
+
+def export_audit_dossier(
+    source_text: str,
+    summary_data: Dict[str, Any],
+    dossier_path: Optional[str] = None,
+    report_md_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    EGM Isolated Auditor Swarm Dossier & Rubric Synthesis Engine (v4.1.0):
+    1. Runs full deterministic coverage audit.
+    2. Enforces the 6 Hard Red Lines (HARD-01 to HARD-06).
+    3. Calculates 100-point rubric composite scores across 6 dimensions.
+    4. Evaluates the binding SRO verdict:
+       - APPROVED_HIGH_YIELD_READY (Score >= 90 & 0 Hard Violations)
+       - SURGICAL_REVISION_REQUIRED (Score 70-89 & 0 Hard Violations)
+       - HARD_FAIL_REJECTED (Score < 70 or >= 1 Hard Violation)
+    5. Exports machine-readable dossier (SUMMARY_AUDIT_DOSSIER.json) and human-readable report (AUDIT_REPORT.md).
+    """
+    raw_summary_text = json.dumps(summary_data, ensure_ascii=False)
+    report = audit_coverage(source_text, summary_data)
+
+    # 1. Check Hard Red Lines
+    # HARD-01: Extrapolated clinical entities
+    hard_01_extrapolated = report.get("source_grounding_audit", {}).get("ungrounded_entities", [])
+
+    # HARD-02: Phantom / External reference drift (Harrison, Cecil, UpToDate)
+    EXTERNAL_REFS = ["هاریسون", "سیسیل", "آپ‌تودیت", "آپتودیت", "harrison", "cecil", "uptodate"]
+    hard_02_phantom = []
+    norm_source = normalize_medical_text(source_text).lower()
+    norm_summary = normalize_medical_text(raw_summary_text).lower()
+    for ref in EXTERNAL_REFS:
+        if ref in norm_summary and ref not in norm_source:
+            hard_02_phantom.append(ref)
+
+    # HARD-03: Critical cutoffs omitted
+    hard_03_cutoffs = report.get("omitted_clinical_cutoffs", [])
+
+    # HARD-04: Instructor exam alerts or absolute contraindications omitted
+    hard_04_alerts = report.get("omitted_instructor_emphasis", []) + report.get("omitted_contraindications", [])
+
+    # HARD-05: Slide reference leaks in table rows (e.g. "اسلاید ۱", "Slide 2")
+    hard_05_slide_leaks = []
+    sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
+    for s_idx, sec in enumerate(sections, 1):
+        if isinstance(sec, dict):
+            sec_title = sec.get("title", f"بخش {s_idx}")
+            for r_idx, row in enumerate(sec.get("rows") or [], 1):
+                if isinstance(row, (list, tuple)) and len(row) > 0:
+                    first_cell = str(row[0])
+                    if re.search(r'(?:اسلاید|slide)\s*\d+', first_cell, re.IGNORECASE):
+                        hard_05_slide_leaks.append(f"{sec_title} - سطر {r_idx}: {first_cell}")
+
+    # HARD-06: Trailing matrix bloat
+    hard_06_trailing = False
+    if sections:
+        trailing_keys = ["master_pharmacology_matrix", "last_minute_crash_sheet", "morning_exam_checklist"]
+        for tk in trailing_keys:
+            val = summary_data.get(tk)
+            if isinstance(val, (list, dict)) and len(val) > 0:
+                hard_06_trailing = True
+                break
+
+    hard_violations = {
+        "HARD_01_extrapolated_entities": hard_01_extrapolated,
+        "HARD_02_phantom_references": hard_02_phantom,
+        "HARD_03_omitted_cutoffs": [c.get("token", str(c)) if isinstance(c, dict) else str(c) for c in hard_03_cutoffs],
+        "HARD_04_omitted_instructor_alerts": hard_04_alerts,
+        "HARD_05_slide_reference_leaks": hard_05_slide_leaks,
+        "HARD_06_trailing_matrices_detected": hard_06_trailing
+    }
+
+    has_hard_fail = bool(
+        len(hard_01_extrapolated) > 0 or
+        len(hard_02_phantom) > 0 or
+        len(hard_03_cutoffs) > 0 or
+        len(hard_04_alerts) > 0 or
+        len(hard_05_slide_leaks) > 0 or
+        hard_06_trailing
+    )
+
+    # 2. Compute 100-Point Rubric Scores
+    grounding_pct = report.get("source_grounding_audit", {}).get("grounding_fidelity_pct", 100.0)
+    cutoff_pct = report.get("scores", {}).get("clinical_cutoff_coverage_pct", 100.0)
+    pedagogy_ratio = report.get("mechanistic_pedagogy_audit", {}).get("pedagogy_ratio", 1.0)
+    seq_preserved = report.get("chronological_sequence_audit", {}).get("chronological_sequence_preserved", True)
+    page_budget_exceeded = report.get("page_budget_audit", {}).get("page_budget_exceeded", False)
+    latex_leaks = report.get("latex_leak_audit", {}).get("raw_latex_tokens_detected", [])
+
+    # Dim 1: Source Grounding (25 pts)
+    score_dim1 = 0.0 if (hard_01_extrapolated or hard_02_phantom) else round((grounding_pct / 100.0) * 25.0, 1)
+
+    # Dim 2: Zero-Omission (25 pts)
+    score_dim2 = 0.0 if (hard_03_cutoffs or hard_04_alerts) else round((cutoff_pct / 100.0) * 25.0, 1)
+
+    # Dim 3: First-Pass Pedagogy (20 pts)
+    if pedagogy_ratio >= 0.35:
+        score_dim3 = 20.0
+    elif pedagogy_ratio >= 0.20:
+        score_dim3 = 15.0
+    else:
+        score_dim3 = 10.0
+
+    # Dim 4: Dynamic Tables & Flow (15 pts)
+    if hard_05_slide_leaks:
+        score_dim4 = 5.0
+    elif seq_preserved:
+        score_dim4 = 15.0
+    else:
+        score_dim4 = 8.0
+
+    # Dim 5: Page Budget (10 pts)
+    if hard_06_trailing:
+        score_dim5 = 0.0
+    elif not page_budget_exceeded:
+        score_dim5 = 10.0
+    else:
+        score_dim5 = 4.0
+
+    # Dim 6: Visuals & Base64 (5 pts)
+    score_dim6 = 3.0 if latex_leaks else 5.0
+
+    composite_score = round(score_dim1 + score_dim2 + score_dim3 + score_dim4 + score_dim5 + score_dim6, 1)
+
+    # 3. Determine Binding Verdict
+    if has_hard_fail or composite_score < 70.0:
+        verdict = "HARD_FAIL_REJECTED"
+    elif composite_score < 90.0:
+        verdict = "SURGICAL_REVISION_REQUIRED"
+    else:
+        verdict = "APPROVED_HIGH_YIELD_READY"
+
+    # 4. Formulate Surgical Remediation Directives
+    surgical_hints = []
+    if hard_01_extrapolated:
+        surgical_hints.append(f"حذف کلمات و موجودیت‌های خارج از جزوه: {', '.join(hard_01_extrapolated[:5])}")
+    if hard_02_phantom:
+        surgical_hints.append(f"حذف رفرنس‌های خارجی ناموجود در جزوه: {', '.join(hard_02_phantom)}")
+    if hard_03_cutoffs:
+        cut_tokens = [c.get("token", str(c)) if isinstance(c, dict) else str(c) for c in hard_03_cutoffs[:5]]
+        surgical_hints.append(f"تزریق کات‌آف‌ها و اعداد جاافتاده به سلول‌های مربوطه: {', '.join(cut_tokens)}")
+    if hard_04_alerts:
+        surgical_hints.append(f"تزریق هشدارهای امتحانی و موارد منع مصرف استاد: {', '.join([str(a)[:50] for a in hard_04_alerts[:3]])}")
+    if hard_05_slide_leaks:
+        surgical_hints.append(f"حذف شماره اسلاید از ستون اول جداول: {', '.join(hard_05_slide_leaks[:3])}")
+    if hard_06_trailing:
+        surgical_hints.append("حذف قطعی ماتریس‌های داروشناسی و کپسول‌های شب امتحان تکراری در پایان سند و تجمیع در جداول سرفصل.")
+    if pedagogy_ratio < 0.35:
+        surgical_hints.append("تقویت پداگوژی مکانیسمی دور اول: تبدیل عبارات تلگرافی خشک به جملات ساختاریافته (علت → مکانیسم → تظاهر بالینی).")
+    if page_budget_exceeded:
+        surgical_hints.append(f"فشرده‌سازی متن جهت رعایت بودجه صفحات پله‌ای (تخمین: {report.get('page_budget_audit', {}).get('estimated_a4_pages')} ص / سقف مجاز: {report.get('page_budget_audit', {}).get('max_ceiling_pages')} ص).")
+
+    # 5. Build Human-Readable Markdown Report
+    status_icon = "✅" if verdict == "APPROVED_HIGH_YIELD_READY" else ("⚠️" if verdict == "SURGICAL_REVISION_REQUIRED" else "❌")
+    hard_status = "CLEAR (بدون خطا) ✅" if not has_hard_fail else "VIOLATION DETECTED (خطای قرمز ردیابی شد) ❌"
+
+    report_md = f"""# 🩺 گزارش رسمی ممیزی ایزوله داوران خلاصه‌نویسی پزشکی (EGM Audit Report v4.1.0)
+
+- **حکم نهایی سرداور (Final Verdict):** `{verdict}` {status_icon}
+- **نمره کل کیفیت رابریک (Composite Score):** **{composite_score} از ۱۰۰**
+- **وضعیت خطوط قرمز ۶‌گانه (Hard Constraints):** **{hard_status}**
+
+---
+
+## ۱. جدول ارزیابی ابعاد ۶‌گانه رابریک رسمی
+
+| بعد ارزیابی | سقف نمره | نمره مکتسبه | وضعیت |
+| :--- | :---: | :---: | :---: |
+| ۱. اصالت منبع و انزوای پارامتریک (Source Grounding) | ۲۵ | {score_dim1} | {'✅ PASS' if score_dim1 >= 22.0 else '⚠️ DEFICIENT'} |
+| ۲. عدم حذف کات‌آف‌ها و نکات آزمونی (Zero-Omission) | ۲۵ | {score_dim2} | {'✅ PASS' if score_dim2 >= 22.0 else '⚠️ DEFICIENT'} |
+| ۳. پداگوژی مکانیسمی دور اول (First-Pass Pedagogy) | ۲۰ | {score_dim3} | {'✅ PASS' if score_dim3 >= 18.0 else '⚠️ DEFICIENT'} |
+| ۴. معماری پویا و توالی زمانی (Dynamic Tables & Flow) | ۱۵ | {score_dim4} | {'✅ PASS' if score_dim4 >= 14.0 else '⚠️ DEFICIENT'} |
+| ۵. بودجه صفحات پله‌ای و ایجاز (Page Budget) | ۱۰ | {score_dim5} | {'✅ PASS' if score_dim5 >= 9.0 else '⚠️ DEFICIENT'} |
+| ۶. جلوه دیداری و تصاویر Base64 (Visuals & Data URI) | ۵ | {score_dim6} | {'✅ PASS' if score_dim6 >= 4.0 else '⚠️ DEFICIENT'} |
+
+---
+
+## ۲. ارزیابی خطوط قرمز ۶‌گانه (Hard Constraints Audit)
+- **`HARD-01` (برون‌یابی پارامتریک خارج از جزوه):** {'پاک (بدون نشت) ✅' if not hard_01_extrapolated else f'❌ نشت {len(hard_01_extrapolated)} موجودیت'}
+- **`HARD-02` (رفرنس خارجی و فانتوم):** {'پاک ✅' if not hard_02_phantom else f'❌ اشاره به {hard_02_phantom}'}
+- **`HARD-03` (حذف کات‌آف‌های عددی):** {'پاک (پوشش کامل) ✅' if not hard_03_cutoffs else f'❌ حذف {len(hard_03_cutoffs)} کات‌آف'}
+- **`HARD-04` (حذف تأکیدات صریح استاد):** {'پاک ✅' if not hard_04_alerts else f'❌ حذف {len(hard_04_alerts)} هشدار'}
+- **`HARD-05` (نشت شماره اسلاید در ستون ۱):** {'پاک ✅' if not hard_05_slide_leaks else f'❌ مشاهده {len(hard_05_slide_leaks)} مورد ارجاع اسلاید'}
+- **`HARD-06` (جداول تکراری انتهای جزوه):** {'پاک ✅' if not hard_06_trailing else '❌ وجود جداول تکراری ضمیمه در انتها'}
+
+---
+
+## ۳. دستورالعمل‌های اصلاح جراحی (SURGICAL_REPAIR_ACTIONS)
+"""
+    if surgical_hints:
+        for idx, h in enumerate(surgical_hints, 1):
+            report_md += f"{idx}. {h}\n"
+    else:
+        report_md += "خلاصه کاملاً منطبق بر رابریک رسمی بوده و نیازی به اصلاح جراحی ندارد. مجوز کامپایل و صدور بسته‌های خروجی صادر شد.\n"
+
+    # 6. Assemble Dossier Object
+    src_words = report.get("compression_audit", {}).get("source_word_count", 0)
+    sum_words = report.get("compression_audit", {}).get("summary_word_count", 0)
+    pb_report = report.get("page_budget_audit", {})
+
+    dossier = {
+        "verdict": verdict,
+        "composite_score": composite_score,
+        "has_hard_fail": has_hard_fail,
+        "source_metrics": {
+            "source_word_count": src_words,
+            "total_cutoffs_extracted": report.get("scores", {}).get("total_clinical_cutoffs", 0),
+            "total_clinical_numbers": report.get("total_source_clinical_numbers", 0),
+        },
+        "summary_metrics": {
+            "summary_word_count": sum_words,
+            "estimated_a4_pages": pb_report.get("estimated_a4_pages", 0),
+            "max_ceiling_pages": pb_report.get("max_ceiling_pages", 6.0),
+            "tier": pb_report.get("tier", "Unknown"),
+            "page_budget_exceeded": pb_report.get("page_budget_exceeded", False),
+        },
+        "dimension_scores": {
+            "dim1_source_grounding": score_dim1,
+            "dim2_zero_omission": score_dim2,
+            "dim3_first_pass_pedagogy": score_dim3,
+            "dim4_dynamic_tables_flow": score_dim4,
+            "dim5_tiered_page_budget": score_dim5,
+            "dim6_visuals_base64": score_dim6
+        },
+        "hard_constraints_check": hard_violations,
+        "surgical_repair_hints": surgical_hints,
+        "raw_coverage_report": report
+    }
+
+    # Save to disk if requested
+    if dossier_path:
+        os.makedirs(os.path.dirname(os.path.abspath(dossier_path)), exist_ok=True)
+        with open(dossier_path, "w", encoding="utf-8") as f_dos:
+            json.dump(dossier, f_dos, ensure_ascii=False, indent=2)
+
+    if report_md_path:
+        os.makedirs(os.path.dirname(os.path.abspath(report_md_path)), exist_ok=True)
+        with open(report_md_path, "w", encoding="utf-8") as f_md:
+            f_md.write(report_md)
+
+    dossier["audit_report_md"] = report_md
+    return dossier
+
+
 def main():
     parser = argparse.ArgumentParser(description="Audit medical summary for high-yield omissions and cutoffs")
     parser.add_argument("--source", required=True, help="Path to original ingested lecture JSON or raw text")
     parser.add_argument("--summary", required=True, help="Path to generated summary JSON")
     parser.add_argument("--report", default="coverage_audit_report.json", help="Path to save audit report")
+    parser.add_argument("--dossier", help="Optional path to save SUMMARY_AUDIT_DOSSIER.json")
+    parser.add_argument("--audit-md", help="Optional path to save AUDIT_REPORT.md")
     parser.add_argument("--html", help="Optional path to HTML file to audit callouts for raw markdown leaks")
     parser.add_argument("--md", help="Optional path to Markdown file to audit alert blockquote continuity")
     args = parser.parse_args()
@@ -1631,6 +1876,20 @@ def main():
 
     with open(args.report, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
+
+    # Export Dossier and Markdown report if flags are provided
+    if args.dossier or args.audit_md:
+        dossier = export_audit_dossier(
+            source_text,
+            summary_data,
+            dossier_path=args.dossier,
+            report_md_path=args.audit_md
+        )
+        print(f"[OK] EGM Dossier & SRO Verdict: {dossier['verdict']} (Score: {dossier['composite_score']}/100)")
+        if args.dossier:
+            print(f"  • Machine-readable Dossier saved to: {args.dossier}")
+        if args.audit_md:
+            print(f"  • SRO Official Audit Report saved to: {args.audit_md}")
 
     print(f"--- Coverage Audit Report: {report['verdict']} ---")
     print(f"  • Numerical Cutoff Coverage: {report['scores']['numerical_coverage_pct']}%")

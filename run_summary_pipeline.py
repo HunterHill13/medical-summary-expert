@@ -31,7 +31,7 @@ if SCRIPTS_DIR not in sys.path:
 
 import glob
 from parse_input_lecture import ingest_file, partition_by_headings, ingest_multiple_files
-from audit_summary_coverage import audit_coverage
+from audit_summary_coverage import audit_coverage, export_audit_dossier
 from build_summary_pack import (
     build_docx_summary,
     build_markdown_summary,
@@ -357,7 +357,13 @@ def cmd_audit(args):
     with open(args.report, "w", encoding="utf-8") as frep:
         json.dump(report, frep, ensure_ascii=False, indent=2)
 
-    print(f"  • Verdict: {report['verdict']}")
+    # Export EGM Dossier & SRO Markdown Report
+    rep_dir = os.path.dirname(os.path.abspath(args.report)) or "."
+    dossier_path = getattr(args, 'dossier', None) or os.path.join(rep_dir, "SUMMARY_AUDIT_DOSSIER.json")
+    audit_md_path = getattr(args, 'audit_md', None) or os.path.join(rep_dir, "AUDIT_REPORT.md")
+    dossier = export_audit_dossier(source_text, summary_data, dossier_path=dossier_path, report_md_path=audit_md_path)
+
+    print(f"  • Verdict: {report['verdict']} | EGM SRO Verdict: {dossier['verdict']} (Score: {dossier['composite_score']}/100)")
     print(f"  • Numerical Cutoffs Retained: {report['scores']['numerical_coverage_pct']}%")
     print(f"  • Clinical Entities Retained: {report['scores']['entity_recall_pct']}%")
     print(f"  • Diagnostic Bifurcation:     {'Passed' if report['scores']['diagnostic_bifurcation_compliant'] else 'Failed'}")
@@ -371,6 +377,8 @@ def cmd_audit(args):
     if report.get("omitted_contraindications"):
         print(f"  ⛔ Severe Warning: {len(report['omitted_contraindications'])} contraindications were omitted!")
     print(f"[OK] Audit report written to: {args.report}")
+    print(f"[OK] EGM Dossier written to: {dossier_path}")
+    print(f"[OK] SRO Markdown report written to: {audit_md_path}")
 
 def cmd_build(args):
     print(f"--- [BUILD] Compiling Publication-Grade Deliverables Suite ---")
@@ -537,6 +545,8 @@ def cmd_auto(args):
         args.source = ingested_file
         args.summary = args.summary_json
         args.report = audit_report
+        args.dossier = os.path.join(out_dir, "SUMMARY_AUDIT_DOSSIER.json")
+        args.audit_md = os.path.join(out_dir, "AUDIT_REPORT.md")
         cmd_audit(args)
 
         # Step 3: Build
@@ -573,6 +583,8 @@ def main():
     p_audit.add_argument("--source", required=True, help="Source ingested JSON or raw text")
     p_audit.add_argument("--summary", required=True, help="Summary JSON")
     p_audit.add_argument("--report", default="coverage_audit_report.json", help="Audit report path")
+    p_audit.add_argument("--dossier", help="Optional path to save SUMMARY_AUDIT_DOSSIER.json")
+    p_audit.add_argument("--audit-md", help="Optional path to save AUDIT_REPORT.md")
 
     # Build
     p_build = subparsers.add_parser("build", help="Compile Word, Markdown, and Anki files")

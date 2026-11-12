@@ -124,6 +124,25 @@ description: >-
 * **نمره ۷۰ تا ۸۹ و ۰ خطای قرمز:** `SURGICAL_REVISION_REQUIRED` ⚠️ (ورود به چرخه خود‌اصلاحی جراحی - حداکثر ۲ دور بر مبنای `SURGICAL_REPAIR_ACTIONS`).
 * **نمره زیر ۷۰ یا وجود خطای قرمز:** `HARD_FAIL_REJECTED` ❌ (توقف و بازنویسی فوری بخش‌های مشخص‌شده).
 
+### 🛑 پروتکل الزامی فراخوانی ساب‌ایجنت‌های داور با ابزار invoke_subagent (Mandatory Multi-Agent Protocol)
+ایجنت ارشد خلاصه‌نویسی (`medical-summary-expert` یا هر ایجنت هوش مصنوعی مجری این مهارت) **هرگز حق ندارد بدون اجرای ممیزی ایزوله با ساب‌ایجنت‌ها اقدام به کامپایل بسته‌های نهایی (Word, PDF, HTML, Anki) نماید**.
+
+فرآیند اجرایی دقیقاً به صورت زیر است:
+۱. پس از استخراج و تدوین پیش‌نویس `summary_data.json`، دستور ممیزی متریسی پایتون را اجرا کنید:
+   `uv run python run_summary_pipeline.py audit --source "ingested_lecture.json" --summary "summary_data.json"`
+   تا فایل‌های `dist/SUMMARY_AUDIT_DOSSIER.json` و `dist/AUDIT_REPORT.md` تولید شوند.
+۲. با ابزار `invoke_subagent`، ۳ داور تخصصی را فراخوانی کنید:
+   - **فراخوانی داور وفاداری به منبع:**
+     `invoke_subagent(TypeName="medical-summary-grounding-auditor", Role="Grounding Auditor", Prompt="لطفاً فایل‌های ingested_lecture.json، summary_data.json و SUMMARY_AUDIT_DOSSIER.json را بر مبنای خطوط قرمز HARD-01 و HARD-02 در رابریک resources/rubrics/medical-summary-rubric.md بررسی و گزارش خود را صادر کنید.")`
+   - **فراخوانی داور عدم حذف کات‌آف‌ها:**
+     `invoke_subagent(TypeName="medical-summary-omission-auditor", Role="Omission Auditor", Prompt="لطفاً فایل‌های ingested_lecture.json، summary_data.json و SUMMARY_AUDIT_DOSSIER.json را بر مبنای خطوط قرمز HARD-03 و HARD-04 در رابریک بررسی و کات‌آف‌ها و هشدارهای جاافتاده را گزارش کنید.")`
+   - **فراخوانی داور پداگوژی و بودجه:**
+     `invoke_subagent(TypeName="medical-summary-pedagogy-auditor", Role="Pedagogy Auditor", Prompt="لطفاً فایل‌های summary_data.json و SUMMARY_AUDIT_DOSSIER.json را بر مبنای روانی جملات، فهم دور اول، بودجه صفحات و خطوط قرمز HARD-05 و HARD-06 در رابریک بررسی فرمایید.")`
+۳. سپس سرداور پنل را فراخوانی کنید:
+   - **فراخوانی سرداور و سنتزکننده:**
+     `invoke_subagent(TypeName="medical-summary-panel-sro", Role="Panel SRO Synthesizer", Prompt="لطفاً با مطالعه گزارش‌های داوران تخصصی و رابریک resources/rubrics/medical-summary-rubric.md، نمره نهایی ۱۰۰ امتیازی را محاسبه، خطوط قرمز ۶‌گانه را ارزیابی و گزارش رسمی AUDIT_REPORT.md و حکم قطعی را صادر فرمایید.")`
+۴. در صورت صدور حکم `APPROVED_HIGH_YIELD_READY` توسط سرداور، دستور ساخت بسته نهایی `run_summary_pipeline.py build` را اجرا کنید.
+
 ---
 
 ## 🛠️ خط فرمان یکپارچه پایپ‌لاین (`run_summary_pipeline.py`)

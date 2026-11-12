@@ -7,6 +7,9 @@ tools:
   - read_file
   - write_file
   - edit_file
+  - invoke_subagent
+  - send_message
+  - ask_question
 ---
 
 # medical-summary-expert (ایجنت ارشد خلاصه‌نویسی پزشکی)

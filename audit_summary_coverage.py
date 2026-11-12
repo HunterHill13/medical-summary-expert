@@ -13,7 +13,7 @@ import sys
 import json
 import re
 import argparse
-from typing import Dict, Any, List, Set, Tuple
+from typing import Dict, Any, List, Set, Tuple, Optional
 
 # Force UTF-8 encoding in stdout/stderr for Windows compatibility
 if sys.stdout.encoding != 'utf-8':
@@ -807,11 +807,14 @@ def audit_cross_layer_duplication(summary_data: Dict[str, Any]) -> Dict[str, Any
     }
 
 
-def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
+def audit_page_budget(summary_data: Dict[str, Any], source_word_count: Optional[int] = None) -> Dict[str, Any]:
     """
-    Adaptive Content Volume & Strict Page Budget Governance (Rule 25 - v3.9.10):
-    Target: 4 A4 pages ideal (~1,200 - 1,500 words).
-    Max Ceiling: 6 A4 pages (~2,400 words, including flowchart space).
+    Tiered Adaptive Content Volume & Page Budget Governance (Pillar 4 - v4.0.0):
+    Dynamically scales page budget based on source volume:
+    - Tier 1 (Small / Short handout, < 3,500 words or < 25 slides): Up to 4.5 pages.
+    - Tier 2 (Medium handout, 3,500 - 8,000 words or 25-55 slides): Up to 7.5 pages.
+    - Tier 3 (Heavy / Comprehensive, > 8,000 words or > 55 slides): Up to 12.5 pages.
+    - Fallback default (when source size unknown): Up to 6.0 pages.
     """
     if summary_data.get("is_multi_chapter") or summary_data.get("is_master_bundle"):
         return {
@@ -825,14 +828,33 @@ def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
     words = len(re.findall(r'[\u0600-\u06FF\w]+', raw_text))
     sections = summary_data.get("sections") or summary_data.get("thematic_sections") or []
 
-    # If pure sections mode, enforce 4-6 A4 page budget
+    # If pure sections mode, enforce tiered adaptive page budget
     if sections:
         flowchart_count = sum(1 for s in sections if isinstance(s, dict) and (s.get("flowchart") or s.get("mermaid_code")))
         est_pages = round((words / 380.0) + (flowchart_count * 0.4), 1)
-        exceeded = est_pages > 6.0
+
+        if source_word_count is not None and source_word_count > 0:
+            if source_word_count < 3500:
+                tier = "Tier 1 (Small)"
+                ideal_pages = 4.0
+                max_ceiling = 4.5
+            elif source_word_count <= 8000:
+                tier = "Tier 2 (Medium)"
+                ideal_pages = 6.0
+                max_ceiling = 7.5
+            else:
+                tier = "Tier 3 (Heavy)"
+                ideal_pages = 10.0
+                max_ceiling = 12.5
+        else:
+            tier = "Tier 1/2 Default"
+            ideal_pages = 4.0
+            max_ceiling = 6.0
+
+        exceeded = est_pages > max_ceiling
         if exceeded:
             status = "WARNING_PAGE_BUDGET_EXCEEDED"
-        elif est_pages <= 4.5:
+        elif est_pages <= ideal_pages:
             status = "OPTIMAL_PAGE_BUDGET"
         else:
             status = "ACCEPTABLE_PAGE_BUDGET"
@@ -843,8 +865,9 @@ def audit_page_budget(summary_data: Dict[str, Any]) -> Dict[str, Any]:
             "estimated_pages": est_pages,
             "estimated_a4_pages": est_pages,
             "flowchart_count": flowchart_count,
-            "ideal_target_pages": 4.0,
-            "max_ceiling_pages": 6.0,
+            "ideal_target_pages": ideal_pages,
+            "max_ceiling_pages": max_ceiling,
+            "tier": tier,
             "status": status
         }
 
@@ -1446,7 +1469,7 @@ def audit_coverage(source_text: str, summary_data: Dict[str, Any]) -> Dict[str, 
     concept_depth_report = audit_concept_depth(norm_source, summary_data, compression_ratio, src_words)
     cell_bloat_report = audit_table_cell_bloat(summary_data)
     dedup_report = audit_cross_layer_duplication(summary_data)
-    page_budget_report = audit_page_budget(summary_data)
+    page_budget_report = audit_page_budget(summary_data, source_word_count=src_words)
     scanned_page_report = audit_scanned_pages(source_text, summary_data)
     chronological_report = audit_chronological_sequence(source_text, summary_data)
     grounding_report = audit_source_grounding(source_text, summary_data)

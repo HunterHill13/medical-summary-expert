@@ -3887,6 +3887,112 @@ def test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering():
 
     print("[PASS] Bug AW Test Passed: Self-contained Base64 diagrams and immune PDF rendering verified.")
 
+def test_bug_ax_unified_six_pillars_and_tiered_volume_governance():
+    """Bug AX (v4.0.0): Unified Six Golden Pillars Consolidation & Tiered Adaptive Volume Governance.
+    1. Tiered Adaptive Page Budgeting:
+       - Small source (< 3,500 words source, e.g. 2,000 words): max ceiling is 4.5 pages. An optimal summary (~3.8-4.1 pages) passes.
+       - Medium source (3,500 - 8,000 words, e.g. 5,000 words): max ceiling is 7.5 pages. A 6.5-page summary passes.
+         Calling without source_word_count (fallback ceiling 6.0) marks this 6.5-page summary as exceeded,
+         confirming the tiered mechanism adapts dynamically.
+       - Heavy source (> 8,000 words, e.g. 10,000 words): max ceiling is 12.5 pages. A 10.5-page summary passes.
+    2. SKILL.md Six Pillars Governance:
+       - Contains version 4.0.0.
+       - Explicitly articulates all 6 Unified Golden Pillars:
+         * Pillar 1: ستون ۱: اصالت ۱۰۰٪ منبع و قفل کامل حافظه پارامتریک
+         * Pillar 2: ستون ۲: معماری خالص جدول‌محور پویا
+         * Pillar 3: ستون ۳: نگارش بالینی روان، مفهومی و خودکفا برای دور اول مطالعه
+         * Pillar 4: ستون ۴: بودجه‌بندی حجم پله‌ای و ریشه‌کنی زوائد تکراری
+         * Pillar 5: ستون ۵: جلوه دیداری، تایپوگرافی ۸.۵pt و هایلایت‌های پاستلی
+         * Pillar 6: ستون ۶: بسته خروجی ۵‌گانه خودکفا و مصون از باگ
+       - Preserves legacy backward compatibility assertion strings:
+         "Rule 29: تقدم قطعی وفاداری به منبع بر تکمیل آموزشی"
+         "Rule 30: خودکفایی ۱۰۰ درصدی تصاویر و دیاگرام‌ها با Data URI"
+    3. BATCH_PROMPT_TEMPLATE Integration:
+       - Enforces tiered volume guidelines (e.g. 25 اسلاید, 55 اسلاید).
+       - Mandates fluent, mechanistic explanations for first-pass understanding.
+       - Enforces strict source grounding with zero parametric extrapolation.
+    """
+    from audit_summary_coverage import audit_page_budget
+    from run_summary_pipeline import BATCH_PROMPT_TEMPLATE
+
+    # 1. Test Tier 1 (Small source, < 3500 words)
+    small_summary = {
+        "sections": [
+            {
+                "title": f"بخش {i}: مبحث کوچک",
+                "headers": ["ستون ۱", "ستون ۲", "ستون ۳"],
+                "rows": [["متن سلول علمی مکانیسمی " * 8, "شرح علائم " * 8, "نکته تست " * 5] for _ in range(4)],
+                "flowchart": "flowchart TD\n  A --> B" if i == 1 else None
+            }
+            for i in range(1, 4)
+        ]
+    }
+    res_tier1 = audit_page_budget(small_summary, source_word_count=2000)
+    assert res_tier1["tier"] == "Tier 1 (Small)", f"Expected Tier 1 (Small), got {res_tier1['tier']}"
+    assert res_tier1["max_ceiling_pages"] == 4.5, f"Expected 4.5 max ceiling, got {res_tier1['max_ceiling_pages']}"
+    assert res_tier1["page_budget_exceeded"] is False, f"Small summary should pass under 4.5, got {res_tier1}"
+
+    # 2. Test Tier 2 (Medium source, 3500-8000 words)
+    medium_summary = {
+        "sections": [
+            {
+                "title": f"بخش {i}: مبحث متوسط",
+                "headers": ["ستون ۱", "ستون ۲", "ستون ۳"],
+                "rows": [["متن سلول علمی مکانیسمی " * 7, "شرح علائم بالینی " * 7, "نکته تشخیصی " * 6] for _ in range(8)],
+                "flowchart": "flowchart TD\n  A --> B" if i == 1 else None
+            }
+            for i in range(1, 6)
+        ]
+    }
+    res_tier2 = audit_page_budget(medium_summary, source_word_count=5000)
+    assert res_tier2["tier"] == "Tier 2 (Medium)", f"Expected Tier 2 (Medium), got {res_tier2['tier']}"
+    assert res_tier2["max_ceiling_pages"] == 7.5, f"Expected 7.5 max ceiling, got {res_tier2['max_ceiling_pages']}"
+    assert res_tier2["page_budget_exceeded"] is False, f"Medium summary should pass under 7.5, got {res_tier2}"
+
+    # Without source_word_count, fallback ceiling is 6.0 pages -> fails/exceeded
+    res_fallback = audit_page_budget(medium_summary, source_word_count=None)
+    assert res_fallback["tier"] == "Tier 1/2 Default"
+    assert res_fallback["max_ceiling_pages"] == 6.0
+    assert res_fallback["page_budget_exceeded"] is True, f"Medium summary of ~7.0 pages should exceed default 6.0 cap, got {res_fallback}"
+
+    # 3. Test Tier 3 (Heavy source, > 8000 words)
+    heavy_summary = {
+        "sections": [
+            {
+                "title": f"بخش {i}: مبحث سنگین جامع",
+                "headers": ["ستون ۱", "ستون ۲", "ستون ۳"],
+                "rows": [["شرح پاتوفیزیولوژی " * 7, "علائم بالینی " * 7, "درمان دارویی " * 6] for _ in range(8)],
+                "flowchart": "flowchart TD\n  A --> B" if i in (1, 3) else None
+            }
+            for i in range(1, 11)
+        ]
+    }
+    res_tier3 = audit_page_budget(heavy_summary, source_word_count=10000)
+    assert res_tier3["tier"] == "Tier 3 (Heavy)", f"Expected Tier 3 (Heavy), got {res_tier3['tier']}"
+    assert res_tier3["max_ceiling_pages"] == 12.5, f"Expected 12.5 max ceiling, got {res_tier3['max_ceiling_pages']}"
+    assert res_tier3["page_budget_exceeded"] is False, f"Heavy summary should pass under 12.5, got {res_tier3}"
+
+    # 4. Verify SKILL.md Pillars & Rules
+    with open("SKILL.md", "r", encoding="utf-8") as f_sk:
+        skill_text = f_sk.read()
+    assert "v4.0.0" in skill_text or "4.0.0" in skill_text, "v4.0.0 missing from SKILL.md!"
+    assert "منشور ۶ ستون بنیادین" in skill_text or "The 6 Golden Pillars" in skill_text, "Six Pillars heading missing from SKILL.md!"
+    assert "ستون ۱: اصالت ۱۰۰٪ منبع و قفل کامل حافظه پارامتریک" in skill_text, "Pillar 1 missing from SKILL.md!"
+    assert "ستون ۲: معماری خالص جدول‌محور پویا" in skill_text, "Pillar 2 missing from SKILL.md!"
+    assert "ستون ۳: نگارش بالینی روان، مفهومی و خودکفا برای دور اول مطالعه" in skill_text, "Pillar 3 missing from SKILL.md!"
+    assert "ستون ۴: بودجه‌بندی حجم پله‌ای و ریشه‌کنی زوائد تکراری" in skill_text, "Pillar 4 missing from SKILL.md!"
+    assert "ستون ۵: جلوه دیداری، تایپوگرافی ۸.۵pt و هایلایت‌های پاستلی" in skill_text, "Pillar 5 missing from SKILL.md!"
+    assert "ستون ۶: بسته خروجی ۵‌گانه خودکفا و مصون از باگ" in skill_text, "Pillar 6 missing from SKILL.md!"
+    assert "Rule 29: تقدم قطعی وفاداری به منبع بر تکمیل آموزشی" in skill_text, "Legacy Rule 29 assertion missing from SKILL.md!"
+    assert "Rule 30: خودکفایی ۱۰۰ درصدی تصاویر و دیاگرام‌ها با Data URI" in skill_text, "Legacy Rule 30 assertion missing from SKILL.md!"
+
+    # 5. Verify BATCH_PROMPT_TEMPLATE
+    assert ("زیر ۲۵ اسلاید" in BATCH_PROMPT_TEMPLATE or "کمتر از ۲۵ اسلاید" in BATCH_PROMPT_TEMPLATE or "بودجه‌بندی حجم پله‌ای" in BATCH_PROMPT_TEMPLATE), "Tiered guidelines missing from BATCH_PROMPT_TEMPLATE!"
+    assert ("بار اول" in BATCH_PROMPT_TEMPLATE or "First-Pass" in BATCH_PROMPT_TEMPLATE or "دور اول" in BATCH_PROMPT_TEMPLATE), "Pedagogy instructions missing from BATCH_PROMPT_TEMPLATE!"
+    assert ("Zero-Extrapolation" in BATCH_PROMPT_TEMPLATE or "عدم تعمیم" in BATCH_PROMPT_TEMPLATE or "وفاداری ۱۰۰٪" in BATCH_PROMPT_TEMPLATE), "Strict grounding missing from BATCH_PROMPT_TEMPLATE!"
+
+    print("[PASS] Bug AX Test Passed: Unified Six Pillars & Tiered Adaptive Volume Governance verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -3938,4 +4044,5 @@ if __name__ == "__main__":
     test_bug_au_first_pass_pedagogy_and_zero_trailing_matrices()
     test_bug_av_strict_zero_parametric_extrapolation_and_grounding_audit()
     test_bug_aw_self_contained_base64_diagrams_and_pdf_rendering()
-    print("=== ALL DIAGNOSTIC TESTS (49/49) COMPLETED SUCCESSFULLY ===")
+    test_bug_ax_unified_six_pillars_and_tiered_volume_governance()
+    print("=== ALL DIAGNOSTIC TESTS (50/50) COMPLETED SUCCESSFULLY ===")

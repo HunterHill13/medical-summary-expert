@@ -176,7 +176,8 @@ def sanitize_medical_text_symbols(text: str) -> str:
 def format_inline_markdown(text: str) -> str:
     """
     Sanitizes inline Markdown and TeX symbols into standard HTML tags and Unicode.
-    Converts **bold** to <strong>, `code` to <code class="med-code">, and TeX math to Unicode.
+    Converts **bold** to <strong>, `code` to <code class="med-code">, TeX math to Unicode,
+    and renders all 5 pastel semantic highlights (==cutoff==, !!trap!!, ++gold++, ^^common^^, %%pearl%%).
     """
     if not text:
         return ""
@@ -188,7 +189,14 @@ def format_inline_markdown(text: str) -> str:
     # 2. Inline code: `text` -> <code class="med-code">\1</code>
     s = re.sub(r'`(.*?)`', r'<code class="med-code">\1</code>', s)
 
-    # 3. Wrap chemical formulas in <span dir="ltr">
+    # 3. 5 Pastel Semantic Highlights (with dual classes: pastel-* and hl-*)
+    s = re.sub(r'==(.*?)==', r'<mark class="pastel-cutoff hl-yellow" style="background-color: #FEF9C3; color: #854D0E; border-bottom: 1.5px solid #FDE047; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', s)
+    s = re.sub(r'!!(.*?)!!', r'<mark class="pastel-trap hl-red" style="background-color: #FFE4E6; color: #9F1239; border-bottom: 1.5px solid #FDA4AF; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', s)
+    s = re.sub(r'\+\+(.*?)\+\+', r'<mark class="pastel-gold hl-green" style="background-color: #DCFCE7; color: #166534; border-bottom: 1.5px solid #86EFAC; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', s)
+    s = re.sub(r'\^\^(.*?)\^\^', r'<mark class="pastel-common hl-purple" style="background-color: #F3E8FF; color: #6B21A8; border-bottom: 1.5px solid #D8B4FE; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', s)
+    s = re.sub(r'%%(.*?)%%', r'<mark class="pastel-pearl hl-blue" style="background-color: #E0F2FE; color: #075985; border-bottom: 1.5px solid #7DD3FC; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</mark>', s)
+
+    # 4. Wrap chemical formulas in <span dir="ltr">
     s = re.sub(
         r'(Ca₁₀\(PO₄\)₆\(OH\)₂)',
         r'<span dir="ltr" class="chem-formula">\1</span>',
@@ -249,6 +257,7 @@ def auto_enhance_pastel_highlights(text: str) -> str:
     s = re.sub(r'(?m)^(\s*(?:•|-|\*|\d+\.)?\s*)(?:تله\s*(?:بزرگ\s*)?امتحانی|هشدار|خطای\s*(?:فاحش|رایج)(?:\s*پزشکی)?)\s*:\s*([^!\n]+)$', r'\1!!تله امتحانی: \2!!', s)
     s = re.sub(r'(?m)^(\s*(?:•|-|\*|\d+\.)?\s*)(?:استاندارد\s*طلایی|داروی\s*انتخابی|خط\s*اول\s*درمان)\s*:\s*([^+\n]+)$', r'\1++استاندارد طلایی: \2++', s)
     s = re.sub(r'(?m)^(\s*(?:•|-|\*|\d+\.)?\s*)(?:شایع‌ترین\s*(?:علت|فرم|تظاهر|علامت|نوع)?)\s*:\s*([^^\n]+)$', r'\1^^شایع‌ترین: \2^^', s)
+    s = re.sub(r'(?m)^(\s*(?:•|-|\*|\d+\.)?\s*)(?:نکته\s*(?:کلیدی|مهم|پاتولوژی|امتحانی)|مروارید\s*بالینی)\s*:\s*([^%\n]+)$', r'\1%%نکته کلیدی: \2%%', s)
 
     # 4. Auto-detect numeric cutoffs not already inside highlights
     placeholders = []
@@ -256,7 +265,7 @@ def auto_enhance_pastel_highlights(text: str) -> str:
         placeholders.append(m.group(0))
         return f'__PH_{len(placeholders)-1}__'
 
-    s = re.sub(r'(==.*?==|!!.*?!!|\+\+.*?\+\+|\^\^.*?\^\^|%%.*?%%|\*\*.*?\*\*)', repl_save, s)
+    s = re.sub(r'(==[\s\S]*?==|!![\s\S]*?!!|\+\+[\s\S]*?\+\+|\^\^[\s\S]*?\^\^|%%[\s\S]*?%%|\*\*[\s\S]*?\*\*)', repl_save, s)
 
     cutoff_pattern = re.compile(r'((?:[A-Za-z0-9α-ωΑ-Ω\-]+\s+)?(?:≥|≤|>|<|>=|<=)\s*\d+(?:\.\d+)?(?:\s*(?:mg/dL|g/dL|mEq/L|mmol/L|IU/L|mIU/L|U/L|mL/min|mmHg|cmH2O|bpm|%))?)')
     s = cutoff_pattern.sub(r'==\1==', s)
@@ -271,23 +280,28 @@ def auto_enhance_pastel_highlights(text: str) -> str:
 def format_cell_html(text: str) -> str:
     """
     Formats a table cell's multi-line text with bullets, bolding, and 5 pastel semantic highlights
-    (No-Emoji Swiss-Grid Aesthetic matching v4.3.0).
+    (No-Emoji Swiss-Grid Aesthetic matching v4.3.2). Handles multiline highlights safely.
     """
     if not text:
         return ""
     enhanced_text = auto_enhance_pastel_highlights(str(text))
+
+    def _repl_multi(m, cls, style):
+        inner = m.group(1).replace('\n', '<br>')
+        return f'<mark class="{cls}" style="{style}">{inner}</mark>'
+
+    enhanced_text = re.sub(r'==([\s\S]*?)==', lambda m: _repl_multi(m, "pastel-cutoff hl-yellow", "background-color: #FEF9C3; color: #854D0E; border-bottom: 1.5px solid #FDE047; padding: 1px 4px; border-radius: 3px; font-weight: 600;"), enhanced_text)
+    enhanced_text = re.sub(r'!!([\s\S]*?)!!', lambda m: _repl_multi(m, "pastel-trap hl-red", "background-color: #FFE4E6; color: #9F1239; border-bottom: 1.5px solid #FDA4AF; padding: 1px 4px; border-radius: 3px; font-weight: 600;"), enhanced_text)
+    enhanced_text = re.sub(r'\+\+([\s\S]*?)\+\+', lambda m: _repl_multi(m, "pastel-gold hl-green", "background-color: #DCFCE7; color: #166534; border-bottom: 1.5px solid #86EFAC; padding: 1px 4px; border-radius: 3px; font-weight: 600;"), enhanced_text)
+    enhanced_text = re.sub(r'\^\^([\s\S]*?)\^\^', lambda m: _repl_multi(m, "pastel-common hl-purple", "background-color: #F3E8FF; color: #6B21A8; border-bottom: 1.5px solid #D8B4FE; padding: 1px 4px; border-radius: 3px; font-weight: 600;"), enhanced_text)
+    enhanced_text = re.sub(r'%%([\s\S]*?)%%', lambda m: _repl_multi(m, "pastel-pearl hl-blue", "background-color: #E0F2FE; color: #075985; border-bottom: 1.5px solid #7DD3FC; padding: 1px 4px; border-radius: 3px; font-weight: 600;"), enhanced_text)
+
     lines = enhanced_text.splitlines()
     formatted_lines = []
     for line in lines:
         l = line.strip()
         if not l:
             continue
-        # 5 Pastel Semantic Highlights
-        l = re.sub(r'==(.*?)==', r'<mark class="pastel-cutoff">\1</mark>', l)
-        l = re.sub(r'!!(.*?)!!', r'<mark class="pastel-trap">\1</mark>', l)
-        l = re.sub(r'\+\+(.*?)\+\+', r'<mark class="pastel-gold">\1</mark>', l)
-        l = re.sub(r'\^\^(.*?)\^\^', r'<mark class="pastel-common">\1</mark>', l)
-        l = re.sub(r'%%(.*?)%%', r'<mark class="pastel-pearl">\1</mark>', l)
         l = format_inline_markdown(l)
         if l.startswith("• "):
             formatted_lines.append(f'<div class="cell-bullet">{l}</div>')
@@ -530,7 +544,7 @@ def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
         if iCs_elem is None:
             rPr.append(parse_xml(r'<w:iCs {}/>'.format(nsdecls('w'))))
 
-    if highlight_color in ("yellow", "cutoff"):
+    if highlight_color in ("yellow", "cutoff", "butter"):
         rPr.append(parse_xml(r'<w:shd {} w:fill="FEF9C3"/>'.format(nsdecls('w'))))
         rPr.append(parse_xml(r'<w:color {} w:val="854D0E"/>'.format(nsdecls('w'))))
     elif highlight_color in ("red", "trap", "rose"):
@@ -542,7 +556,7 @@ def _add_single_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
     elif highlight_color in ("purple", "common", "lavender"):
         rPr.append(parse_xml(r'<w:shd {} w:fill="F3E8FF"/>'.format(nsdecls('w'))))
         rPr.append(parse_xml(r'<w:color {} w:val="6B21A8"/>'.format(nsdecls('w'))))
-    elif highlight_color in ("blue", "pearl", "sky"):
+    elif highlight_color in ("blue", "pearl", "sky", "azure"):
         rPr.append(parse_xml(r'<w:shd {} w:fill="E0F2FE"/>'.format(nsdecls('w'))))
         rPr.append(parse_xml(r'<w:color {} w:val="075985"/>'.format(nsdecls('w'))))
 
@@ -555,7 +569,7 @@ def add_r(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
     """Adds a run or parses inline markdown **bold** and 5 pastel highlights (==, !!, ++, ^^, %%) into Word runs."""
     clean_text = sanitize_medical_text_symbols(str(text))
     if any(m in clean_text for m in ["==", "!!", "++", "^^", "%%", "**"]):
-        parts = re.split(r'(==.*?==|!!.*?!!|\+\+.*?\+\+|\^\^.*?\^\^|%%.*?%%|\*\*.*?\*\*)', clean_text)
+        parts = re.split(r'(==[\s\S]*?==|!![\s\S]*?!!|\+\+[\s\S]*?\+\+|\^\^[\s\S]*?\^\^|%%[\s\S]*?%%|\*\*[\s\S]*?\*\*)', clean_text)
         last_run = None
         for part in parts:
             if not part:
@@ -599,50 +613,63 @@ def add_bidi_text(p, text: str, font_name: str = FONT_DUBAI, size_pt: float = 11
                   highlight_color: Optional[str] = None):
     """
     Renders mixed Persian/English scientific text with strict BiDi isolation.
-    Supports 5 pastel semantic highlights (==cutoff==, !!trap!!, ++gold++, ^^common^^, %%pearl%%).
+    Supports 5 pastel semantic highlights (==cutoff==, !!trap!!, ++gold++, ^^common^^, %%pearl%%)
+    with full support for multiline highlights without tag severance.
     """
     if not text:
         return
 
-    text = sanitize_medical_text_symbols(text)
+    text = sanitize_medical_text_symbols(str(text))
+    # Auto-enhance text with 5 pastel highlights if raw brackets or cues are present
+    enhanced_text = auto_enhance_pastel_highlights(text)
 
-    # Handle explicit line breaks
-    lines = text.split('\n')
-    for idx, line in enumerate(lines):
-        if idx > 0:
+    # Split by highlight/bold tokens first across newlines using re.DOTALL so multiline highlights are not severed
+    parts = re.split(r'(==[\s\S]*?==|!![\s\S]*?!!|\+\+[\s\S]*?\+\+|\^\^[\s\S]*?\^\^|%%[\s\S]*?%%|\*\*[\s\S]*?\*\*)', enhanced_text)
+
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("==") and part.endswith("==") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=COLOR_PASTEL_CUTOFF_TXT,
+                                      highlight_color="cutoff")
+        elif part.startswith("!!") and part.endswith("!!") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=COLOR_PASTEL_TRAP_TXT,
+                                      highlight_color="trap")
+        elif part.startswith("++") and part.endswith("++") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=COLOR_PASTEL_GOLD_TXT,
+                                      highlight_color="gold")
+        elif part.startswith("^^") and part.endswith("^^") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=COLOR_PASTEL_COMMON_TXT,
+                                      highlight_color="common")
+        elif part.startswith("%%") and part.endswith("%%") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=COLOR_PASTEL_PEARL_TXT,
+                                      highlight_color="pearl")
+        elif part.startswith("**") and part.endswith("**") and len(part) >= 4:
+            _render_token_with_breaks(p, part[2:-2], font_name=font_name, size_pt=size_pt,
+                                      bold=True, italic=italic, color_rgb=color_rgb,
+                                      highlight_color=highlight_color)
+        else:
+            _render_token_with_breaks(p, part, font_name=font_name, size_pt=size_pt,
+                                      bold=bold, italic=italic, color_rgb=color_rgb,
+                                      highlight_color=highlight_color)
+
+
+def _render_token_with_breaks(p, text_token: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
+                              bold: bool = False, italic: bool = False, color_rgb: tuple = COLOR_TEXT_CHARCOAL,
+                              highlight_color: Optional[str] = None):
+    sub_lines = text_token.split('\n')
+    for s_idx, s_line in enumerate(sub_lines):
+        if s_idx > 0:
             p.add_run().add_break()
-        # Parse inline markdown **bold** and 5 pastel highlights
-        parts = re.split(r'(==.*?==|!!.*?!!|\+\+.*?\+\+|\^\^.*?\^\^|%%.*?%%|\*\*.*?\*\*)', line)
-        for part in parts:
-            if not part:
-                continue
-            if part.startswith("==") and part.endswith("==") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=COLOR_PASTEL_CUTOFF_TXT, highlight_color="cutoff")
-            elif part.startswith("!!") and part.endswith("!!") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=COLOR_PASTEL_TRAP_TXT, highlight_color="trap")
-            elif part.startswith("++") and part.endswith("++") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=COLOR_PASTEL_GOLD_TXT, highlight_color="gold")
-            elif part.startswith("^^") and part.endswith("^^") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=COLOR_PASTEL_COMMON_TXT, highlight_color="common")
-            elif part.startswith("%%") and part.endswith("%%") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=COLOR_PASTEL_PEARL_TXT, highlight_color="pearl")
-            elif part.startswith("**") and part.endswith("**") and len(part) >= 4:
-                inner_text = part[2:-2]
-                _render_bidi_line(p, inner_text, font_name=font_name, size_pt=size_pt,
-                                  bold=True, italic=italic, color_rgb=color_rgb, highlight_color=highlight_color)
-            else:
-                _render_bidi_line(p, part, font_name=font_name, size_pt=size_pt,
-                                  bold=bold, italic=italic, color_rgb=color_rgb, highlight_color=highlight_color)
+        if s_line:
+            _render_bidi_line(p, s_line, font_name=font_name, size_pt=size_pt,
+                              bold=bold, italic=italic, color_rgb=color_rgb,
+                              highlight_color=highlight_color)
 
 
 def _render_bidi_line(p, text_line: str, font_name: str = FONT_DUBAI, size_pt: float = 11.0,
@@ -4670,8 +4697,8 @@ td {
 tr:nth-child(even) { background-color: #F0FDFA; }
 tr:nth-child(odd) { background-color: #FFFFFF; }
 
-/* 5 Pastel Semantic Highlights (v4.3.0 - Academic, No-Emoji Aesthetic) */
-.pastel-trap, mark.pastel-trap {
+/* 5 Pastel Semantic Highlights (v4.3.2 - Academic, No-Emoji Aesthetic with Dual Selectors) */
+.pastel-trap, mark.pastel-trap, .hl-red, mark.hl-red {
     background-color: #FFE4E6 !important;
     color: #9F1239 !important;
     border-bottom: 1.5px solid #FDA4AF;
@@ -4680,7 +4707,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     font-weight: 600;
     -webkit-print-color-adjust: exact !important;
 }
-.pastel-cutoff, mark.pastel-cutoff {
+.pastel-cutoff, mark.pastel-cutoff, .hl-yellow, mark.hl-yellow {
     background-color: #FEF9C3 !important;
     color: #854D0E !important;
     border-bottom: 1.5px solid #FDE047;
@@ -4689,7 +4716,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     font-weight: 600;
     -webkit-print-color-adjust: exact !important;
 }
-.pastel-gold, mark.pastel-gold {
+.pastel-gold, mark.pastel-gold, .hl-green, mark.hl-green {
     background-color: #DCFCE7 !important;
     color: #166534 !important;
     border-bottom: 1.5px solid #86EFAC;
@@ -4698,7 +4725,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     font-weight: 600;
     -webkit-print-color-adjust: exact !important;
 }
-.pastel-common, mark.pastel-common {
+.pastel-common, mark.pastel-common, .hl-purple, mark.hl-purple {
     background-color: #F3E8FF !important;
     color: #6B21A8 !important;
     border-bottom: 1.5px solid #D8B4FE;
@@ -4707,7 +4734,7 @@ tr:nth-child(odd) { background-color: #FFFFFF; }
     font-weight: 600;
     -webkit-print-color-adjust: exact !important;
 }
-.pastel-pearl, mark.pastel-pearl {
+.pastel-pearl, mark.pastel-pearl, .hl-blue, mark.hl-blue {
     background-color: #E0F2FE !important;
     color: #075985 !important;
     border-bottom: 1.5px solid #7DD3FC;

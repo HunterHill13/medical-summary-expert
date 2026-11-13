@@ -4330,7 +4330,41 @@ def test_bug_ba_pastel_highlighting_engine_and_120_word_illness_scripts():
     bad_res = audit_table_cell_bloat(bad_summary)
     assert bad_res["cell_bloat_detected"] is True, "Unstructured rambling prose > 35 words must be flagged as bloat"
 
-    # 5. Parity & System Assertions
+    # 5. Format Inline Markdown & Multiline Highlight Parity Assertions
+    from build_summary_pack import format_inline_markdown, format_cell_html, add_bidi_text
+    from docx import Document
+
+    # Assert format_inline_markdown handles all 5 palettes
+    text_gold = "تجویز ++داروی انتخابی: متی‌مازول++ در پرکاری تیروئید"
+    res_gold = format_inline_markdown(text_gold)
+    assert 'class="pastel-gold hl-green"' in res_gold or 'class="pastel-gold' in res_gold, f"format_inline_markdown failed on ++: {res_gold}"
+    assert "++" not in res_gold, f"Raw ++ leaked in HTML: {res_gold}"
+
+    text_common = "بیماری گریوز ^^شایع‌ترین علت^^ هایپرتیروئیدی است"
+    res_common = format_inline_markdown(text_common)
+    assert 'class="pastel-common hl-purple"' in res_common or 'class="pastel-common' in res_common, f"format_inline_markdown failed on ^^: {res_common}"
+    assert "^^" not in res_common, f"Raw ^^ leaked in HTML: {res_common}"
+
+    text_pearl = "%%نکته کلیدی: در بارداری PTU در سه‌ماهه اول ارجح است%%"
+    res_pearl = format_inline_markdown(text_pearl)
+    assert 'class="pastel-pearl hl-blue"' in res_pearl or 'class="pastel-pearl' in res_pearl, f"format_inline_markdown failed on %%: {res_pearl}"
+    assert "%%" not in res_pearl, f"Raw %% leaked in HTML: {res_pearl}"
+
+    # Assert multiline highlights in HTML format_cell_html
+    multiline_gold = "• ++داروی انتخابی:\nمتی‌مازول++ خوراکی"
+    res_multi = format_cell_html(multiline_gold)
+    assert "++" not in res_multi, f"Raw ++ leaked in multiline format_cell_html: {res_multi}"
+    assert 'class="pastel-gold' in res_multi, f"Mark tag missing in multiline format_cell_html: {res_multi}"
+
+    # Assert multiline highlights in Word docx add_bidi_text
+    doc_m = Document()
+    p_m = doc_m.add_paragraph()
+    add_bidi_text(p_m, "• ++داروی انتخابی:\nمتی‌مازول++ خوراکی")
+    xml_str_m = "".join(str(r._r.xml) for r in p_m.runs)
+    assert 'w:fill="DCFCE7"' in xml_str_m, f"Word run missing green shading DCFCE7 in multiline text! Got: {xml_str_m}"
+    assert "++" not in p_m.text, f"Raw ++ leaked into Word text: {p_m.text}"
+
+    # 6. Parity & System Assertions
     assert "۵-Palette Pastel Semantic System" in BATCH_PROMPT_TEMPLATE or "پاستلی ۵‌گانه" in BATCH_PROMPT_TEMPLATE
     assert "اسکریپت بالینی کامل" in BATCH_PROMPT_TEMPLATE or "۱۲۰ کلمه" in BATCH_PROMPT_TEMPLATE
     with open("SKILL.md", "r", encoding="utf-8") as f_sk:

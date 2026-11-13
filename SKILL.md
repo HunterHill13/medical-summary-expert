@@ -154,7 +154,9 @@ description: >-
 ۳. سپس سرداور پنل را فراخوانی کنید:
    - **فراخوانی سرداور و سنتزکننده:**
      `invoke_subagent(TypeName="medical-summary-panel-sro", Role="Panel SRO Synthesizer", Prompt="لطفاً با مطالعه گزارش‌های داوران تخصصی و رابریک resources/rubrics/medical-summary-rubric.md، نمره نهایی ۱۰۰ امتیازی را محاسبه، خطوط قرمز ۶‌گانه را ارزیابی و گزارش رسمی AUDIT_REPORT.md و حکم قطعی را صادر فرمایید.")`
-۴. در صورت صدور حکم `APPROVED_HIGH_YIELD_READY` توسط سرداور، دستور ساخت بسته نهایی `run_summary_pipeline.py build` را اجرا کنید.
+۴. در صورت صدور حکم `APPROVED_HIGH_YIELD_READY` توسط سرداور، ایجنت اصلی مهر رسمی سرداور را بر دوسیه ثبت می‌کند:
+   `uv run python run_summary_pipeline.py sro-seal --dossier "خلاصه/SUMMARY_AUDIT_DOSSIER.json" --verdict APPROVED_HIGH_YIELD_READY --score <score>`
+۵. پس از ثبت مهر رسمی، دستور ساخت بسته نهایی `run_summary_pipeline.py build` را اجرا کنید. (کامپایلر بدون ثبت مهر رسمی متوقف می‌شود).
 
 ---
 
@@ -182,11 +184,14 @@ uv run python run_summary_pipeline.py audit --source "ingested_lecture.json" --s
 1. **`medical-summary-grounding-auditor`**: ممیزی وفاداری ۱۰۰٪ به متن جزوه، انزوای پارامتریک و مهار خطاهای `HARD-01` و `HARD-02`.
 2. **`medical-summary-omission-auditor`**: ممیزی عدم حذف کات‌آف‌ها، کرایتری‌ها و مهار خطاهای `HARD-03` و `HARD-04`.
 3. **`medical-summary-pedagogy-auditor`**: ممیزی پداگوژی دور اول، چگالی بالینی پویا و مهار خطاهای `HARD-05` و `HARD-06`.
-4. **`medical-summary-panel-sro`**: سرداور پنل جهت تجمیع یافته‌ها، محاسبه نمره نهایی (۱۰۰ امتیازی) و ثبت حکم `APPROVED_HIGH_YIELD_READY` در `خلاصه/AUDIT_REPORT.md`.
+4. **`medical-summary-panel-sro`**: سرداور پنل جهت تجمیع یافته‌ها، محاسبه نمره نهایی (۱۰۰ امتیازی) و صدور حکم نهایی.
 
 ```bash
-# ۵. کامپایل نهایی بسته کامل (DOCX + Playwright PDF با BiDi Stamping + HTML + MD + Anki TSV/APKG)
-# ⚠️ قفل سخت‌گیرانه (Hard Blocker): این دستور در صورت عدم وجود تاییدیه رسمی داوران متوقف می‌شود!
+# ۵. ثبت رسمی مهر سرداور EGM بر دوسیه ممیزی (SRO Seal):
+uv run python run_summary_pipeline.py sro-seal --dossier "خلاصه/SUMMARY_AUDIT_DOSSIER.json" --verdict APPROVED_HIGH_YIELD_READY --score 95.0
+
+# ۶. کامپایل نهایی بسته کامل (DOCX + Playwright PDF با BiDi Stamping + HTML + MD + Anki TSV/APKG)
+# ⚠️ قفل سخت‌گیرانه (Hard Blocker): این دستور در صورت عدم وجود مهر رسمی سرداور متوقف می‌شود!
 uv run python run_summary_pipeline.py build --summary "summary_data.json" --institution "دانشگاه بق" --out-dir "خلاصه" --prefix "summary_pack"
 
 # اجرای خودکار کل پایپ‌لاین (برای جزوات تک‌فایلی)

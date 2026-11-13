@@ -4064,7 +4064,12 @@ def test_bug_ay_isolated_auditor_egm_swarm():
 
     assert os.path.exists(test_dossier_path), "SUMMARY_AUDIT_DOSSIER.json was not created!"
     assert os.path.exists(test_report_md_path), "AUDIT_REPORT.md was not created!"
-    assert dossier["verdict"] == "APPROVED_HIGH_YIELD_READY", f"Expected APPROVED_HIGH_YIELD_READY, got {dossier['verdict']}"
+    assert dossier["computational_verdict"] == "APPROVED_HIGH_YIELD_READY", f"Expected computational APPROVED_HIGH_YIELD_READY, got {dossier.get('computational_verdict')}"
+    assert dossier["verdict"] == "PENDING_SRO_PANEL_REVIEW", f"Expected initial PENDING_SRO_PANEL_REVIEW, got {dossier['verdict']}"
+    assert dossier["sro_signed"] is False, "Initial computational dossier must not be sro_signed"
+    dossier_sealed = export_audit_dossier(source_text, clean_summary, sro_signed=True, sro_verdict="APPROVED_HIGH_YIELD_READY")
+    assert dossier_sealed["verdict"] == "APPROVED_HIGH_YIELD_READY", "Sealed dossier must have APPROVED_HIGH_YIELD_READY"
+    assert dossier_sealed["sro_signed"] is True, "Sealed dossier must have sro_signed=True"
     assert dossier["composite_score"] >= 90.0, f"Expected score >= 90, got {dossier['composite_score']}"
     assert dossier["has_hard_fail"] is False, f"Expected no hard fail, got {dossier['hard_constraints_check']}"
 
@@ -4187,7 +4192,9 @@ def test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling():
     dossier_data = {
         "verdict": "APPROVED_HIGH_YIELD_READY",
         "hard_violations_count": 0,
-        "composite_score": 95.0
+        "composite_score": 95.0,
+        "sro_signed": True,
+        "sro_panel_verified": True
     }
     with open(os.path.join(test_build_dir, "SUMMARY_AUDIT_DOSSIER.json"), "w", encoding="utf-8") as fd:
         json.dump(dossier_data, fd, ensure_ascii=False)
@@ -4333,6 +4340,128 @@ def test_bug_ba_pastel_highlighting_engine_and_120_word_illness_scripts():
 
     print("[PASS] Bug BA Test Passed: 5-Palette Pastel Highlighting Engine & 120-Word In-Cell Illness Scripts verified.")
 
+
+def test_bug_bb_sro_seal_and_swarm_enforcement_gate():
+    """Bug BB (v4.3.1): SRO Seal Command & Swarm Subagent Enforcement Gate.
+    1. Computational Audit Stage:
+       - cmd_audit outputs stage='COMPUTATIONAL_PRE_AUDIT', sro_signed=False, verdict='PENDING_SRO_PANEL_REVIEW'.
+    2. Blocker Gatekeeper:
+       - cmd_build raises SystemExit(1) on PENDING_SRO_PANEL_REVIEW, requiring subagent execution and official seal.
+    3. cmd_sro_seal:
+       - Seals SUMMARY_AUDIT_DOSSIER.json with verdict='APPROVED_HIGH_YIELD_READY', sro_signed=True, stage='SRO_PANEL_SEALED'.
+       - Records SRO seal section in AUDIT_REPORT.md.
+    4. Final Compilation:
+       - Once sealed, cmd_build compiles all deliverables without errors.
+    """
+    from run_summary_pipeline import cmd_audit, cmd_build, cmd_sro_seal
+    import argparse
+
+    test_bb_dir = os.path.join("dist", "test_bb_sro_seal")
+    shutil.rmtree(test_bb_dir, ignore_errors=True)
+    os.makedirs(test_bb_dir, exist_ok=True)
+
+    source_file = os.path.join(test_bb_dir, "source.json")
+    summary_file = os.path.join(test_bb_dir, "summary.json")
+    report_file = os.path.join(test_bb_dir, "coverage_audit_report.json")
+    dossier_file = os.path.join(test_bb_dir, "SUMMARY_AUDIT_DOSSIER.json")
+    audit_md_file = os.path.join(test_bb_dir, "AUDIT_REPORT.md")
+
+    source_text = (
+        "مبحث اختلالات تیروئید و پرکاری تیروئید: "
+        "کات‌آف تشخیصی TSH کمتر از 0.1 mIU/L و سونوگرافی نودول بزرگتر از 1cm است. "
+        "مکانیسم بیماری شامل افزایش ترشح هورمون و علائم تیروتوکسیکوز است. "
+        "درمان دارویی با متی‌مازول انجام می‌شود. "
+    ) * 30
+    with open(source_file, "w", encoding="utf-8") as f:
+        json.dump({"topic_title": "مبحث غدد", "full_text": source_text}, f, ensure_ascii=False)
+
+    summary_data = {
+        "topic_title": "خلاصه مبحث غدد",
+        "sections": [
+            {
+                "title": "اختلالات تیروئید",
+                "headers": ["بیماری", "معیار تشخیصی", "درمان"],
+                "rows": [
+                    [
+                        "پرکاری تیروئید",
+                        "• کات‌آف تشخیصی: TSH کمتر از 0.1 mIU/L و نودول بزرگتر از 1cm",
+                        "• مکانیسم بیماری: افزایش ترشح هورمون → علائم تیروتوکسیکوز → درمان با داروی متی‌مازول"
+                    ]
+                ],
+                "flowchart": "flowchart TD\n  A --> B"
+            }
+        ]
+    }
+    with open(summary_file, "w", encoding="utf-8") as f:
+        json.dump(summary_data, f, ensure_ascii=False)
+
+    # 1. Run cmd_audit
+    args_audit = argparse.Namespace(
+        source=source_file,
+        summary=summary_file,
+        report=report_file,
+        dossier=dossier_file,
+        audit_md=audit_md_file
+    )
+    cmd_audit(args_audit)
+
+    with open(dossier_file, "r", encoding="utf-8") as f:
+        pre_dossier = json.load(f)
+
+    assert pre_dossier["stage"] == "COMPUTATIONAL_PRE_AUDIT", f"Expected COMPUTATIONAL_PRE_AUDIT, got {pre_dossier.get('stage')}"
+    assert pre_dossier["sro_signed"] is False, "Pre-audit dossier must not be sro_signed"
+    assert pre_dossier["verdict"] == "PENDING_SRO_PANEL_REVIEW", f"Expected PENDING_SRO_PANEL_REVIEW, got {pre_dossier['verdict']}"
+    assert pre_dossier["computational_verdict"] == "APPROVED_HIGH_YIELD_READY", "Computational metrics should pass"
+
+    # 2. cmd_build must be blocked
+    args_build = argparse.Namespace(
+        summary=summary_file,
+        out_dir=test_bb_dir,
+        prefix="summary_pack",
+        institution="دانشگاه بق",
+        force_unverified=False,
+        dossier=dossier_file,
+        audit_md=audit_md_file
+    )
+    try:
+        cmd_build(args_build)
+        assert False, "cmd_build should have raised SystemExit because dossier is PENDING_SRO_PANEL_REVIEW!"
+    except SystemExit as e:
+        assert e.code == 1, f"Expected exit code 1, got {e.code}"
+
+    # 3. Seal the dossier via cmd_sro_seal
+    args_seal = argparse.Namespace(
+        dossier=dossier_file,
+        audit_md=audit_md_file,
+        verdict="APPROVED_HIGH_YIELD_READY",
+        score=98.0,
+        reviewer_notes="Verified by Grounding, Omission, Pedagogy Auditors and Sealed by SRO.",
+        sro_name="medical-summary-panel-sro"
+    )
+    cmd_sro_seal(args_seal)
+
+    with open(dossier_file, "r", encoding="utf-8") as f:
+        sealed_dossier = json.load(f)
+
+    assert sealed_dossier["stage"] == "SRO_PANEL_SEALED", "Dossier should be in SRO_PANEL_SEALED stage"
+    assert sealed_dossier["sro_signed"] is True, "Dossier must have sro_signed=True"
+    assert sealed_dossier["verdict"] == "APPROVED_HIGH_YIELD_READY", "Dossier verdict should be APPROVED_HIGH_YIELD_READY"
+    assert sealed_dossier["composite_score"] == 98.0, "Composite score should be updated to 98.0"
+
+    with open(audit_md_file, "r", encoding="utf-8") as fm:
+        md_text = fm.read()
+    assert "Official SRO Panel Seal" in md_text, "SRO seal section missing from AUDIT_REPORT.md"
+    assert "medical-summary-panel-sro" in md_text, "SRO reviewer name missing from AUDIT_REPORT.md"
+
+    # 4. Now cmd_build must succeed
+    cmd_build(args_build)
+    assert os.path.exists(os.path.join(test_bb_dir, "summary_pack.docx")), "DOCX deliverable missing!"
+    assert os.path.exists(os.path.join(test_bb_dir, "summary_pack.html")), "HTML deliverable missing!"
+    assert os.path.exists(os.path.join(test_bb_dir, "summary_pack.pdf")), "PDF deliverable missing!"
+    assert os.path.exists(os.path.join(test_bb_dir, "summary_pack.md")), "Markdown deliverable missing!"
+
+    print("[PASS] Bug BB Test Passed: SRO Seal Command & Swarm Subagent Enforcement Gate verified.")
+
 if __name__ == "__main__":
     print("=== RUNNING FULL SKILL DIAGNOSTICS SUITE ===")
     test_bug_a_apkg_synthesis_when_empty()
@@ -4388,4 +4517,5 @@ if __name__ == "__main__":
     test_bug_ay_isolated_auditor_egm_swarm()
     test_bug_az_compiler_hard_blocker_and_dynamic_entity_scaling()
     test_bug_ba_pastel_highlighting_engine_and_120_word_illness_scripts()
-    print("=== ALL DIAGNOSTIC TESTS (53/53) COMPLETED SUCCESSFULLY ===")
+    test_bug_bb_sro_seal_and_swarm_enforcement_gate()
+    print("=== ALL DIAGNOSTIC TESTS (54/54) COMPLETED SUCCESSFULLY ===")

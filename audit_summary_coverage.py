@@ -1614,7 +1614,9 @@ def export_audit_dossier(
     source_text: str,
     summary_data: Dict[str, Any],
     dossier_path: Optional[str] = None,
-    report_md_path: Optional[str] = None
+    report_md_path: Optional[str] = None,
+    sro_signed: bool = False,
+    sro_verdict: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     EGM Isolated Auditor Swarm Dossier & Rubric Synthesis Engine (v4.1.0):
@@ -1733,13 +1735,25 @@ def export_audit_dossier(
 
     composite_score = round(score_dim1 + score_dim2 + score_dim3 + score_dim4 + score_dim5 + score_dim6, 1)
 
-    # 3. Determine Binding Verdict
+    # 3. Determine Computational and Binding Verdicts
     if has_hard_fail or composite_score < 70.0:
-        verdict = "HARD_FAIL_REJECTED"
+        computational_verdict = "HARD_FAIL_REJECTED"
     elif composite_score < 90.0:
-        verdict = "SURGICAL_REVISION_REQUIRED"
+        computational_verdict = "SURGICAL_REVISION_REQUIRED"
     else:
-        verdict = "APPROVED_HIGH_YIELD_READY"
+        computational_verdict = "APPROVED_HIGH_YIELD_READY"
+
+    if sro_signed and sro_verdict:
+        verdict = sro_verdict
+        stage = "SRO_PANEL_SEALED"
+        sro_panel_verified = (sro_verdict == "APPROVED_HIGH_YIELD_READY")
+    else:
+        if computational_verdict == "APPROVED_HIGH_YIELD_READY":
+            verdict = "PENDING_SRO_PANEL_REVIEW"
+        else:
+            verdict = computational_verdict
+        stage = "COMPUTATIONAL_PRE_AUDIT"
+        sro_panel_verified = False
 
     # 4. Formulate Surgical Remediation Directives
     surgical_hints = []
@@ -1762,12 +1776,23 @@ def export_audit_dossier(
         surgical_hints.append(f"فشرده‌سازی متن جهت رعایت بودجه صفحات پله‌ای (تخمین: {report.get('page_budget_audit', {}).get('estimated_a4_pages')} ص / سقف مجاز: {report.get('page_budget_audit', {}).get('max_ceiling_pages')} ص).")
 
     # 5. Build Human-Readable Markdown Report
-    status_icon = "✅" if verdict == "APPROVED_HIGH_YIELD_READY" else ("⚠️" if verdict == "SURGICAL_REVISION_REQUIRED" else "❌")
-    hard_status = "CLEAR (بدون خطا) ✅" if not has_hard_fail else "VIOLATION DETECTED (خطای قرمز ردیابی شد) ❌"
+    if verdict == "PENDING_SRO_PANEL_REVIEW":
+        status_icon = "⏳"
+    elif verdict == "APPROVED_HIGH_YIELD_READY":
+        status_icon = "✅"
+    elif verdict == "SURGICAL_REVISION_REQUIRED":
+        status_icon = "⚠️"
+    else:
+        status_icon = "❌"
+
+    hard_status = "CLEAR (بدون خطا) ✅" if not has_hard_fail else f"VIOLATION DETECTED (خطای قرمز ردیابی شد) ❌"
 
     report_md = f"""# 🩺 گزارش رسمی ممیزی ایزوله داوران خلاصه‌نویسی پزشکی (EGM Audit Report v4.1.0)
 
+- **مرحله ممیزی (Audit Stage):** `{stage}`
+- **وضعیت بررسی محاسباتی (Computational Status):** `{'COMPUTATIONALLY_VALIDATED ✅' if computational_verdict == 'APPROVED_HIGH_YIELD_READY' else computational_verdict}`
 - **حکم نهایی سرداور (Final Verdict):** `{verdict}` {status_icon}
+- **مهر و امضای سرداور (SRO Signed):** `{'بله (SEALED) ✅' if sro_signed else 'خیر - در انتظار استعلام سوآرم داوران ⏳'}`
 - **نمره کل کیفیت رابریک (Composite Score):** **{composite_score} از ۱۰۰**
 - **وضعیت خطوط قرمز ۶‌گانه (Hard Constraints):** **{hard_status}**
 
@@ -1801,18 +1826,51 @@ def export_audit_dossier(
     if surgical_hints:
         for idx, h in enumerate(surgical_hints, 1):
             report_md += f"{idx}. {h}\n"
+    elif verdict == "PENDING_SRO_PANEL_REVIEW":
+        report_md += "پیش‌نویس از نظر محاسباتی و الگوریتمی تایید شد. جهت صدور مجوز نهایی کامپایل، ممیزی کیفی توسط سوآرم ساب‌ایجنت‌های ایزوله EGM الزامی است.\n"
     else:
         report_md += "خلاصه کاملاً منطبق بر رابریک رسمی بوده و نیازی به اصلاح جراحی ندارد. مجوز کامپایل و صدور بسته‌های خروجی صادر شد.\n"
+
+    if verdict == "PENDING_SRO_PANEL_REVIEW":
+        report_md += """
+---
+
+## ۴. پروتکل الزامی فراخوانی ساب‌ایجنت‌های سوآرم داوری (EGM Swarm Protocol)
+طبق منشور حاکمیت سیستم، گیت کامپایل (`build`) تا زمان ثبت مهر رسمی سرداور قفل است. ایجنت اصلی موظف است ۴ ساب‌ایجنت زیر را با ابزار `invoke_subagent` فراخوانی نماید:
+1. `medical-summary-grounding-auditor`: ممیزی اصالت ۱۰۰٪ و کنترل HARD-01 و HARD-02.
+2. `medical-summary-omission-auditor`: ممیزی عدم حذف کات‌آف‌ها و کنترل HARD-03 و HARD-04.
+3. `medical-summary-pedagogy-auditor`: ممیزی پداگوژی مکانیسمی و کنترل HARD-05 و HARD-06.
+4. `medical-summary-panel-sro`: تجمیع نمرات داوران، بررسی رابریک ۱۰۰ امتیازی و صدور حکم نهایی.
+
+پس از صدور حکم سرداور، دستور زیر جهت ثبت رسمی مهر اجرا می‌گردد:
+```bash
+python run_summary_pipeline.py sro-seal --verdict APPROVED_HIGH_YIELD_READY --score <score>
+```
+"""
 
     # 6. Assemble Dossier Object
     src_words = report.get("compression_audit", {}).get("source_word_count", 0)
     sum_words = report.get("compression_audit", {}).get("summary_word_count", 0)
     pb_report = report.get("page_budget_audit", {})
 
+    hard_violations_count = (
+        len(hard_01_extrapolated) +
+        len(hard_02_phantom) +
+        len(hard_03_cutoffs) +
+        len(hard_04_alerts) +
+        len(hard_05_slide_leaks) +
+        (1 if hard_06_trailing else 0)
+    )
+
     dossier = {
         "verdict": verdict,
+        "computational_verdict": computational_verdict,
+        "stage": stage,
+        "sro_signed": sro_signed,
+        "sro_panel_verified": sro_panel_verified,
         "composite_score": composite_score,
         "has_hard_fail": has_hard_fail,
+        "hard_violations_count": hard_violations_count,
         "source_metrics": {
             "source_word_count": src_words,
             "total_cutoffs_extracted": report.get("scores", {}).get("total_clinical_cutoffs", 0),

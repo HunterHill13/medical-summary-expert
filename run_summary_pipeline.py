@@ -15,6 +15,7 @@ import sys
 import json
 import argparse
 import subprocess
+import datetime
 from typing import Dict, Any, List, Optional, Union, Tuple
 
 # Force UTF-8 encoding in stdout/stderr for Windows compatibility
@@ -369,7 +370,7 @@ def cmd_audit(args):
     audit_md_path = getattr(args, 'audit_md', None) or os.path.join(rep_dir, "AUDIT_REPORT.md")
     dossier = export_audit_dossier(source_text, summary_data, dossier_path=dossier_path, report_md_path=audit_md_path)
 
-    print(f"  • Verdict: {report['verdict']} | EGM SRO Verdict: {dossier['verdict']} (Score: {dossier['composite_score']}/100)")
+    print(f"  • Verdict: {report['verdict']} | EGM Computational: {dossier.get('computational_verdict')} | Binding: {dossier['verdict']} (Score: {dossier['composite_score']}/100)")
     print(f"  • Numerical Cutoffs Retained: {report['scores']['numerical_coverage_pct']}%")
     print(f"  • Clinical Entities Retained: {report['scores']['entity_recall_pct']}%")
     print(f"  • Diagnostic Bifurcation:     {'Passed' if report['scores']['diagnostic_bifurcation_compliant'] else 'Failed'}")
@@ -385,6 +386,110 @@ def cmd_audit(args):
     print(f"[OK] Audit report written to: {args.report}")
     print(f"[OK] EGM Dossier written to: {dossier_path}")
     print(f"[OK] SRO Markdown report written to: {audit_md_path}")
+
+    if dossier.get("verdict") == "PENDING_SRO_PANEL_REVIEW":
+        print("\n" + "="*80)
+        print("🔍 [COMPUTATIONAL PRE-AUDIT PASSED] - MANDATORY SRO SWARM AUDIT REQUIRED")
+        print("="*80)
+        print(f"The computational analysis passed (Score: {dossier.get('composite_score')}/100, 0 hard violations).")
+        print("Per Golden Pillar governance, you MUST now invoke the isolated subagent swarm:")
+        print("  1. invoke_subagent: medical-summary-grounding-auditor (Audits HARD-01 & HARD-02)")
+        print("  2. invoke_subagent: medical-summary-omission-auditor (Audits HARD-03 & HARD-04)")
+        print("  3. invoke_subagent: medical-summary-pedagogy-auditor (Audits HARD-05 & HARD-06)")
+        print("  4. invoke_subagent: medical-summary-panel-sro (Aggregates rubric, issues verdict)")
+        print("\nAfter the SRO panel issues its verdict, seal the dossier via:")
+        print(f"  python run_summary_pipeline.py sro-seal --dossier \"{dossier_path}\" --verdict APPROVED_HIGH_YIELD_READY --score <score>")
+        print("="*80 + "\n")
+
+def cmd_sro_seal(args):
+    print(f"--- [SRO SEAL] Sealing EGM Isolated Auditor Swarm Verdict ---")
+    dossier_candidates = [
+        getattr(args, "dossier", None),
+        os.path.join("خلاصه", "SUMMARY_AUDIT_DOSSIER.json"),
+        os.path.join("dist", "SUMMARY_AUDIT_DOSSIER.json"),
+        "SUMMARY_AUDIT_DOSSIER.json"
+    ]
+    dossier_file = next((p for p in dossier_candidates if p and os.path.exists(p)), None)
+    if not dossier_file:
+        print("[ERROR] SUMMARY_AUDIT_DOSSIER.json not found to seal! Run 'audit' first.")
+        sys.exit(1)
+
+    with open(dossier_file, "r", encoding="utf-8") as f:
+        dossier = json.load(f)
+
+    score = float(args.score) if args.score is not None else dossier.get("composite_score", 90.0)
+    verdict = args.verdict
+    notes = args.reviewer_notes or "Officially audited and approved by medical-summary-panel-sro."
+    sro_name = args.sro_name or "medical-summary-panel-sro"
+    sealed_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    dossier["verdict"] = verdict
+    dossier["stage"] = "SRO_PANEL_SEALED"
+    dossier["sro_signed"] = True
+    dossier["sro_panel_verified"] = (verdict == "APPROVED_HIGH_YIELD_READY")
+    dossier["composite_score"] = score
+    dossier["sro_signature"] = {
+        "reviewer": sro_name,
+        "sealed_at": sealed_at,
+        "notes": notes,
+        "verdict": verdict,
+        "score": score
+    }
+
+    with open(dossier_file, "w", encoding="utf-8") as f:
+        json.dump(dossier, f, ensure_ascii=False, indent=2)
+    print(f"[OK] Dossier sealed successfully in {dossier_file}: verdict='{verdict}', score={score}")
+
+    # Also update AUDIT_REPORT.md
+    audit_md_candidates = [
+        getattr(args, "audit_md", None),
+        os.path.join(os.path.dirname(os.path.abspath(dossier_file)), "AUDIT_REPORT.md"),
+        os.path.join("خلاصه", "AUDIT_REPORT.md"),
+        os.path.join("dist", "AUDIT_REPORT.md"),
+        "AUDIT_REPORT.md"
+    ]
+    audit_md_file = next((p for p in audit_md_candidates if p and os.path.exists(p)), None)
+    if audit_md_file:
+        try:
+            with open(audit_md_file, "r", encoding="utf-8") as fm:
+                md_content = fm.read()
+
+            md_content = md_content.replace(
+                "- **حکم نهایی سرداور (Final Verdict):** `PENDING_SRO_PANEL_REVIEW` ⏳",
+                f"- **حکم نهایی سرداور (Final Verdict):** `{verdict}` {'✅' if verdict == 'APPROVED_HIGH_YIELD_READY' else '❌'}"
+            )
+            md_content = md_content.replace(
+                "- **حکم نهایی سرداور (Binding SRO Verdict):** `PENDING_SRO_PANEL_REVIEW` ⏳",
+                f"- **حکم نهایی سرداور (Binding SRO Verdict):** `{verdict}` {'✅' if verdict == 'APPROVED_HIGH_YIELD_READY' else '❌'}"
+            )
+            md_content = md_content.replace(
+                "- **مهر و امضای سرداور (SRO Signed):** `خیر - در انتظار استعلام سوآرم داوران ⏳`",
+                f"- **مهر و امضای سرداور (SRO Signed):** `بله (SEALED) ✅`"
+            )
+            md_content = md_content.replace(
+                "- **مرحله ممیزی (Audit Stage):** `COMPUTATIONAL_PRE_AUDIT`",
+                f"- **مرحله ممیزی (Audit Stage):** `SRO_PANEL_SEALED`"
+            )
+
+            seal_section = f"""
+
+---
+
+## ۵. گواهی تایید رسمی و مهر پنل داوری EGM (Official SRO Panel Seal)
+- **مرجع صدور مهر:** `{sro_name}`
+- **حکم نهایی سرداور:** `{verdict}` {'✅' if verdict == 'APPROVED_HIGH_YIELD_READY' else '❌'}
+- **نمره نهایی مصوب:** **{score} از ۱۰۰**
+- **تاریخ و زمان ثبت مهر:** `{sealed_at}`
+- **یادداشت سرداور:** {notes}
+- **وضعیت دسترسی به کامپایل:** `{'مجوز صدور بسته‌های نهایی (Word, PDF, HTML, Anki) اعطا شد.' if verdict == 'APPROVED_HIGH_YIELD_READY' else 'مجوز کامپایل صادر نشد.'}`
+"""
+            if "## ۵. گواهی تایید رسمی و مهر پنل داوری EGM" not in md_content:
+                md_content += seal_section
+            with open(audit_md_file, "w", encoding="utf-8") as fm:
+                fm.write(md_content)
+            print(f"[OK] SRO Seal recorded in {audit_md_file}")
+        except Exception as e:
+            print(f"[WARNING] Could not update AUDIT_REPORT.md: {e}")
 
 def cmd_build(args):
     print(f"--- [BUILD] Compiling Publication-Grade Deliverables Suite ---")
@@ -424,22 +529,39 @@ def cmd_build(args):
                 with open(dossier_file, "r", encoding="utf-8") as fd:
                     d_data = json.load(fd)
                 verdict = d_data.get("verdict", "")
-                hard_viol = d_data.get("hard_violations_count", 1)
+                stage = d_data.get("stage", "")
+                sro_signed = d_data.get("sro_signed", False)
+                hard_viol = d_data.get("hard_violations_count", 0 if not d_data.get("has_hard_fail", False) else 1)
                 score = d_data.get("composite_score", 0.0)
-                if verdict == "APPROVED_HIGH_YIELD_READY" and hard_viol == 0 and score >= 90.0:
+
+                if verdict == "PENDING_SRO_PANEL_REVIEW" or not sro_signed:
+                    rejection_reason = (
+                        f"Dossier is in pre-audit stage ('{verdict}', stage='{stage}'). "
+                        "Subagents (grounding, omission, pedagogy, SRO) have NOT officially signed and sealed the dossier. "
+                        "Run: python run_summary_pipeline.py sro-seal --verdict APPROVED_HIGH_YIELD_READY --score <score>"
+                    )
+                elif verdict == "APPROVED_HIGH_YIELD_READY" and hard_viol == 0 and score >= 90.0 and sro_signed:
                     verified = True
                 else:
-                    rejection_reason = f"Dossier verdict is '{verdict}' with {hard_viol} hard violations and composite score {score}."
+                    rejection_reason = f"Dossier verdict is '{verdict}' (sro_signed={sro_signed}) with {hard_viol} hard violations and composite score {score}."
             except Exception as e:
                 rejection_reason = f"Failed to parse dossier ({dossier_file}): {e}"
         elif audit_md_file:
             try:
                 with open(audit_md_file, "r", encoding="utf-8") as fm:
                     md_text = fm.read()
-                if "APPROVED_HIGH_YIELD_READY" in md_text:
+                if "PENDING_SRO_PANEL_REVIEW" in md_text:
+                    rejection_reason = (
+                        f"AUDIT_REPORT.md ({audit_md_file}) indicates PENDING_SRO_PANEL_REVIEW. "
+                        "Isolated subagent swarm has not completed review."
+                    )
+                elif "APPROVED_HIGH_YIELD_READY" in md_text and ("Official SRO Panel Seal" in md_text or "مهر پنل داوری" in md_text or "SEALED" in md_text):
+                    verified = True
+                elif "APPROVED_HIGH_YIELD_READY" in md_text and not os.path.exists(dossier_candidates[1]):
+                    # Legacy fallback if no dossier exists but verified markdown has seal
                     verified = True
                 else:
-                    rejection_reason = f"AUDIT_REPORT.md ({audit_md_file}) does not contain APPROVED_HIGH_YIELD_READY."
+                    rejection_reason = f"AUDIT_REPORT.md ({audit_md_file}) does not have verified SRO seal."
             except Exception as e:
                 rejection_reason = f"Failed to read {audit_md_file}: {e}"
         else:
@@ -620,10 +742,25 @@ def cmd_auto(args):
         args.audit_md = os.path.join(out_dir, "AUDIT_REPORT.md")
         cmd_audit(args)
 
-        # Step 3: Build
-        args.out_dir = out_dir
-        args.prefix = args.prefix or "summary_pack"
-        cmd_build(args)
+        # Step 3: Build (Only if force_unverified is explicitly passed, else pause for swarm)
+        if getattr(args, "force_unverified", False):
+            args.out_dir = out_dir
+            args.prefix = args.prefix or "summary_pack"
+            cmd_build(args)
+        else:
+            print("\n" + "="*80)
+            print("⏸️ [AUTO PAUSE AT GATE 2] - SUBAGENT SWARM INVOCATION REQUIRED")
+            print("="*80)
+            print("Computational audit has completed. To prevent bypassing the EGM Isolated Auditor Swarm,")
+            print("you must invoke the 4 subagents:")
+            print("  1. invoke_subagent: medical-summary-grounding-auditor")
+            print("  2. invoke_subagent: medical-summary-omission-auditor")
+            print("  3. invoke_subagent: medical-summary-pedagogy-auditor")
+            print("  4. invoke_subagent: medical-summary-panel-sro")
+            print("Once the SRO approves, seal the dossier and build:")
+            print(f"  python run_summary_pipeline.py sro-seal --dossier \"{args.dossier}\" --verdict APPROVED_HIGH_YIELD_READY")
+            print(f"  python run_summary_pipeline.py build --summary \"{args.summary}\" --out-dir \"{out_dir}\"")
+            print("="*80 + "\n")
     else:
         print(f"[INFO] Input ingested to '{ingested_file}'. Next step: Synthesize summary_data.json and run 'run_summary_pipeline.py build'.")
 
@@ -656,6 +793,15 @@ def main():
     p_audit.add_argument("--report", default="coverage_audit_report.json", help="Audit report path")
     p_audit.add_argument("--dossier", help="Optional path to save SUMMARY_AUDIT_DOSSIER.json")
     p_audit.add_argument("--audit-md", help="Optional path to save AUDIT_REPORT.md")
+
+    # SRO Seal
+    p_seal = subparsers.add_parser("sro-seal", help="Officially seal dossier with EGM SRO panel verdict")
+    p_seal.add_argument("--dossier", default=None, help="Path to SUMMARY_AUDIT_DOSSIER.json")
+    p_seal.add_argument("--audit-md", default=None, help="Path to AUDIT_REPORT.md")
+    p_seal.add_argument("--verdict", default="APPROVED_HIGH_YIELD_READY", choices=["APPROVED_HIGH_YIELD_READY", "SURGICAL_REVISION_REQUIRED", "HARD_FAIL_REJECTED"], help="Final binding verdict")
+    p_seal.add_argument("--score", type=float, default=None, help="Final composite score (defaults to existing score)")
+    p_seal.add_argument("--reviewer-notes", default=None, help="SRO evaluation summary notes")
+    p_seal.add_argument("--sro-name", default="medical-summary-panel-sro", help="SRO Agent identifier")
 
     # Build
     p_build = subparsers.add_parser("build", help="Compile Word, Markdown, and Anki files")
@@ -695,6 +841,8 @@ def main():
         cmd_merge_batches(args)
     elif args.subcommand == "audit":
         cmd_audit(args)
+    elif args.subcommand == "sro-seal":
+        cmd_sro_seal(args)
     elif args.subcommand == "build":
         cmd_build(args)
     elif args.subcommand == "bundle":

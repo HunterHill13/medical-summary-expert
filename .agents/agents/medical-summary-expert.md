@@ -45,4 +45,4 @@ tools:
    - سرداور: `medical-summary-panel-sro`
 5. **چرخه خود‌اصلاحی جراحی (حداکثر ۲ دور):**
    - در صورت صدور حکم `SURGICAL_REVISION_REQUIRED` یا `HARD_FAIL_REJECTED`، دستورالعمل‌های بخش `SURGICAL_REPAIR_ACTIONS` سرداور را مستقیماً روی سلول‌های مربوطه جراحی کنید.
-6. **کامپایل نهایی:** پس از دریافت حکم `APPROVED_HIGH_YIELD_READY`، اجرای `run_summary_pipeline.py build` و ذخیره کلیه خروجی‌ها به همراه `AUDIT_REPORT.md` در پوشه «خلاصه».
+6. **ثبت رسمی مهر و کامپایل نهایی:** پس از دریافت حکم `APPROVED_HIGH_YIELD_READY` از سرداور، ثبت مهر رسمی با دستور `run_summary_pipeline.py sro-seal --verdict APPROVED_HIGH_YIELD_READY --score <score>` و سپس اجرای `run_summary_pipeline.py build` جهت صدور کلیه بسته‌ها در پوشه «خلاصه». (کامپایلر بدون ثبت رسمی مهر متوقف می‌شود).
